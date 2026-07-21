@@ -4,6 +4,7 @@ import { createRandomContext } from '../foundation';
 import { buildSongBundle } from '../generation/GenerationController';
 import { buildArrangementPlan } from './arranger';
 import { beatsPerBarOf } from './phraseTiming';
+import { JAZZ_4_4_ARCHETYPE_ID } from './jazzArchetypePlanner';
 
 const SEED = 7;
 const DURATIONS = [30, 90, 180] as const;
@@ -47,6 +48,25 @@ describe('arranger/targetDuration', () => {
       }
       expect(signatures.size, styleHint).toBe(DURATIONS.length);
     }
+  });
+
+  it('Jazz 4/4 按拍号缩放，targetDuration 不改变已选 archetype', () => {
+    const signatures = new Set<string>();
+    for (const targetDuration of DURATIONS) {
+      const band = buildBandSpec({ seed: SEED, styleHint: 'jazz', mood: 'build', targetDuration });
+      const arrangement = buildArrangementPlan(band, {
+        rng: createRandomContext(SEED),
+        mood: 'build',
+        targetDuration,
+        jazzArchetypeId: JAZZ_4_4_ARCHETYPE_ID,
+      });
+      expect(arrangement.arrangementArchetypeId).toBe(JAZZ_4_4_ARCHETYPE_ID);
+      expect(arrangement.meter.numerator).toBe(4);
+      const phraseQuantumSeconds = 4 * beatsPerBarOf(arrangement.meter) * 60 / arrangement.tempoBpm;
+      expect(Math.abs(actualSeconds(arrangement) - targetDuration)).toBeLessThanOrEqual(phraseQuantumSeconds);
+      signatures.add(signature(arrangement));
+    }
+    expect(signatures.size).toBe(DURATIONS.length);
   });
 
   it('ACG 随时长缩放仍保持 A/A′/return 等长和 4/8-bar 句法', () => {

@@ -9,7 +9,53 @@
 //   破 slope 时补合成 SlopeExit 平衡深度(防泄漏到下个 brick)。确定性,无 RNG。
 // ============================================================
 
-import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
+import type {
+  AbstractMelodyToken,
+  AcgBorrowedColorIntent,
+  AcgDyadIntent,
+  AcgHarmonicScope,
+  AcgStableRole,
+} from '../knowledge/melodyGrammarTypes';
+
+/**
+ * ACG PIANOSONG 的“呼吸后回归”是主链在 token 调度期决定的可执行意图，
+ * 不是拿到 NoteIR 后再补一颗音。它把 RoadMap/和声的落点选择锁到
+ * realizer：趋近音必须服务于同一个稳定落点。
+ */
+export interface AcgReturnGestureIntent {
+  gestureId: string;
+  /** 这个 return 来自哪一个实际 RoadMap brick，而非被拉伸的 cadence source。 */
+  brickIndex?: number;
+  brickName?: string;
+  brickFamily?: string;
+  /**
+   * Target chord identity. `chordIndex` is retained for existing trace/test
+   * readers; `targetChordIndex` is the explicit contract field consumed by
+   * the realizer and must match the chord active at the arrival onset.
+   */
+  chordIndex: number;
+  targetChordIndex: number;
+  function: 'T' | 'S' | 'D';
+  shape: 'stableSingle' | 'sigh' | 'liftRiff';
+  role: 'pickup' | 'approach' | 'arrival';
+  arrivalBeat: number;
+  /** Grammar-declared harmonic ownership of the arrival. */
+  harmonicScope: AcgHarmonicScope;
+  /** Exact permitted arrival roles; never a renderer preference/fallback. */
+  stableRoles: readonly AcgStableRole[];
+  targetPc: number;
+  targetRole: AcgStableRole;
+  /** 仅 approach 有值；方向以“相对 arrival”描述。 */
+  approachDirection?: 'below' | 'above';
+  approachSemitones?: 1 | 2;
+  /** ACG 调式/借用色彩只可作为“趋近 → 稳定音”的手势，不能悬置。 */
+  colorIntent?: AcgBorrowedColorIntent;
+  /**
+   * 已在 scheduler 选出的合法第二声部。它仍在同一 arrival token 中，由
+   * realizer 一次实化；不能留给成品阶段做和声音后处理。
+   */
+  dyad?: AcgDyadIntent & { partnerPc: number; partnerRole: AcgStableRole };
+}
 
 /** 一个已落拍的 token:token 本体 + 绝对起拍。
  *  ★ MG full-parity Phase 3·D:brick 元数据(scheduleBrickExpansions 盖,realizeTokens 透到 NoteEvent)。
@@ -23,6 +69,56 @@ export interface ScheduledToken {
   // ★ Phase B-2:full metadata 标准形状 —— brick name/family(post-shaper 链 + audit 需要)。
   brickName?: string;
   brickFamily?: string;
+  /** ACG 专属一次式回归意图；没有它的 token 仍走通用 MG 语义。 */
+  acgReturn?: AcgReturnGestureIntent;
+}
+
+export interface ScheduledLeadOwnershipSpan {
+  startBeat: number;
+  endBeat: number;
+}
+
+/**
+ * Reserve authored lead spans before realization. Audible grammar tokens that
+ * touch an owned span become rests, and slope state is closed at the boundary
+ * so generated continuation cannot inherit a phrase that the user brick replaced.
+ */
+export function reserveScheduledTokensForAuthoredSpans(
+  entries: readonly ScheduledToken[],
+  spans: readonly ScheduledLeadOwnershipSpan[],
+): ScheduledToken[] {
+  const owned = spans
+    .filter((span) => Number.isFinite(span.startBeat)
+      && Number.isFinite(span.endBeat)
+      && span.endBeat > span.startBeat + 1e-6)
+    .sort((a, b) => a.startBeat - b.startBeat || a.endBeat - b.endBeat);
+  if (owned.length === 0) return [...entries];
+  const inside = (beat: number): boolean => owned.some((span) =>
+    beat >= span.startBeat - 1e-6 && beat < span.endBeat - 1e-6);
+  const overlaps = (startBeat: number, endBeat: number): boolean => owned.some((span) =>
+    startBeat < span.endBeat - 1e-6 && endBeat > span.startBeat + 1e-6);
+
+  const out: ScheduledToken[] = [];
+  for (const entry of entries) {
+    const token = entry.token;
+    if ((token.kind === 'SlopeEnter' || token.kind === 'SlopeExit') && inside(entry.startBeat)) continue;
+    const endBeat = entry.startBeat + Math.max(0, token.duration);
+    if (token.duration > 0 && token.kind !== 'R' && overlaps(entry.startBeat, endBeat)) {
+      out.push({
+        ...entry,
+        token: { kind: 'R', duration: token.duration } as AbstractMelodyToken,
+        acgReturn: undefined,
+      });
+      continue;
+    }
+    out.push(entry);
+  }
+  for (const span of owned) {
+    out.push({ token: { kind: 'SlopeExit', duration: 0 }, startBeat: span.startBeat });
+  }
+  return out.sort((a, b) => a.startBeat - b.startBeat
+    || (a.token.kind === 'SlopeExit' ? -1 : 0)
+    || (b.token.kind === 'SlopeExit' ? 1 : 0));
 }
 
 /** Lay out a flat token list onto consecutive start beats, starting

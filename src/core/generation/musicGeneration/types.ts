@@ -11,7 +11,7 @@
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
 import type { SpaceProfile } from '../newEngine/knowledge/gmMixProfile';
 
-/** Q+N 5 角色(内部 lineup/IR 轨标识;旧 Vocal 暂禁)。 */
+/** Q+N 5 角色(内部 lineup/IR 轨标识;Vocal 暂禁)。 */
 export type QnRole = 'lead' | 'comp' | 'bass' | 'drum' | 'pad';
 
 // ============================================================

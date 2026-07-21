@@ -29,7 +29,30 @@ export interface ExpandContext {
   rng: () => number;
   /** Maximum recursion depth to prevent runaway grammars. */
   maxDepth?: number;
+  /** Optional diagnostics only. Omitted by default and never sampled by RNG. */
+  trace?: GrammarExpansionTraceHook;
 }
+
+export type GrammarExpansionTraceEvent =
+  | Readonly<{
+    type: 'rule-selected';
+    symbol: string;
+    depth: number;
+    eligibleRuleCount: number;
+    selectedRuleIndex: number;
+    sourceRuleId: string;
+    rulePath: readonly string[];
+  }>
+  | Readonly<{
+    type: 'terminal-emitted';
+    outputIndex: number;
+    depth: number;
+    tokenKind: AbstractMelodyToken['kind'];
+    sourceRuleId: string;
+    rulePath: readonly string[];
+  }>;
+
+export type GrammarExpansionTraceHook = (event: GrammarExpansionTraceEvent) => void;
 
 /** Expand a grammar against a single brick's context. Returns a flat
  *  sequence of abstract tokens whose duration sums to brick.durationBeats
@@ -41,9 +64,11 @@ export function expandGrammarForBrick(
 ): AbstractMelodyToken[] {
   const maxDepth = ctx.maxDepth ?? 32;
   const out: AbstractMelodyToken[] = [];
-  expandSymbol(grammar.start, grammar, ctx, out, 0, maxDepth);
+  expandSymbol(grammar.start, grammar, ctx, out, 0, maxDepth, EMPTY_RULE_PATH);
   return out;
 }
+
+const EMPTY_RULE_PATH: readonly string[] = Object.freeze([]);
 
 function expandSymbol(
   symbol: string,
@@ -52,17 +77,40 @@ function expandSymbol(
   out: AbstractMelodyToken[],
   depth: number,
   maxDepth: number,
+  parentRulePath: readonly string[],
 ): void {
   if (depth > maxDepth) return;
   const rules = grammar.rulesByLhs.get(symbol) ?? [];
   const eligible = rules.filter(r => ruleEligible(r, ctx.brick));
   if (eligible.length === 0) return;  // no rule fires — silent expand
   const picked = weightedPick(eligible, ctx.rng);
+  const selectedRuleIndex = eligible.indexOf(picked);
+  const sourceRuleId = picked.metadata?.sourceRuleId ?? `${symbol}#${selectedRuleIndex}`;
+  const rulePath = ctx.trace
+    ? Object.freeze([...parentRulePath, sourceRuleId])
+    : EMPTY_RULE_PATH;
+  ctx.trace?.(Object.freeze({
+    type: 'rule-selected',
+    symbol,
+    depth,
+    eligibleRuleCount: eligible.length,
+    selectedRuleIndex,
+    sourceRuleId,
+    rulePath,
+  }));
   for (const child of picked.rhs) {
     if (typeof child === 'string') {
-      expandSymbol(child, grammar, ctx, out, depth + 1, maxDepth);
+      expandSymbol(child, grammar, ctx, out, depth + 1, maxDepth, rulePath);
     } else {
       out.push(child);
+      ctx.trace?.(Object.freeze({
+        type: 'terminal-emitted',
+        outputIndex: out.length - 1,
+        depth,
+        tokenKind: child.kind,
+        sourceRuleId,
+        rulePath,
+      }));
     }
   }
 }

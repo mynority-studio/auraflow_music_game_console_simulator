@@ -38,4 +38,55 @@ describe('render/interactionResolver', () => {
     expect(r.adjustments).toBe(0);
     expect(r.data.tracks[0].notes[0].pitch).toBe(40);
   });
+
+  it('同音色策略关闭时,lead/comp exact unison 可作为不同音色叠奏保留', () => {
+    const draft: MusicalIRData = {
+      tracks: [
+        { role: 'lead', notes: [note(72)] },
+        { role: 'comp', notes: [note(72), note(67)] },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    };
+    const r = resolveInteractions(draft, occupation);
+    const comp = r.data.tracks.find((t) => t.role === 'comp')!.notes.map((n) => n.pitch as number);
+    expect(comp).toEqual([72, 67]);
+    expect(r.adjustments).toBe(0);
+  });
+
+  it('同音色策略开启时,comp 不得与 lead 同 MIDI pitch 长时间重叠', () => {
+    const draft: MusicalIRData = {
+      tracks: [
+        { role: 'lead', notes: [note(72)] },
+        { role: 'comp', notes: [note(72), note(67)] },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    };
+    const r = resolveInteractions(draft, occupation, {
+      forbidLeadCompUnison: true,
+      protectedCompFoundationKeys: new Set(['0:0']),
+    });
+    const comp = r.data.tracks.find((t) => t.role === 'comp')!.notes.map((n) => n.pitch as number);
+    expect(comp).toEqual([67]);
+    expect(r.adjustments).toBe(1);
+  });
+
+  it('可关闭 generic 小二度瘦身,但仍保留同音色 exact unison 禁止', () => {
+    const draft: MusicalIRData = {
+      tracks: [
+        { role: 'lead', notes: [note(72)] },
+        { role: 'comp', notes: [note(72), note(71)] },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    };
+    const r = resolveInteractions(draft, occupation, {
+      forbidLeadCompUnison: true,
+      thinCompMelodyClashes: false,
+    });
+    const comp = r.data.tracks.find((t) => t.role === 'comp')!.notes.map((n) => n.pitch as number);
+    expect(comp).toEqual([71]);
+    expect(r.adjustments).toBe(1);
+  });
 });

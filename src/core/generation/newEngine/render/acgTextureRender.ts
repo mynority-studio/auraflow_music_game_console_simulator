@@ -35,14 +35,14 @@ function snapPc(pc: number, target: number, low: number, high: number): number {
 function midiForInterval(intervalPc: number, target: number, low: number, high: number, rootPc: number, pcs: Set<number>): number | null {
   const n = mod12(intervalPc); return pcs.has(n) ? snapPc(rootPc + n, target, low, high) : null;
 }
-function upperColor(target: number, rootPc: number, pcs: Set<number>): number[] {
+function upperColor(target: number, rootPc: number, pcs: Set<number>, low = 60, high = MELODY_HIGH): number[] {
   const out: number[] = [];
-  for (const iv of [2, 11, 10, 9, 6, 7, 4, 3, 0]) { const m = midiForInterval(iv, target, 60, MELODY_HIGH, rootPc, pcs); if (m !== null) out.push(m); }
+  for (const iv of [2, 11, 10, 9, 6, 7, 4, 3, 0]) { const m = midiForInterval(iv, target, low, high, rootPc, pcs); if (m !== null) out.push(m); }
   return dedupe(out);
 }
-function upperChord(target: number, rootPc: number, pcs: Set<number>): number[] {
+function upperChord(target: number, rootPc: number, pcs: Set<number>, low = CHORD_LOW, high = CHORD_HIGH): number[] {
   const out: number[] = [];
-  for (const iv of [0, 4, 3, 7, 2, 11, 10, 9, 6]) { const m = midiForInterval(iv, target, CHORD_LOW, CHORD_HIGH, rootPc, pcs); if (m !== null) out.push(m); }
+  for (const iv of [0, 4, 3, 7, 2, 11, 10, 9, 6]) { const m = midiForInterval(iv, target, low, high, rootPc, pcs); if (m !== null) out.push(m); }
   return dedupe(out);
 }
 
@@ -53,6 +53,9 @@ export function renderAcgChordHits(cMRaw: readonly number[], dur: number, tc: st
   const rootPc = mod12(ctx?.rootPc ?? 0);
   const pcs = ivPcsFor(ctx?.chordType ?? 'maj');
   const cM = [...cMRaw].filter(isNum).sort((a, b) => a - b);
+  const compFloor = Math.max(CHORD_LOW, ctx?.compFloorMidi ?? CHORD_LOW);
+  const compCeiling = Math.min(CHORD_HIGH, Math.max(compFloor, ctx?.compCeilingMidi ?? CHORD_HIGH));
+  const colorFloor = Math.min(compCeiling, Math.max(60, compFloor));
   const hits: TextureChordHit[] = [];
   const push = (midis: number | number[], t: number, d: number, vol: number) => {
     if (t >= dur) return; const rem = dur - t - 0.02; if (rem <= 0) return;
@@ -68,8 +71,8 @@ export function renderAcgChordHits(cMRaw: readonly number[], dur: number, tc: st
     if (!down || dur < startT + availSpan + 0.80) return;
     dedupe(notes.slice(1, -1)).reverse().slice(0, 3).forEach((m, idx) => { const t = startT + availSpan + 0.48 + idx * 0.24; if (t >= dur - 0.20) return; push(m, t, 0.42, Math.max(0.16, vol - 0.08 - idx * 0.025)); });
   };
-  const uc = (target: number) => upperColor(target, rootPc, pcs);
-  const uch = (target: number) => upperChord(target, rootPc, pcs);
+  const uc = (target: number) => upperColor(target, rootPc, pcs, colorFloor, compCeiling);
+  const uch = (target: number) => upperChord(target, rootPc, pcs, compFloor, compCeiling);
 
   switch (tc) {
     case 'Piano_TopVoice_Planing': {

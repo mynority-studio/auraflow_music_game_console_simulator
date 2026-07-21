@@ -7,7 +7,7 @@
 // 需 harmony(dominant-chain 检测)→ 放 render 协调层(arranger 权威在 harmony 后实现)。
 // ============================================================
 
-import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, pickAcgTextureForBar, deriveAcgTextureCharacter, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
+import { phraseCellRole, densityForCell, energyForCell, pickTextureForBarWithGroove, pickAcgTextureForBar, deriveAcgTextureCharacter, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
 import { acgRenderProfile, resolveAcgBarFamily } from '../knowledge/acgRenderProfile';
 import { hasTextureRenderer } from './textureRenderer';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
@@ -64,6 +64,7 @@ export function buildTextureSchedule(args: {
   richTextureBySection?: Record<string, string>; // 器配层段级下发(非 LOFI);空 = 逐 span 回退
   richTextureSwitchBySection?: Record<string, { atFraction: number; toTexture: string }>; // 段内受控变化(verse 中段)
   grooveContract?: GrooveTextureContract; // ★ §4:ACG 逐-bar 织体选择消费 GrooveContract(preferred/allowed/forbidden)
+  grooveContractBySection?: Readonly<Record<string, GrooveTextureContract>>;
   acgBarFamilyBySpan?: Record<string, 'drive' | 'sparse'>; // ★ Phase 3A:ACG family intent(enforce);缺省→内联派生(fallback)
 }): TextureSchedule {
   const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection, grooveContract } = args;
@@ -72,6 +73,13 @@ export function buildTextureSchedule(args: {
   if (!txStyle) return schedule;
   const rich = richTextureBySection ?? {};
   const richSwitch = richTextureSwitchBySection ?? {};
+  const contractFor = (sectionId: string): GrooveTextureContract | undefined =>
+    args.grooveContractBySection?.[sectionId] ?? grooveContract;
+  const allows = (sectionId: string, textureCase: string): boolean => {
+    const contract = contractFor(sectionId);
+    return (!contract?.allowedTextureCases || contract.allowedTextureCases.includes(textureCase))
+      && !contract?.forbiddenTextureCases?.includes(textureCase);
+  };
 
   const timeline = plan.chordTimeline;
   const funcBySpan: Record<string, HarmonicFunction> = {};
@@ -92,14 +100,11 @@ export function buildTextureSchedule(args: {
     let fallbackPhrase: number | undefined;
     const finalCadenceCase = 'ACG_Pedal_Wash_Color_Drops';
     const lastActiveSpanId = [...timeline].reverse().find((span) => activeSectionIds.has(span.sectionId))?.id;
-    const allows = (textureCase: string): boolean =>
-      (!grooveContract?.allowedTextureCases || grooveContract.allowedTextureCases.includes(textureCase))
-      && !grooveContract?.forbiddenTextureCases?.includes(textureCase);
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
       const planned = rich[span.sectionId];
       if (planned && hasTextureRenderer(planned)) {
-        schedule[span.id] = span.id === lastActiveSpanId && allows(finalCadenceCase) && hasTextureRenderer(finalCadenceCase)
+        schedule[span.id] = span.id === lastActiveSpanId && allows(span.sectionId, finalCadenceCase) && hasTextureRenderer(finalCadenceCase)
           ? finalCadenceCase
           : planned;
         return;
@@ -115,7 +120,7 @@ export function buildTextureSchedule(args: {
           barIndex: i, totalBars: timeline.length, sectionLabel: label,
           func: fBar(funcBySpan[span.id]),
           nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
-          prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: barFamily, random: textureRng,
+          prevTextureId: acgPrevId, repeatCount: acgRep, contract: contractFor(span.sectionId), characterFamily: barFamily, random: textureRng,
         });
         if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
         acgPrevCase = prof.textureCase;
@@ -132,10 +137,11 @@ export function buildTextureSchedule(args: {
     // ★ 器配层段级下发优先:整段沿用,projection + 渲染器存在性校验(render 只做投影/校验,不做决策)。
     //   含段内受控变化:idxInSec/count ≥ atFraction → 切到 variant(verse 中段,兼容连续,不留洞)。
     const planned = rich[span.sectionId];
-    if (planned) {
+    if (planned && allows(span.sectionId, planned)) {
       const sw = richSwitch[span.sectionId];
       const cnt = countInSec[span.sectionId] || 1;
-      const tc = (sw && idxInSec[span.id] / cnt >= sw.atFraction) ? sw.toTexture : planned;
+      const switched = sw && idxInSec[span.id] / cnt >= sw.atFraction ? sw.toTexture : planned;
+      const tc = allows(span.sectionId, switched) ? switched : planned;
       if (hasTextureRenderer(tc)) schedule[span.id] = tc;
       continue;
     }
@@ -143,9 +149,9 @@ export function buildTextureSchedule(args: {
     const role = sectionRoleById[span.sectionId] ?? 'verse';
     const cellRole = phraseCellRole(idxInSec[span.id], countInSec[span.sectionId]);
     const label = SECTION_LABEL[role] ?? 'VERSE';
-    const prof = pickTextureForBar({
+    const prof = pickTextureForBarWithGroove({
       style: txStyle, phraseRole: cellRole, density: densityForCell(cellRole, label), energy: energyForCell(cellRole, label),
-      isDominantChain: funcBySpan[span.id] === 'D', prevTextureId: prevTex, repeatCount: rep, random: textureRng,
+      isDominantChain: funcBySpan[span.id] === 'D', contract: contractFor(span.sectionId), prevTextureId: prevTex, repeatCount: rep, random: textureRng,
     });
     const tc = prof?.textureCase;
     if (tc && tc === prevTex) rep += 1; else { rep = 0; prevTex = tc; }

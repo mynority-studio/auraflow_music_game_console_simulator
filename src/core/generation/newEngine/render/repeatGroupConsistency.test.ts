@@ -4,8 +4,8 @@
 // 用户诉求验收:重复段落(verse1≡verse2 / chorus1≡chorus2)body 全轨【同音符】;
 //   ★ MG full-parity Phase D(directive 3.2):lead 现也被 GrooveContract melody-pocket lay-back(per-section
 //     独立 = decision ② '各自人性化');故 lead body = 同 pitch/duration/velocity 序列,onset 容许 pocket 微差
-//     (不再逐字节锁绝对 onset)。comp/bass/pad/drum 同音符(pitch/count)+ 各自人性化(timing/velocity 可不同);
-//   链接尾巴(发散点之后)允许各自不同;确定性;深不可变。
+//     (不再逐字节锁绝对 onset)。comp/bass/pad 与 drum body 同音符(pitch/count)+ 各自人性化;
+//   drum 的 score-authored fill/landing 窗口允许 A/A′，链接尾巴允许各自不同;确定性;深不可变。
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { buildBandSpec } from '../band/bandEngine';
@@ -13,7 +13,11 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from './renderCoordinator';
-import { planRepeatGroupReplays } from './repeatGroupReplay';
+import {
+  planDrumReplayProtection,
+  planRepeatGroupReplays,
+  type ReplayProtectionRange,
+} from './repeatGroupReplay';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 import type { MusicalIR, NoteIR } from '../ir/MusicalIR';
 
@@ -31,6 +35,13 @@ function pipeline(seed: number, style: string) {
 const win = (ir: MusicalIR, role: string, lo: number, hi: number): NoteIR[] =>
   (ir.tracks.find((t) => t.role === role)?.notes ?? []).filter((n) => (n.startTick as number) >= lo && (n.startTick as number) < hi);
 const pitchMultiset = (ns: NoteIR[]) => ns.map((n) => n.pitch as number).sort((a, b) => a - b).join(',');
+
+function outsideDrumBoundaryWindows(notes: readonly NoteIR[], ranges: readonly ReplayProtectionRange[]): NoteIR[] {
+  return notes.filter((note) => {
+    const tick = note.startTick as number;
+    return !ranges.some((range) => tick >= range.lo && tick < range.hi);
+  });
+}
 
 const ROLES = ['lead', 'comp', 'bass', 'pad', 'drum'];
 
@@ -60,8 +71,13 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
           const barTicks = arr.meter.numerator * (4 / arr.meter.denominator) * tb.ppq;
           const cropTicks = Math.min(p.prefixTicks, openingDelayBars * barTicks);
           if (p.prefixTicks - cropTicks <= edge * 2) continue;
-          const src = win(ir, role, p.sourceStartTick + cropTicks + edge, p.sourceStartTick + p.prefixTicks - edge);
-          const tgt = win(ir, role, p.targetStartTick + cropTicks + edge, p.targetStartTick + p.prefixTicks - edge);
+          let src = win(ir, role, p.sourceStartTick + cropTicks + edge, p.sourceStartTick + p.prefixTicks - edge);
+          let tgt = win(ir, role, p.targetStartTick + cropTicks + edge, p.targetStartTick + p.prefixTicks - edge);
+          if (role === 'drum') {
+            const protection = planDrumReplayProtection(arr, tb, p);
+            src = outsideDrumBoundaryWindows(src, protection.source);
+            tgt = outsideDrumBoundaryWindows(tgt, protection.target);
+          }
           expect(tgt.length, `${seed}/${style} ${p.targetId} ${role} count`).toBe(src.length);
           expect(pitchMultiset(tgt), `${seed}/${style} ${p.targetId} ${role} pitch-multiset`).toBe(pitchMultiset(src));
           if (role === 'lead') {

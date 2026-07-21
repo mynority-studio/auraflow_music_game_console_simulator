@@ -99,4 +99,24 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
       expect(sel.style, style).not.toBe('JAZZ');
     }
   });
+
+  it('★ 产品联合规划:只从 production RoadMap 可落位候选中派发', () => {
+    const brick = analyzeUserMelodicBrick(motif([1, 3, 5, 4], [1, 1, 1, 1]));
+    const intent = inferHarmonyIntent(brick);
+    let firstViableId: string | undefined;
+    const selected = selectProgressionForMotif({
+      brick,
+      intent,
+      style: 'pop',
+      mode: 'major',
+      keyPc: 0,
+      seed: 999,
+      evaluateProductionPlacement: (candidate) => {
+        if (!firstViableId && candidate.modeMatch) firstViableId = candidate.prototype.id;
+        return { viable: candidate.prototype.id === firstViableId, score: candidate.prototype.id === firstViableId ? 20 : -100 };
+      },
+    });
+    expect(firstViableId).toBeDefined();
+    expect(selected.prototypeId).toBe(firstViableId);
+  });
 });

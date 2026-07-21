@@ -3,7 +3,6 @@ import { generateMotifWeave, renderMelodicSlot } from './motifWeaver';
 import type { MelodicSlot, MelodicSlotFunction, UserMotifPolicy } from './melodicBrickTypes';
 import { generateSampleCaptured } from './motifAnalysis';
 import { isInScale } from './scale';
-import { quotedAt } from './jazzinessAudit';
 import { fitRange, identity } from './motifTransform';
 import { chordAtBeat, effectiveTonePcs } from './chords';
 import { defaultSandboxForm, type MotifWeaverInput } from './types';
@@ -166,13 +165,15 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     throw new Error('no seed with quote + quote:vary');
   });
 
-  it('★ 动机不丢:motif 永远在曲首(beat0)原样陈述(回归:slot-plan 纯功能落位会让动机不在开头)', () => {
+  it('★ 动机不丢:motif 在最早 RoadMap quote slot 原样出现,不强制 beat0', () => {
     for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       for (let seed = 1; seed <= 8; seed++) {
         for (const variant of [0, 1, 2, 3]) {
           const r = generateMotifWeave(baseInput({ style, seed, capturedNotes: generateSampleCaptured(96, 0, 'major', variant) }));
           const ref = fitRange(identity(r.motif.notes), 60, 84).filter((n) => n.onsetBeat < r.quoteBars * 4 - 1e-6);
-          expect(quotedAt(r.lead, ref, 0), `${style} seed${seed} v${variant} 曲首陈述`).toBe(true);
+          const firstQuote = quoteStarts(r)[0];
+          expect(firstQuote, `${style} seed${seed} v${variant} 有 quote slot`).toBeDefined();
+          expect(quotedPrefix(r.lead, ref, firstQuote), `${style} seed${seed} v${variant} quote@${firstQuote}`).toBe(true);
         }
       }
     }

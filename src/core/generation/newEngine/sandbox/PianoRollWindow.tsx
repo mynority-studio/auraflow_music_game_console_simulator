@@ -33,7 +33,9 @@ export const PianoRollWindow: React.FC<{
   onClose: () => void;
   title?: string;
   sections?: readonly PianoRollSection[];
-}> = ({ ir, open, onClose, title, sections }) => {
+  /** Defaults to 4 for legacy callers; reference scores supply their actual meter numerator. */
+  beatsPerBar?: number;
+}> = ({ ir, open, onClose, title, sections, beatsPerBar = 4 }) => {
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [muted, setMuted] = useState<Set<string>>(new Set());
   const [solo, setSolo] = useState<Set<string>>(new Set());
@@ -75,8 +77,9 @@ export const PianoRollWindow: React.FC<{
   const W = lr.width;
   const H = lr.laneHeight;
   const playX = playTick != null ? (playTick / lr.totalTicks) * W : null;
-  const bars = Math.max(1, Math.ceil(lr.totalTicks / (lr.ppq * 4)));
-  const barLines = Array.from({ length: bars + 1 }, (_, b) => (b * lr.ppq * 4 / lr.totalTicks) * W);
+  const safeBeatsPerBar = Number.isFinite(beatsPerBar) && beatsPerBar > 0 ? beatsPerBar : 4;
+  const bars = Math.max(1, Math.ceil(lr.totalTicks / (lr.ppq * safeBeatsPerBar)));
+  const barLines = Array.from({ length: bars + 1 }, (_, b) => (b * lr.ppq * safeBeatsPerBar / lr.totalTicks) * W);
 
   // 段落底纹 + 分隔线(贯穿每条 strip,纵向对齐曲式)
   const sectionOverlay = (h: number) => (

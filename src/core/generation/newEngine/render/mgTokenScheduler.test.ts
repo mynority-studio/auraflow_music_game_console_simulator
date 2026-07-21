@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { makeSeededRng, hashString } from './mgRng';
-import { scheduleTokens, scheduleBrickExpansions } from './mgTokenScheduler';
+import { reserveScheduledTokensForAuthoredSpans, scheduleTokens, scheduleBrickExpansions } from './mgTokenScheduler';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
 // ============================================================
@@ -83,5 +83,18 @@ describe('render/mgTokenScheduler · scheduleTokens (Loop 3)', () => {
     // brick1 的 token 从 startBeat=2 开始
     const brick1Starts = out.filter((o) => o.startBeat >= 2).map((o) => o.startBeat);
     expect(brick1Starts).toEqual([2, 3]);
+  });
+
+  it('authored brick 在 token 阶段接管区间,跨界音与 ACG return 都变成 rest', () => {
+    const scheduled = scheduleTokens([C(1), C(2), C(1), C(1)], 0).map((entry, index) => ({
+      ...entry,
+      ...(index === 1 ? { acgReturn: { role: 'arrival' } as never } : {}),
+    }));
+    const reserved = reserveScheduledTokensForAuthoredSpans(scheduled, [{ startBeat: 1.5, endBeat: 3.5 }]);
+    const audibleOverlap = reserved.filter((entry) => entry.token.duration > 0 && entry.token.kind !== 'R')
+      .filter((entry) => entry.startBeat < 3.5 && entry.startBeat + entry.token.duration > 1.5);
+    expect(audibleOverlap).toEqual([]);
+    expect(reserved.filter((entry) => entry.token.kind === 'R').every((entry) => entry.acgReturn === undefined)).toBe(true);
+    expect(reserved.some((entry) => entry.startBeat === 1.5 && entry.token.kind === 'SlopeExit')).toBe(true);
   });
 });

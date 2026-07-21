@@ -46,7 +46,6 @@ type DiagnosticAuditionCase = {
     program: number;
     notes: readonly number[];
     velocity: number;
-    channelVolume: number;
     durationMs: number;
 };
 type DiagnosticAuditionVariant = {
@@ -62,7 +61,6 @@ const DEFAULT_INSTRUMENT_KEY = `${ALL_INSTRUMENTS[0].role}:${ALL_INSTRUMENTS[0].
 const NOTE_OFF_CC = 123;
 const ELECTRIC_KEY_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
-const MALLET_PROGRAMS = new Set([11, 12, 107, 108]);
 const DIAGNOSTIC_POLYPHONY = 10;
 
 const auditionKey = (item: Pick<AuditionItem, 'bank' | 'program' | 'role'>): string => `${item.role}:${item.bank}:${item.program}`;
@@ -80,7 +78,9 @@ const clampMidiNote = (note: number): number => Math.max(0, Math.min(127, Math.r
 const diagnosticNotesFor = (item: AuditionItem): readonly number[] => {
     if (item.role === 'drum') return [36, 38, 42, 46, 49, 36, 38, 42, 46, 49];
     if (item.role === 'bass') return [item.note, item.note + 7, item.note + 12, item.note + 15, item.note + 19, item.note + 24, item.note + 28, item.note + 31, item.note + 36, item.note + 40].map(clampMidiNote);
-    if (item.role === 'pad') return [item.note, item.note + 7, item.note + 12, item.note + 16, item.note + 19, item.note + 24, item.note + 28, item.note + 31, item.note + 35, item.note + 40].map(clampMidiNote);
+    // Pad 试听只验证音色/复音，不硬编码大三度或 maj7。开放 1-2-5 跨八度排列
+    // 保持调性中性，避免把固定的“平行三度和声感”误听成这个合成器音色本身。
+    if (item.role === 'pad') return [item.note, item.note + 7, item.note + 12, item.note + 14, item.note + 19, item.note + 24, item.note + 26, item.note + 31, item.note + 36, item.note + 38].map(clampMidiNote);
     if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return [52, 57, 61, 64, 68, 70, 72, 76, 80, 88];
     if (item.program === 66 || item.program === 67) return [43, 47, 50, 54, 57, 62, 66, 69, 72, 72];
     if (item.program === 108) return [60, 64, 67, 71, 74, 76, 79, 81, 84, 88];
@@ -95,16 +95,6 @@ const diagnosticVelocityFor = (item: AuditionItem): number => {
     if (item.program === 0) return 78;
     return 76;
 };
-const diagnosticVolumeFor = (item: AuditionItem): number => {
-    if (item.role === 'drum') return item.program === 8 ? 48 : 90;
-    if (item.role === 'pad') return 78;
-    if (item.role === 'bass') return 84;
-    if (item.program === 66 || item.program === 67) return 64;
-    if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return 56;
-    if (item.program === ELECTRIC_KEY_PROGRAM) return 80;
-    if (item.program === 108) return 72;
-    return 84;
-};
 const diagnosticDurationFor = (item: AuditionItem): number => {
     if (item.role === 'drum') return 900;
     if (item.role === 'pad') return 2600;
@@ -113,20 +103,21 @@ const diagnosticDurationFor = (item: AuditionItem): number => {
 };
 const DIAGNOSTIC_AUDITION_CASES: readonly DiagnosticAuditionCase[] = GM128_FULL_AUDITION_INSTRUMENTS.map(item => ({
     id: `${item.bank}-${item.program}-${item.role}`,
-    label: `${item.name} ${DIAGNOSTIC_POLYPHONY}${item.role === 'drum' ? '击' : '复音'}`,
+    label: item.role === 'pad'
+      ? `${item.name} 开放 1·2·5 ${DIAGNOSTIC_POLYPHONY}复音`
+      : `${item.name} ${DIAGNOSTIC_POLYPHONY}${item.role === 'drum' ? '击' : '复音'}`,
     role: item.role,
     bank: item.bank,
     program: item.program,
     notes: diagnosticNotesFor(item),
     velocity: diagnosticVelocityFor(item),
-    channelVolume: diagnosticVolumeFor(item),
     durationMs: diagnosticDurationFor(item),
 }));
 const DIAGNOSTIC_AUDITION_VARIANTS: readonly DiagnosticAuditionVariant[] = [
     {
         id: 'midi',
         label: 'MIDI',
-        title: '通过 MIDI 输出面板当前连接的设备发送 Bank/Program/CC 与复音 Note On/Off。',
+        title: '通过 MIDI 输出面板当前连接的设备只发送 Bank/Program 与复音 Note On/Off。',
     },
 ];
 
@@ -148,8 +139,8 @@ export const SoundFontSelector: React.FC = () => {
     const [midiUploadStatus, setMidiUploadStatus] = useState<string | null>(null);
     const [midiUploadPlaying, setMidiUploadPlaying] = useState(false);
     const handleMidiFile = async (file: File) => {
-        /* 上传语义=「替换当前播放」（codex P2）：选文件即先停旧播放并复位 UI——
-         * 失败路径由此不会出现「旧曲还响但停止钮消失」的状态分叉。 */
+        /* 上传语义=「替换当前播放」（codex P2）：选文件即先停当前播放并复位 UI——
+         * 失败路径由此不会出现「上一首还响但停止钮消失」的状态分叉。 */
         AudioEngine.stop();
         setMidiUploadPlaying(false);
         try {
@@ -207,9 +198,6 @@ export const SoundFontSelector: React.FC = () => {
     const stopAudition = (): void => {
         clearAuditionTimers();
         AudioEngine.controllerChange(AUDITION_CHANNEL, NOTE_OFF_CC, 0);
-        AudioEngine.controllerChange(AUDITION_CHANNEL, 72, 64);
-        AudioEngine.controllerChange(AUDITION_CHANNEL, 74, 64);
-        AudioEngine.controllerChange(AUDITION_CHANNEL, 95, 0);
         AudioEngine.controllerChange(DRUM_CHANNEL, NOTE_OFF_CC, 0);
         setAuditioning(null);
     };
@@ -251,14 +239,6 @@ export const SoundFontSelector: React.FC = () => {
         try {
             await startAudioContext();
             const channel = item.role === 'drum' ? DRUM_CHANNEL : AUDITION_CHANNEL;
-            AudioEngine.controllerChange(channel, 7, diagnosticVolumeFor(item));
-            AudioEngine.controllerChange(channel, 10, 64);
-            AudioEngine.controllerChange(channel, 11, 127);
-            AudioEngine.controllerChange(channel, 72, item.program === ELECTRIC_KEY_PROGRAM ? 68 : 64);
-            AudioEngine.controllerChange(channel, 74, item.program === ELECTRIC_KEY_PROGRAM ? 54 : 64);
-            AudioEngine.controllerChange(channel, 91, item.role === 'pad' ? 58 : item.program === ELECTRIC_KEY_PROGRAM ? 28 : item.program === FOLK_GUITAR_PROGRAM ? 38 : 30);
-            AudioEngine.controllerChange(channel, 93, item.program === ELECTRIC_KEY_PROGRAM ? 20 : MALLET_PROGRAMS.has(item.program) ? 0 : 12);
-            AudioEngine.controllerChange(channel, 95, 0);
             selectPresetRaw(channel, item);
             if (item.role === 'drum') drumPhrase();
             else melodicPhrase(item);
@@ -285,7 +265,6 @@ export const SoundFontSelector: React.FC = () => {
                 program: testCase.program,
                 notes: testCase.notes,
                 velocity: testCase.velocity,
-                volume: testCase.channelVolume,
                 durationMs: testCase.durationMs,
             });
             if (!sent) throw new Error('请先在 MIDI 输出面板打开并选择设备');
@@ -541,7 +520,7 @@ export const SoundFontSelector: React.FC = () => {
                             <div className="space-y-1.5">
                                 {DIAGNOSTIC_AUDITION_CASES.map(testCase => (
                                     <div key={testCase.id} className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-1.5">
-                                        <span className="truncate text-[10px] text-zinc-500" title={`${testCase.notes.join('+')} · ${gm128Display(testCase)} · CC7 ${testCase.channelVolume} · vel ${testCase.velocity}`}>
+                                        <span className="truncate text-[10px] text-zinc-500" title={`${testCase.notes.join('+')} · ${gm128Display(testCase)} · vel ${testCase.velocity}`}>
                                             {testCase.label}
                                         </span>
                                         {DIAGNOSTIC_AUDITION_VARIANTS.map(variant => {

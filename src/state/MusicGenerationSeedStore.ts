@@ -1,7 +1,7 @@
 // ============================================================
 // MusicGenerationSeedStore — Q+N 音乐生成 seed(qn_main_engine_takeover §7.3)
 // ------------------------------------------------------------
-// 取代旧 MgSeedStore。用户输入字母数字 seed → hashSeedToInt → Q+N number seed。
+// 用户输入字母数字 seed → hashSeedToInt → Q+N number seed。
 // ============================================================
 
 let _suffix: string = '42';

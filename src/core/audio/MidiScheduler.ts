@@ -32,9 +32,18 @@ const TRAILING_SILENCE_MS = 200;
 
 function midiEventOrder(ev: MidiEvent): number {
     if (ev.type === 'noteOff') return 0;
-    if (ev.type === 'cc' || ev.type === 'programChange' || ev.type === 'pitchBend') return 1;
-    if (ev.type === 'noteOn') return 2;
-    return 3;
+    // State changes at one tick have an audible order on the Dream board.
+    // Release a damper, restore controller defaults, then select bank/program,
+    // apply piano expression, re-engage a planned pedal, and finally strike.
+    if (ev.type === 'cc' && ev.data1 === 64 && ev.data2 <= 63) return 1;
+    if (ev.type === 'cc' && ev.data1 === 121) return 2;
+    if (ev.type === 'cc' && ev.data1 === 0) return 3;
+    if (ev.type === 'programChange') return 4;
+    if (ev.type === 'cc' && ev.data1 === 64 && ev.data2 >= 64) return 6;
+    if (ev.type === 'cc' && ev.data1 === 11) return 5;
+    if (ev.type === 'cc' || ev.type === 'pitchBend') return 5;
+    if (ev.type === 'noteOn') return 7;
+    return 7;
 }
 
 function compareMidiEvents(a: MidiEvent, b: MidiEvent): number {
@@ -66,19 +75,21 @@ export class MidiScheduler {
     private startTickAtResume = 0;
     private tickHandle: ReturnType<typeof setInterval> | null = null;
     private endFireScheduled = false;
+    /** Explicit score/form end. May be later than the last note-off because a written tail is still musical time. */
+    private trackEndTick = 0;
 
     private mutedChannels: Set<number> = new Set();
     private visualListeners: ((data: any) => void)[] = [];
     private midiEventListeners: MidiEventListener[] = [];
     private endListeners: (() => void)[] = [];
 
-    public init(_synth: unknown): void { /* MIDI-only:保留旧签名兼容,事件由监听器消费。 */ }
+    public init(_synth: unknown): void { /* MIDI-only:保留 init 签名兼容,事件由监听器消费。 */ }
 
     // -----------------------------------------------------------
     // 事件流装载
     // -----------------------------------------------------------
 
-    public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
+    public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[], durationTicks?: number): void {
         // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次。
         // MIDI-only：CC95 作为硬件 delay send 直通，不再生成浏览器 echo 代偿音符。
         this.events = normalizeAndSortEvents(events);
@@ -86,6 +97,8 @@ export class MidiScheduler {
         this.currentTick = 0;
         this.nextEventIdx = 0;
         this.endFireScheduled = false;
+        const lastEventTick = this.events[this.events.length - 1]?.ticks ?? 0;
+        this.trackEndTick = Math.max(lastEventTick, Math.max(0, Math.round(durationTicks ?? lastEventTick)));
     }
 
     public load(events: MidiEvent[], bpm: number): void { this.loadTrack(events, bpm); }
@@ -112,6 +125,7 @@ export class MidiScheduler {
         this.currentTick = 0;
         this.nextEventIdx = 0;
         this.endFireScheduled = false;
+        this.trackEndTick = 0;
         this.panic();
     }
 
@@ -124,11 +138,12 @@ export class MidiScheduler {
     }
 
     public panic(): void {
-        // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音。
-        // listeners 通知硬件 MIDI 输出层；不再回退到浏览器合成器。
+        // Release a damper before All Notes Off, then restore documented board
+        // controller defaults. The score never owns a persistent Pad CC1 lane.
         for (let ch = 0; ch < 16; ch++) {
-            const ev: MidiEvent = { ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 };
-            this.notifyMidiEventListeners(ev);
+            this.notifyMidiEventListeners({ ticks: this.currentTick, type: 'cc', channel: ch, data1: 64, data2: 0 });
+            this.notifyMidiEventListeners({ ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 });
+            this.notifyMidiEventListeners({ ticks: this.currentTick, type: 'cc', channel: ch, data1: 121, data2: 0 });
         }
     }
 
@@ -162,7 +177,7 @@ export class MidiScheduler {
         }
 
         // 曲终检测
-        if (this.nextEventIdx >= this.events.length && !this.endFireScheduled) {
+        if (this.nextEventIdx >= this.events.length && this.currentTick >= this.trackEndTick && !this.endFireScheduled) {
             this.endFireScheduled = true;
             setTimeout(() => {
                 if (this.isPlaying) {
@@ -215,6 +230,7 @@ export class MidiScheduler {
             else hi = mid;
         }
         this.events.splice(lo, 0, ev);
+        this.trackEndTick = Math.max(this.trackEndTick, ev.ticks);
         if (lo < this.nextEventIdx) this.nextEventIdx++;
     }
 
@@ -236,6 +252,7 @@ export class MidiScheduler {
         });
         this.events.push(...newEvents);
         this.events.sort(compareMidiEvents);
+        this.trackEndTick = Math.max(this.trackEndTick, this.events[this.events.length - 1]?.ticks ?? 0);
     }
 
     // -----------------------------------------------------------

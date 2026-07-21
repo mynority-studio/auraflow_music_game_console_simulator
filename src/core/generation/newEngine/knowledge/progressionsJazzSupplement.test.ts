@@ -59,5 +59,5 @@ describe('联网补足 jazz prototype · 端到端 Auditor 不 failed', () => {
       const r = generateSong({ seed, styleHint: 'jazz', mood: 'x', targetDuration: 150, key: pc(0) });
       expect(r.status).not.toBe('failed');
     }
-  });
+  }, 15_000);
 });

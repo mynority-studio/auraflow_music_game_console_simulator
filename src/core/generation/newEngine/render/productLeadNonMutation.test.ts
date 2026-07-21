@@ -16,7 +16,7 @@ import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
 import { gateByDensity, leadAvoidExposureResolver, renderSongFull } from './renderCoordinator';
-import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
 import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
@@ -33,6 +33,7 @@ import type { AuditFinding } from '../ir/AuditReport';
 import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 import { applyEnding, applyLeadIns } from './ending';
 import { applyDynamics, type EnergyRange } from './dynamics';
+import { MOTIF_POLICY_REPEAT_GROUP } from '../arranger/arrangementArchetypeContract';
 
 function setup(seed: number, style: string) {
   const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
@@ -57,7 +58,10 @@ function expectLeadNear(
     expect(Math.abs((actual[i].startTick as number) - (expected[i].startTick as number)), `${label} start ${i}`).toBeLessThanOrEqual(3);
     expect(Math.abs((actual[i].durationTicks as number) - (expected[i].durationTicks as number)), `${label} dur ${i}`).toBeLessThanOrEqual(3);
     expect(actual[i].velocity, `${label} vel ${i}`).toBe(expected[i].velocity);
-    expect(Math.abs((actual[i].pitch as number) - (expected[i].pitch as number)), `${label} pitch ${i}`).toBeLessThanOrEqual(3);
+    expect(
+      Math.abs((actual[i].pitch as number) - (expected[i].pitch as number)),
+      `${label} pitch ${i}: actual=${actual[i].pitch as number} expected=${expected[i].pitch as number}`,
+    ).toBeLessThanOrEqual(3);
   }
 }
 function leadProgramForSection(instr: ReturnType<typeof buildInstrumentationPlan>, band: ReturnType<typeof buildBandSpec>) {
@@ -81,8 +85,20 @@ function withExpectedLeadGesture<T extends { notes: any[] }>(
   instr: ReturnType<typeof buildInstrumentationPlan>,
   tb: ReturnType<typeof createTimebase>,
 ): T {
+  const strictRange = instr.strictRegisterByRole?.lead;
+  const notes = strictRange ? track.notes.map((note) => {
+    let pitch = Math.round(note.pitch as number);
+    while (pitch > strictRange.highMidi) pitch -= 12;
+    while (pitch < strictRange.lowMidi) pitch += 12;
+    if (pitch < strictRange.lowMidi || pitch > strictRange.highMidi) {
+      pitch = Math.abs(pitch - strictRange.lowMidi) <= Math.abs(pitch - strictRange.highMidi)
+        ? strictRange.lowMidi
+        : strictRange.highMidi;
+    }
+    return pitch === (note.pitch as number) ? note : { ...note, pitch };
+  }) : track.notes;
   const gesture = applyGestureExpressionToTrack(
-    { ...track, role: 'lead', program: instr.roleProgram.lead } as never,
+    { ...track, notes, role: 'lead', program: instr.roleProgram.lead } as never,
     instr.gestureExpressionByRole?.lead,
     tb,
   );
@@ -146,6 +162,41 @@ function withExpectedArrangerGate(
   })[0];
 }
 
+function renderExpectedRawLead(
+  seed: number,
+  band: ReturnType<typeof buildBandSpec>,
+  arrangement: ReturnType<typeof buildArrangementPlan>,
+  instrumentation: ReturnType<typeof buildInstrumentationPlan>,
+  plan: ReturnType<typeof buildHarmonicPlanFromArrangement>,
+  tb: ReturnType<typeof createTimebase>,
+) {
+  return renderMgMelody(
+    plan,
+    band,
+    tb,
+    seed,
+    instrumentation.roleProgram.lead,
+    arrangement.songGrooveContract,
+    undefined,
+    undefined,
+    arrangement.grooveContractBySection,
+    instrumentation.strictRegisterByRole?.lead,
+  );
+}
+
+function applyExpectedReplayPolicy(
+  raw: ReturnType<typeof renderMgMelody>,
+  arrangement: ReturnType<typeof buildArrangementPlan>,
+  plan: ReturnType<typeof buildHarmonicPlanFromArrangement>,
+  tb: ReturnType<typeof createTimebase>,
+) {
+  const gapFilled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arrangement.meter));
+  const motifReplayed = arrangement.resolvedArchetype?.motifPolicyId === MOTIF_POLICY_REPEAT_GROUP
+    ? applyMotifBindingReplay(gapFilled, arrangement, plan.chordTimeline, tb)
+    : gapFilled;
+  return applyRepeatGroupReplay(motifReplayed, arrangement, plan.chordTimeline, tb)[0];
+}
+
 // ★ ACG 已退出 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形,不 == raw MG →
 //   改由 mgBassCompLeadFidelity.test 音乐不变量锁。本 MATRIX 只留 MG-grammar-backed 无 ACG 专属塑形的风格。
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
@@ -156,10 +207,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
   for (const [seed, style] of MATRIX) {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
-      const rawGen = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
-      const raw = rawGen;
-      const filledRaw = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
-      const replayed = applyRepeatGroupReplay(filledRaw, arr, plan.chordTimeline, tb)[0];
+      const raw = renderExpectedRawLead(seed, band, arr, instr, plan, tb);
+      const replayed = applyExpectedReplayPolicy(raw, arr, plan, tb);
       const gated = withExpectedArrangerGate(replayed, arr, instr, plan, tb);
       const withSectionExpression = withExpectedSectionExpression(gated, arr, instr, tb);
       // ★ Phase D(directive 3.2,推翻零洗牌):真 GrooveContract 的 ms melody-pocket 由 applyGroovePocket 在
@@ -174,9 +223,18 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const balancedLegato = { ...sanitizedExp, notes: connectFastLeadNoteIR(sanitizedExp.notes, lo) };
       const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
       const gestured = withExpectedLeadGesture(balancedSanitized, instr, tb);
-      const resolvedNotes = leadAvoidExposureResolver(gestured.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band));
+      const rendered = renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir;
+      const finalCompNotes = rendered.tracks.find((track) => track.role === 'comp')?.notes ?? [];
+      const resolvedNotes = leadAvoidExposureResolver(
+        gestured.notes,
+        plan,
+        tb,
+        leadProgramForSection(instr, band),
+        finalCompNotes,
+        auditKeyContext(band),
+      );
       const expected = { ...gestured, notes: sanitizeLeadNoteIR(resolvedNotes, SAN) };
-      const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
+      const final = leadOf(rendered);
       expectLeadNear(final.notes as never, expected.notes as never, `${seed}/${style}`);
     });
   }

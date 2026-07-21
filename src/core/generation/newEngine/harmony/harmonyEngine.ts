@@ -17,6 +17,7 @@ import { diatonicQuality, pickProgressionDegrees, type SectionRole, type Borrowe
 import { selectProgressionSlots, toHarmonyStyle, type SelectedProgression } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
 import { planTonicization } from './tonicizationPlanner';
+import { compileJazzFiveFourHarmonicDirectives } from './jazzFiveFourHarmonyCompiler';
 import { STYLE_TONICIZE_MAX_PER_SONG, STYLE_BORROW_SOURCE, type TonicizeStyle } from '../knowledge/tonicizationPolicies';
 import { chordToneIntervals, alignChordTypeToMgStyle, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
@@ -58,6 +59,7 @@ export interface ResolvedChord {
   localTonalCenterPc?: PitchClass;
   bassRole?: BassRole;
   bassPedalPc?: PitchClass;
+  bassPc?: PitchClass;
   tonicizationPlacement?: TonicizationPlacement;
   preserveType?: boolean; // ★ 跳过 alignChordTypeToMgStyle 折叠(JPOP ii-V 精确品质)
   // —— Gap A 全字段透传(2026-06-10):slot 作者语义标签携带到 assemble → ChordSpan(不在 render 重建)——
@@ -119,6 +121,7 @@ export function assemble(
       localTonalCenterPc: rc.localTonalCenterPc,
       bassRole: rc.bassRole,
       bassPedalPc: rc.bassPedalPc,
+      bassPc: rc.bassPc,
       tonicizationPlacement: rc.tonicizationPlacement,
       // ★ Gap A:全字段透传(borrowedFrom 等在 harmony 层定,render 只读)。
       borrowedFrom: resolveBorrowedFrom(rc),
@@ -153,6 +156,7 @@ export function assemble(
           isSecondaryDominant: isSec,
           isBorrowed: isBor,
           isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
+          dominantType: rc.chordType ?? rc.quality,
         });
       }
     }
@@ -334,7 +338,7 @@ function overwriteChord(c: ResolvedChord, degree: number, quality: ChordQuality,
   c.borrowedSource = opts.borrowedSource;
   c.mustResolve = opts.mustResolve;
   // 清空旧 prototype 携带的派生字段(避免与新和弦矛盾;chord-scale 在 assemble 重算)
-  c.forcedScale = undefined; c.bassRole = undefined; c.bassPedalPc = undefined;
+  c.forcedScale = undefined; c.bassRole = undefined; c.bassPedalPc = undefined; c.bassPc = undefined;
   c.tonicizationPlacement = undefined; c.localTonalCenterPc = undefined;
 }
 
@@ -413,6 +417,17 @@ export function buildHarmonicPlanFromArrangement(
 
   const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
   const { sectionKeyOf, modulationMap } = planModulation(band, arrangement); // ★ 转调:段落调中心(确定性,候选间不变)
+  // Arranger-explicit Jazz 5/4 form policy compiles the relative KB through
+  // the ordinary ResolvedChord -> assemble seam. No style/meter inference and
+  // no renderer-side harmony path are allowed.
+  const jazzFiveFourResolved = compileJazzFiveFourHarmonicDirectives({
+    band,
+    arrangement,
+    sectionKeyOf,
+  });
+  if (jazzFiveFourResolved) {
+    return assemble(jazzFiveFourResolved, band.key, band.mode, undefined, modulationMap);
+  }
   const styleName = band.style.toUpperCase();
 
   // 产 N 候选 → coherence 择优。advance('harmony') → 每候选不同子流且确定性;
@@ -450,14 +465,19 @@ function buildResolvedProgression(
   const tonSource = STYLE_BORROW_SOURCE[tonStyle];
   const tonByGroup = new Map<string, ResolvedChord[]>();
   let tonFiresUsed = 0;
-
   for (const section of arrangement.sections) {
     const sectionKey = sectionKeyOf(section.id); // 转调段落=新调中心,否则=主调
     const isModulated = sectionKey !== band.key;
     const group = section.repeatGroup;
 
     // ★ prototype-first(Loop 2):匹配到 prototype → 实化它(自带终止/borrow/副属),跳过 degree-picker。
-    const picked = selectProgressionSlots({ band, section, hrng, protoByGroup });
+    const picked = selectProgressionSlots({
+      band,
+      section,
+      hrng,
+      protoByGroup,
+      beatsPerBar,
+    });
     if (picked) {
       let protoChords = realizeProgressionSlots({
         slots: picked.slots, section, sectionKey, isModulated, beatsPerBar,

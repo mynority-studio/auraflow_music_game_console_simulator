@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CHANNELS,
+  DREAM5504_RAW_DEFAULT_OUTPUT,
+  isDream5504RawDefaultMessageAllowed,
   midiEventToRoutedMessage,
   midiMessageToBytes,
   MIDI_OUT_TRACKS,
   resolveOutputChannel,
+  resolveSchedulerOutputChannel,
   registerMidiPolyphonyAuditionSender,
   schedulerChannelToRole,
+  sendNrpn7,
+  sendDream5504NeutralOutputBaseline,
+  sendPanic,
   sendMidiPolyphonyAudition,
 } from './midiOut';
 
@@ -51,16 +57,28 @@ describe('midiOutSandbox/midiOut', () => {
     expect(midiEventToRoutedMessage({ ticks: 0, type: 'visual', channel: 1, data1: 0, data2: 0 })).toBeNull();
   });
 
-  it('uses channel 1 for every role in five-port mode', () => {
-    expect(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'five-port'))).toEqual([1, 1, 1, 1, 1]);
+  it('keeps official 5504 role channels in five-port upstream routing', () => {
+    expect(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'five-port'))).toEqual([1, 2, 3, 4, 10]);
     expect(midiEventToRoutedMessage(
       { ticks: 0, type: 'noteOn', channel: 9, data1: 36, data2: 100 },
       DEFAULT_CHANNELS,
       'five-port',
     )).toEqual({
       role: 'drum',
-      message: { type: 'noteOn', channel: 1, data1: 36, data2: 100 },
+      message: { type: 'noteOn', channel: 10, data1: 36, data2: 100 },
     });
+  });
+
+  it('never changes role channels between single-port and five-port routing', () => {
+    expect(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'single-port')))
+      .toEqual(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'five-port')));
+  });
+
+  it('keeps realtime audition channel 15 on MIDI channel 16 instead of overwriting Lead', () => {
+    expect(resolveSchedulerOutputChannel(15, 'single-port')).toBe(16);
+    expect(resolveSchedulerOutputChannel(15, 'five-port')).toBe(16);
+    expect(resolveSchedulerOutputChannel(1, 'single-port')).toBe(1);
+    expect(resolveSchedulerOutputChannel(9, 'single-port')).toBe(10);
   });
 
   it('forwards engine polyphony auditions only while a MIDI output sender is registered', () => {
@@ -70,7 +88,6 @@ describe('midiOutSandbox/midiOut', () => {
       program: 4,
       notes: [60, 64, 67],
       velocity: 90,
-      volume: 100,
       durationMs: 2200,
     };
     expect(sendMidiPolyphonyAudition(request)).toBe(false);
@@ -83,5 +100,77 @@ describe('midiOutSandbox/midiOut', () => {
     expect(received).toEqual([request]);
     unregister();
     expect(sendMidiPolyphonyAudition(request)).toBe(false);
+  });
+
+  it('panic only sends transport safety reset and centered pitch bend', () => {
+    const sent: number[][] = [];
+    const output = { send: (bytes: number[]) => sent.push([...bytes]) } as unknown as MIDIOutput;
+    sendPanic(output, 0);
+
+    for (let rawChannel = 0; rawChannel < 16; rawChannel++) {
+      const status = 0xb0 | rawChannel;
+      const channelMessages = sent.filter((bytes) => (bytes[0] & 0x0f) === rawChannel);
+      expect(channelMessages, `raw ch${rawChannel}`).toEqual([
+        [status, 64, 0],
+        [status, 120, 0],
+        [status, 123, 0],
+        [status, 121, 0],
+        [0xe0 | rawChannel, 0, 64],
+      ]);
+    }
+  });
+
+  it('raw-default policy admits only piano-role CC11/CC64 plus default-state transport', () => {
+    expect(DREAM5504_RAW_DEFAULT_OUTPUT).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'noteOn', channel: 1, data1: 60, data2: 90 })).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'programChange', channel: 1, data1: 5 })).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 0, data2: 16 })).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 1, data2: 28 })).toBe(false);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 1, data2: 28 }, 'lead')).toBe(false);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 11, data2: 90 }, 'lead')).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 11, data2: 90 }, 'pad')).toBe(false);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 2, data1: 64, data2: 127 }, 'comp')).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 64, data2: 127 }, 'pad')).toBe(false);
+    for (const controller of [7, 10, 71, 72, 74, 78, 91, 93, 98, 99]) {
+      expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: controller, data2: 0 }), `CC${controller}`).toBe(false);
+    }
+    for (const controller of [64, 120, 121, 123]) {
+      expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: controller, data2: 0 }), `CC${controller}=0`).toBe(true);
+      expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: controller, data2: 127 }), `CC${controller}=127`).toBe(false);
+    }
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'pitchBend', channel: 1, data1: 8192 })).toBe(false);
+  });
+
+  it('encodes Dream NRPN 3707h master volume and deselects the parameter', () => {
+    const sent: number[][] = [];
+    const output = { send: (bytes: number[]) => sent.push([...bytes]) } as unknown as MIDIOutput;
+    sendNrpn7(output, 1, 0x3707, 104, 0);
+    expect(sent).toEqual([
+      [0xb0, 99, 0x37],
+      [0xb0, 98, 0x07],
+      [0xb0, 6, 104],
+      [0xb0, 99, 0x7f],
+      [0xb0, 98, 0x7f],
+    ]);
+  });
+
+  it('writes the official Dream neutral EQ/front-output NRPN baseline', () => {
+    const sent: number[][] = [];
+    const output = { send: (bytes: number[]) => sent.push([...bytes]) } as unknown as MIDIOutput;
+    sendDream5504NeutralOutputBaseline(output, 0);
+
+    const parameters = sent
+      .map((bytes, index) => ({ bytes, index }))
+      .filter(({ bytes }) => bytes[1] === 99 && bytes[2] !== 0x7f)
+      .map(({ bytes, index }) => ({
+        parameter: (bytes[2] << 8) | sent[index + 1][2],
+        value: sent[index + 2][2],
+      }));
+    expect(parameters).toEqual([
+      { parameter: 0x3755, value: 0 },
+      { parameter: 0x3708, value: 0x40 },
+      { parameter: 0x370b, value: 0x40 },
+      { parameter: 0x375e, value: 0x40 },
+    ]);
   });
 });

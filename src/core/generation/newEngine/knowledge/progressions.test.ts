@@ -38,11 +38,58 @@ describe('knowledge/progressions', () => {
 });
 
 describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
-  it('POOL = modern20 + lofi16 + acg7 = 43,不含 legacy,id 唯一(+JPOP canon + walkdown + ACG Phase 2a)', () => {
-    expect(PROGRESSION_POOL).toHaveLength(43);
+  it('POOL = approved 48 + Jazz 5/4 minor vamp = 49,不含 legacy,id 唯一', () => {
+    expect(PROGRESSION_POOL).toHaveLength(49);
     expect(PROGRESSION_POOL.some((p) => p.id.startsWith('legacy_'))).toBe(false);
-    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(43);
-    expect(PROGRESSION_POOL.filter((p) => p.style === 'ACG')).toHaveLength(7); // ACG 7 基底进行
+    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(49);
+    expect(PROGRESSION_POOL.filter((p) => p.style === 'ACG')).toHaveLength(12); // 旧 ACG 7 + rooted-minor 5
+  });
+
+  it('ACG PIANOSONG rooted-minor profile:短段都有专属原型，非 pedal 默认根音', () => {
+    const rooted = listProgressionPrototypes({ style: 'ACG', mode: 'Minor' })
+      .filter((p) => p.subStyles?.includes('ACG PIANOSONG Rooted Minor'));
+    expect(rooted.map((p) => p.id)).toEqual([
+      'acg_piano_minor_pedal_intro_4',
+      'acg_piano_minor_aeolian_theme_8',
+      'acg_piano_minor_aeolian_cell_4',
+      'acg_piano_minor_relative_dorian_lift_4',
+      'acg_piano_minor_harmonic_cadence_4',
+    ]);
+
+    const intro = rooted.find((p) => p.id === 'acg_piano_minor_pedal_intro_4')!;
+    expect(intro.slots.every((s) => s.roman === 'i' && s.bassRole === 'pedal' && s.bassPedalPc === undefined)).toBe(true);
+
+    for (const proto of rooted.filter((p) => p !== intro)) {
+      expect(proto.slots.every((s) => s.bassRole === 'root')).toBe(true);
+      expect(proto.slots.some((s) => s.bassRole === '3rd' || s.bassRole === '5th')).toBe(false);
+    }
+  });
+
+  it('ACG rooted-minor:自然小调主干、Dorian 只作 lift 色彩、收尾为 V7→i', () => {
+    const acg = (id: string) => PROGRESSION_POOL.find((p) => p.id === id)!;
+    const theme = acg('acg_piano_minor_aeolian_theme_8');
+    expect(theme.slots.map((s) => s.roman)).toEqual(['i', 'bVI', 'bIII', 'bVII', 'i', 'iv', 'bVI', 'bVII']);
+    expect(theme.slots.map((s) => s.type)).not.toContain('maj9');
+
+    const lift = acg('acg_piano_minor_relative_dorian_lift_4');
+    expect(lift.slots[0]).toMatchObject({ roman: 'i', type: 'm6/9', forcedScale: 'Dorian' });
+    expect(lift.slots[1].roman).toBe('bIII'); // relative-major window
+
+    const coda = acg('acg_piano_minor_harmonic_cadence_4');
+    expect(coda.slots.slice(-2).map((s) => [s.roman, s.type, s.mustResolve])).toEqual([
+      ['V', '7', true],
+      ['i', 'madd9', undefined],
+    ]);
+  });
+
+  it('ACG rooted-minor:4-bar form 能命中 intro / theme / lift / cadence，而不是退回通用 degree-picker', () => {
+    const pick = (functionRole: 'intro' | 'verse' | 'bridge' | 'ending') =>
+      pickProgressionPrototype({ style: 'ACG', mode: 'Minor', functionRole, bars: 4, random: { next: () => 0 } });
+
+    expect(pick('intro')!.map((s) => s.roman)).toEqual(['i', 'i', 'i', 'i']);
+    expect(pick('verse')!.map((s) => s.roman)).toEqual(['i', 'bVI', 'bIII', 'bVII']);
+    expect(pick('bridge')!.map((s) => s.roman)).toEqual(['i', 'bIII', 'bVII', 'V']);
+    expect(pick('ending')!.map((s) => s.roman)).toEqual(['iv', 'bVI', 'V', 'i']);
   });
 
   it('POP major 能选到 pop_canon_8 / pop_4536251_8', () => {

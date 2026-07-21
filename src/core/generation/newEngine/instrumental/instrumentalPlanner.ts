@@ -10,18 +10,32 @@
 import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, OpeningTextureEntry, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
-import { phraseStartBeats } from '../arranger/phraseTiming';
+import { beatsPerBarOf, phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole, dream5504OrchestrationBank } from '../knowledge/instruments';
 import {
   chooseEnsembleWorld,
   ensembleAllowsRoleProgram,
   orchestrateRolePrograms,
 } from '../knowledge/gmOrchestrationChains';
-import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
+import { pickSpaceProfile, mixForProgram, enforceRelationalMix, isDream5504DryBaselineStyle, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, drumPerformanceVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
-import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, DREAM5504_VOICE_WORLD_COUNTS, gmbkVoiceLabel, mapProgramToDream5504, mapRoleProgramsToDream5504, selectGMBK5X128Voice, type AcgPianoSongVoice, type GM128VoiceSelection } from '../../../sound/GMBK5X128Voices';
+import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, gmbkVoiceLabel, isAcousticPianoVoice, mapProgramToDream5504, mapRoleProgramsToDream5504, selectGMBK5X128Voice, type AcgPianoSongVoice, type GM128VoiceSelection } from '../../../sound/GMBK5X128Voices';
 import { buildGestureExpressionByRole } from './gestureExpression';
+import {
+  ACTIVE_DREAM_ORCHESTRATION_PALETTE,
+  applyAcousticDebugPalette,
+  type DreamOrchestrationPaletteId,
+} from './acousticDebugPalette';
+import { dreamVoiceCcProfile, hasDocumentedPedal, mayEmitAutomaticCc } from './dreamCcCapabilities';
+import {
+  DREAM5504_DRUM_KIT_COUNT,
+  DREAM5504_MODERN_MELODIC_VOICE_COUNT,
+  DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT,
+  DREAM5504_VOICE_FAMILY_COUNTS,
+  dreamVoiceProfileFor,
+  type DreamVoiceProfile,
+} from './dreamVoiceProfiles';
 import {
   freezeInstrumentationPlan,
   type BoundaryGesturePlan,
@@ -29,7 +43,11 @@ import {
   type HookAnchorSlot,
   type InstrumentationPlan,
   type InstrumentationPlanData,
+  type ControllerBeatEvent,
   type RegisterRange,
+  type PedalBeatEvent,
+  type RoleControllerPlan,
+  type RolePedalPlan,
   type SongEntryPlan,
   type TextureKind,
   type TransitionPlan,
@@ -47,6 +65,194 @@ const REGISTER_BY_ROLE: Record<InstrumentRoleName, RegisterRange> = {
   lead: rr(67, 84),
   drum: rr(35, 50),
 };
+
+function isFastKeyboardMotion(motion: string | undefined): boolean {
+  return motion === 'sixteenth-ostinato' || motion === 'syncopated-comp' || motion === 'percussive';
+}
+
+function isPedalKeyboardMotion(motion: string | undefined): boolean {
+  return motion === 'lyrical' || motion === 'broken-chord';
+}
+
+function pedalPlanForRole(args: {
+  role: InstrumentRoleName;
+  arrangement: ArrangementPlan;
+  harmonic?: HarmonicPlan;
+  programByRoleSection: Record<InstrumentRoleName, Record<string, number>>;
+  bankByRoleSection: Record<InstrumentRoleName, Record<string, number | undefined>>;
+  activeRolesBySection: Record<string, readonly InstrumentRoleName[]>;
+  sharedPianoMotionRole?: InstrumentRoleName;
+  playerGroup?: 'shared-piano';
+}): RolePedalPlan {
+  const { role, arrangement, harmonic, programByRoleSection, bankByRoleSection, activeRolesBySection, sharedPianoMotionRole, playerGroup } = args;
+  const disabledBySection: RolePedalPlan['disabledBySection'] = {};
+  const events: PedalBeatEvent[] = [];
+  const motionRole = sharedPianoMotionRole ?? role;
+
+  for (const section of arrangement.sections) {
+    const sectionId = section.id;
+    const program = programByRoleSection[role]?.[sectionId];
+    const motion = arrangement.rolePerformanceBySection[motionRole]?.[sectionId]?.keyboardMotion;
+    if (!(activeRolesBySection[sectionId] ?? []).includes(role)) {
+      disabledBySection[sectionId] = 'inactive';
+      continue;
+    }
+    if (role === 'bass' && !playerGroup) {
+      disabledBySection[sectionId] = 'independent-piano-bass';
+      continue;
+    }
+    const capability = dreamVoiceCcProfile({ bank: bankByRoleSection[role]?.[sectionId], program: program ?? -1, role });
+    if (!hasDocumentedPedal(capability)) {
+      disabledBySection[sectionId] = 'non-piano-voice';
+      continue;
+    }
+    if (isFastKeyboardMotion(motion)) {
+      disabledBySection[sectionId] = 'fast-keyboard-motion';
+      continue;
+    }
+    if (!isPedalKeyboardMotion(motion) || !harmonic) continue;
+
+    for (const chord of harmonic.chordTimeline) {
+      if (chord.sectionId !== sectionId) continue;
+      const start = chord.startBeat as number;
+      const end = start + (chord.durationBeats as number);
+      // No invented millisecond lift: release exactly at the harmony boundary.
+      // MidiScheduler guarantees CC64-off before CC64-on/noteOn on that tick.
+      events.push({ atBeat: start, down: true, sectionId, reason: playerGroup ? 'shared-piano' : 'piano-harmony' });
+      events.push({ atBeat: end, down: false, sectionId, reason: playerGroup ? 'shared-piano' : 'piano-harmony' });
+    }
+  }
+
+  events.sort((a, b) => a.atBeat - b.atBeat || Number(a.down) - Number(b.down));
+  return { role, playerGroup, events, disabledBySection };
+}
+
+function buildPedalPlanByRole(args: {
+  style: string;
+  lineup: readonly InstrumentRoleName[];
+  arrangement: ArrangementPlan;
+  harmonic?: HarmonicPlan;
+  programByRoleSection: Record<InstrumentRoleName, Record<string, number>>;
+  bankByRoleSection: Record<InstrumentRoleName, Record<string, number | undefined>>;
+  activeRolesBySection: Record<string, readonly InstrumentRoleName[]>;
+  sharedPianoRoles?: readonly InstrumentRoleName[];
+}): Partial<Record<InstrumentRoleName, RolePedalPlan>> {
+  const { style, lineup, arrangement, harmonic, programByRoleSection, bankByRoleSection, activeRolesBySection, sharedPianoRoles } = args;
+  const out: Partial<Record<InstrumentRoleName, RolePedalPlan>> = {};
+  const sharedGroup = sharedPianoRoles
+    ?? (style.toLowerCase() === 'acg' && ACG_PIANO_ROLES.every((role) => lineup.includes(role)) ? ACG_PIANO_ROLES : undefined);
+
+  if (sharedGroup) {
+    for (const role of sharedGroup) {
+      if (!lineup.includes(role)) continue;
+      out[role] = pedalPlanForRole({
+        role,
+        arrangement,
+        harmonic,
+        programByRoleSection,
+        bankByRoleSection,
+        activeRolesBySection,
+        sharedPianoMotionRole: 'comp',
+        playerGroup: 'shared-piano',
+      });
+    }
+  }
+
+  // A keyboard lead can be lyrical, but an independent piano bass is dry by
+  // contract. Non-keyboard programs are rejected by the capability registry.
+  for (const role of ['comp', 'lead', 'bass'] as const) {
+    if (sharedGroup?.includes(role)) continue;
+    if (!lineup.includes(role)) continue;
+    out[role] = pedalPlanForRole({ role, arrangement, harmonic, programByRoleSection, bankByRoleSection, activeRolesBySection });
+  }
+  return out;
+}
+
+const PIANO_EXPRESSION_CC = 11;
+
+// The uploaded Merry Go Round MIDI uses 70/80/90/100 as its recurring CC11
+// plateaus. We keep that proven low-rate vocabulary and let Arranger's
+// keyboardMotion choose phrase-level or bar-level expression; never per-note.
+const PIANO_EXPRESSION_BY_STYLE: Record<string, Partial<Record<string, number>>> = {
+  pop: { setup: 80, story: 90, build: 100, hook: 100, breakdown: 80, outro: 70 },
+  jazz: { setup: 90, story: 90, build: 100, hook: 100, breakdown: 80, outro: 70 },
+  lofi: { setup: 80, loop: 80, build: 90, hook: 90, breakdown: 70, outro: 70 },
+  rnb: { setup: 80, story: 90, build: 100, hook: 100, breakdown: 80, outro: 70 },
+  acg: { setup: 80, story: 90, build: 100, hook: 100, breakdown: 80, outro: 70 },
+};
+
+function pianoExpressionValue(style: string, sectionRole: string): number {
+  const byStyle = PIANO_EXPRESSION_BY_STYLE[style.toLowerCase()] ?? PIANO_EXPRESSION_BY_STYLE.pop!;
+  return byStyle[sectionRole] ?? byStyle.story ?? 90;
+}
+
+/**
+ * CC11 is a channel-level dynamic, not a replacement for velocity. Lyrical
+ * piano uses one phrase plateau plus its explicit CC64 plan. Rhythmic piano
+ * has no CC64 plan and receives one low-rate CC11 plateau per bar instead,
+ * so dense sixteenth/syncopated attacks remain dry and legible on Dream 5504.
+ */
+function buildControllerPlanByRole(args: {
+  style: string;
+  lineup: readonly InstrumentRoleName[];
+  arrangement: ArrangementPlan;
+  activeRolesBySection: Record<string, readonly InstrumentRoleName[]>;
+  voiceProfileByRoleSection: Record<InstrumentRoleName, Record<string, DreamVoiceProfile>>;
+}): Partial<Record<InstrumentRoleName, RoleControllerPlan>> {
+  const { style, lineup, arrangement, activeRolesBySection, voiceProfileByRoleSection } = args;
+  const out: Partial<Record<InstrumentRoleName, RoleControllerPlan>> = {};
+  const beatsPerBar = beatsPerBarOf(arrangement.meter);
+  for (const role of ['lead', 'comp', 'bass'] as const) {
+    if (!lineup.includes(role)) continue;
+    const events: ControllerBeatEvent[] = [];
+    const disabledBySection: RoleControllerPlan['disabledBySection'] = {};
+    let sectionStart = 0;
+    for (const section of arrangement.sections) {
+      const sectionEnd = sectionStart + section.bars * beatsPerBar;
+      if (!(activeRolesBySection[section.id] ?? []).includes(role)) {
+        disabledBySection[section.id] = 'inactive';
+      } else {
+        const voice = voiceProfileByRoleSection[role]?.[section.id];
+        const capability = voice
+          ? dreamVoiceCcProfile({ ...voice.address, role })
+          : undefined;
+        if (!voice || !isAcousticPianoVoice(voice.address.bank, voice.address.program)) {
+          disabledBySection[section.id] = 'non-piano-voice';
+        } else if (!capability || !mayEmitAutomaticCc(capability, PIANO_EXPRESSION_CC)) {
+          disabledBySection[section.id] = 'unsupported-voice';
+        } else {
+          const motion = arrangement.rolePerformanceBySection[role]?.[section.id]?.keyboardMotion;
+          const baseValue = pianoExpressionValue(style, section.role);
+          if (isFastKeyboardMotion(motion)) {
+            for (let bar = 0; bar < section.bars; bar++) {
+              // Alternate only between verified phrase plateaus. The lower
+              // odd bar is a tiny hand/breath release, not a fake tremolo.
+              const value = bar % 2 === 0 ? baseValue : Math.max(70, baseValue - 10);
+              events.push({
+                atBeat: sectionStart + bar * beatsPerBar,
+                controller: PIANO_EXPRESSION_CC,
+                value,
+                sectionId: section.id,
+                reason: 'piano-motion-expression',
+              });
+            }
+          } else {
+            events.push({
+              atBeat: sectionStart,
+              controller: PIANO_EXPRESSION_CC,
+              value: baseValue,
+              sectionId: section.id,
+              reason: 'piano-phrase-expression',
+            });
+          }
+        }
+      }
+      sectionStart = sectionEnd;
+    }
+    if (events.length > 0) out[role] = { role, events, disabledBySection };
+  }
+  return out;
+}
 
 function registerForRole(role: InstrumentRoleName, program: number | undefined): RegisterRange {
   if (program === undefined) return REGISTER_BY_ROLE[role];
@@ -90,16 +296,18 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     head: ['bass', 'comp', 'drum', 'lead'],
     build: ['bass', 'comp', 'drum', 'lead'],
     solo: ['bass', 'comp', 'drum', 'lead'],
+    loop: ['bass', 'comp', 'drum', 'lead'],
     headOut: ['bass', 'comp', 'drum', 'lead'],
     tag: ['comp', 'bass', 'lead'],
   },
-  // ACG PIANOSONG:先由右手与透明伴奏陈述，低音在 lift/return 才加入，尾声重新留白。
+  // ACG PIANOSONG:一架钢琴的三层手型始终完整——左手低根、右手中部琶音、可选顶声部。
+  // 留白由 lead/comp 的 phrase 手势产生，不能靠抽掉 bass；否则和声重力会在主题/尾声消失。
   acg: {
-    setup: ['comp'],
-    head: ['comp', 'lead'],
+    setup: ['bass', 'comp'],
+    head: ['bass', 'comp', 'lead'],
     build: ['bass', 'comp', 'lead'],
     headOut: ['bass', 'comp', 'lead'],
-    tag: ['comp', 'lead'],
+    tag: ['bass', 'comp', 'lead'],
   },
 };
 
@@ -245,7 +453,15 @@ function buildTransitionPlan(
     const entry = (arrangement.entryBySection[to.id] ?? 'downbeat');
     const toActive = new Set<InstrumentRoleName>(activeRolesBySection[to.id] ?? []);
     const fromActive = new Set<InstrumentRoleName>(activeRolesBySection[from.id] ?? []);
-    const pickupRoles = entry === 'lead-in' ? PICKUP_PREF.filter((r) => toActive.has(r) && has(r)) : [];
+    const pickupRoles = entry === 'lead-in'
+      ? PICKUP_PREF.filter((r) => {
+        if (!toActive.has(r) || !has(r)) return false;
+        const roleEntryMode = arrangement.rolePerformanceBySection?.[r]?.[to.id]?.entryMode;
+        // Arranger 明确写 downbeat/delayed 的新角色不能偷跑到上一段；旧 fixture
+        // 缺 role contract 时保留历史 lead-in 行为。
+        return roleEntryMode === undefined || roleEntryMode === 'pickup' || fromActive.has(r);
+      })
+      : [];
     const releaseRoles = [...toActive].filter((r) => !fromActive.has(r)); // to 段下拍新进入
     boundaries.push({
       fromSectionId: from.id, toSectionId: to.id,
@@ -287,6 +503,7 @@ export function buildInstrumentationPlan(
   rng?: Rng, // ★ 音色切换决策(确定性子流);缺省 = 不切(全曲 primary,向后兼容)
   harmonic?: HarmonicPlan, // ★ #6:吃 HarmonicPlan → 段级 texture 选择用真 dominant-chain(缺省 false,向后兼容)
   acgPianoRng?: Rng, // ACG 整首钢琴 CC0+PC；独立子流，扩充调色板不扰既有 timbre/texture 结果
+  orchestrationPalette: DreamOrchestrationPaletteId = ACTIVE_DREAM_ORCHESTRATION_PALETTE,
 ): InstrumentationPlan {
   // ★ 音色世界统一性:先把 BandEngine 的 provisional roleProgram 过【风格错配修复】(当前池已守住=多为原样,
   //   family-invariant → comp voicing 决策不受影响),再【lead↔comp 配对一致性】修不搭对(电钢配电钢、
@@ -297,7 +514,8 @@ export function buildInstrumentationPlan(
   //   provisional(band.roleProgram,已 seed-变化)当候选,先定真实乐队模板、再按 comp→lead→bass→pad 收敛。
   //   模板只读既有候选和 Arranger groove 合同,不抽 rng、不洗 timbre/grammar/texture 子流；鼓 kit 继续由
   //   songGrooveContract 独占主权。然后过既有安全网(repairWorld/repairCompCapability/coherentLeadComp)。
-  const ensembleWorld = chooseEnsembleWorld(band.style, band.roleProgram, arrangement.songGrooveContractId);
+  const ensembleWorld = arrangement.resolvedArchetype?.instrumentationEnsembleId
+    ?? chooseEnsembleWorld(band.style, band.roleProgram, arrangement.songGrooveContractId);
   const orch = orchestrateRolePrograms({
     style: band.style,
     lineup: band.instrumentPool,
@@ -306,37 +524,81 @@ export function buildInstrumentationPlan(
     ensembleWorld,
     drumKitProgram: arrangement.songGrooveContract.drum?.kitProgram,
   });
+  const sharedPianoRoles = band.style.toLowerCase() === 'acg'
+    || !!orch.sharedInstrumentRoleGroups?.some((roles) =>
+      roles.includes('lead') && roles.includes('comp'))
+    || !!arrangement.resolvedArchetype?.sharedInstrumentRoleGroups?.some((roles) =>
+      roles.includes('lead') && roles.includes('comp'));
   // ★ participant 家族守卫(P1/P2 修复):orchestration/repair 后,把 Band Selection 的乐手家族约束
   //   闭环到【最终发声 program】—— 选了合成氛围(pad)/键盘手(keyboard)等,最终音色一定在该家族内。
   const repairedRoleProgram = enforceRoleFamilies(
-    coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style),
+    coherentLeadComp(
+      repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style),
+      band.style,
+      sharedPianoRoles,
+    ),
     band.familyByRole, band.style,
   );
+  // Arranger 可声明“编制模板音色锁定”：participant 仍决定职责归属/在场范围，但通用家族守卫
+  // 不得在模板兑现之后把它换成另一件乐器。Instrumental 只执行合同，不识别任何 style/archetype id。
+  if (arrangement.resolvedArchetype?.instrumentationVoicePolicy === 'ensemble-locked') {
+    for (const role of band.instrumentPool) {
+      if (orch.roleProgram[role] !== undefined) {
+        repairedRoleProgram[role] = orch.roleProgram[role];
+      }
+    }
+  }
   let roleProgram = { ...mapRoleProgramsToDream5504(repairedRoleProgram, band.style) } as Record<InstrumentRoleName, number>;
+  let paletteBankByRole: Partial<Record<InstrumentRoleName, number>> = {};
+  let paletteSharedPianoRoles: readonly InstrumentRoleName[] | undefined;
   const dream5504Decisions = band.instrumentPool
     .filter((role) => repairedRoleProgram[role] !== undefined && repairedRoleProgram[role] !== roleProgram[role])
     .map((role) => `${role} Dream5504 PC${repairedRoleProgram[role]}→PC${roleProgram[role]}`);
   const isAcgPianoSong = band.style.toLowerCase() === 'acg';
-  const acgPianoVoice = isAcgPianoSong ? pickAcgPianoSongVoice(acgPianoRng) : undefined;
+  let acgPianoVoice = isAcgPianoSong ? pickAcgPianoSongVoice(acgPianoRng) : undefined;
   if (acgPianoVoice) {
     for (const role of ACG_PIANO_ROLES) if (band.instrumentPool.includes(role)) roleProgram[role] = acgPianoVoice.program;
+  }
+  if (orchestrationPalette === 'acoustic-debug') {
+    const acousticDebug = applyAcousticDebugPalette({
+      style: band.style,
+      lineup: band.instrumentPool,
+      provisional: band.roleProgram,
+      requestedDrumProgram: arrangement.songGrooveContract.drum?.kitProgram,
+      instrumentationIntent: arrangement.acousticInstrumentationIntent,
+      palette: orchestrationPalette,
+    });
+    roleProgram = { ...roleProgram, ...acousticDebug.roleProgram };
+    paletteBankByRole = acousticDebug.roleBank;
+    paletteSharedPianoRoles = acousticDebug.sharedPianoRoles;
+    // The Arranger template decides whether several MIDI roles belong to one
+    // physical piano. Non-shared acoustic templates retain independent roles.
+    acgPianoVoice = undefined;
+    dream5504Decisions.push(...acousticDebug.decisions);
   }
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
   const primaryVoiceByRole: Partial<Record<InstrumentRoleName, GM128VoiceSelection>> = {};
   const roleBank: Partial<Record<InstrumentRoleName, number>> = {};
   const voiceNameByRole: Partial<Record<InstrumentRoleName, string>> = {};
+  const voiceProfileByRole: Partial<Record<InstrumentRoleName, DreamVoiceProfile>> = {};
   for (const role of band.instrumentPool) {
     const voice = selectGMBK5X128Voice({
       style: band.style,
       role,
       program: roleProgram[role],
-      bank: acgPianoVoice && ACG_PIANO_ROLES.includes(role) ? acgPianoVoice.bank : undefined,
+      bank: paletteBankByRole[role]
+        ?? (acgPianoVoice && ACG_PIANO_ROLES.includes(role)
+          ? acgPianoVoice.bank
+          : dream5504OrchestrationBank(band.style, role, roleProgram[role])),
       timbreWorld,
     });
     primaryVoiceByRole[role] = voice;
     if (voice.bank !== undefined) roleBank[role] = voice.bank;
     voiceNameByRole[role] = voice.name;
+    const profile = dreamVoiceProfileFor({ bank: voice.bank, program: voice.program, role });
+    if (!profile) throw new Error(`Dream 5504 automatic orchestration resolved an unclassified address: ${role} CC0=${voice.bank ?? 0} PC=${voice.program}`);
+    voiceProfileByRole[role] = profile;
   }
   const gmbkVoiceDecisions = band.instrumentPool
     .map((role) => {
@@ -346,12 +608,25 @@ export function buildInstrumentationPlan(
     .filter((line): line is string => !!line);
   const gestureExpressionByRole = buildGestureExpressionByRole(ALL_ROLES, roleProgram, band.style);
   const registerByRole = Object.fromEntries(
-    ALL_ROLES.map((role) => [role, registerForRole(role, roleProgram[role])]),
+    ALL_ROLES.map((role) => {
+      const ensembleRange = orch.registerByRole?.[role];
+      return [role, ensembleRange ? rr(ensembleRange[0], ensembleRange[1]) : registerForRole(role, roleProgram[role])];
+    }),
   ) as Record<InstrumentRoleName, RegisterRange>;
+  const strictRegisterByRole = orch.registerByRole
+    ? Object.fromEntries(Object.entries(orch.registerByRole).map(([role, range]) => [
+      role,
+      rr(range![0], range![1]),
+    ])) as Partial<Record<InstrumentRoleName, RegisterRange>>
+    : undefined;
   const leadRegisterLow = registerByRole.lead.lowMidi as number;
   const leadRegisterHigh = registerByRole.lead.highMidi as number;
   const melodyReservedRegister: RegisterRange = {
-    lowMidi: midi(Math.min(Math.max(leadRegisterLow, 67), leadRegisterHigh)),
+    // 编制明确写死职责音区时，旋律保留区必须与真实 Lead 地板一致；否则
+    // 碰撞/让位层会把中区旋律误判为只存在于更高音区。
+    lowMidi: strictRegisterByRole?.lead
+      ? registerByRole.lead.lowMidi
+      : midi(Math.min(Math.max(leadRegisterLow, 67), leadRegisterHigh)),
     highMidi: registerByRole.lead.highMidi,
   };
 
@@ -370,7 +645,7 @@ export function buildInstrumentationPlan(
   //   repeatGroup 一致:按 section.role 决策 → 所有 chorus 段同备选、verse 段同 primary。确定性。
   // ★ 每首【掷一次骰】:命中 → 选一个【键盘族 comp/lead】乐手,chorus 换同族备选。最多一个乐手切。
   //   即使模板拒绝该备选，也照旧消费这次抽签、仅维持 primary，避免器配规则改变后续 texture/鼓型的 seed 流。
-  const eligible = (isAcgPianoSong ? [] : band.instrumentPool).filter(
+  const eligible = (isAcgPianoSong || orchestrationPalette === 'acoustic-debug' ? [] : band.instrumentPool).filter(
     (r) => TIMBRE_SWITCH_ROLES.includes(r) && isKeyboardFamily(roleProgram[r]) && sameFamilyAlternates(band.style, r, roleProgram[r]).length > 0,
   );
   let switchRole: InstrumentRoleName | undefined;
@@ -387,11 +662,13 @@ export function buildInstrumentationPlan(
   const programByRoleSection: Record<InstrumentRoleName, Record<string, number>> = {} as Record<InstrumentRoleName, Record<string, number>>;
   const bankByRoleSection: Record<InstrumentRoleName, Record<string, number | undefined>> = {} as Record<InstrumentRoleName, Record<string, number | undefined>>;
   const voiceNameByRoleSection: Record<InstrumentRoleName, Record<string, string>> = {} as Record<InstrumentRoleName, Record<string, string>>;
+  const voiceProfileByRoleSection: Record<InstrumentRoleName, Record<string, DreamVoiceProfile>> = {} as Record<InstrumentRoleName, Record<string, DreamVoiceProfile>>;
   for (const role of band.instrumentPool) {
     const primary = roleProgram[role];
     programByRoleSection[role] = {};
     bankByRoleSection[role] = {};
     voiceNameByRoleSection[role] = {};
+    voiceProfileByRoleSection[role] = {};
     for (const s of arrangement.sections) {
       const selected = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
       const mapped = mapProgramToDream5504(selected, role, band.style);
@@ -399,12 +676,18 @@ export function buildInstrumentationPlan(
         style: band.style,
         role,
         program: mapped,
-        bank: acgPianoVoice && ACG_PIANO_ROLES.includes(role) ? acgPianoVoice.bank : undefined,
+        bank: paletteBankByRole[role]
+          ?? (acgPianoVoice && ACG_PIANO_ROLES.includes(role)
+            ? acgPianoVoice.bank
+            : dream5504OrchestrationBank(band.style, role, mapped)),
         timbreWorld,
       });
       programByRoleSection[role][s.id] = voice.program;
       bankByRoleSection[role][s.id] = voice.bank;
       voiceNameByRoleSection[role][s.id] = voice.name;
+      const profile = dreamVoiceProfileFor({ bank: voice.bank, program: voice.program, role });
+      if (!profile) throw new Error(`Dream 5504 section voice is not in the modern orchestration registry: ${role} CC0=${voice.bank ?? 0} PC=${voice.program}`);
+      voiceProfileByRoleSection[role][s.id] = profile;
     }
   }
 
@@ -425,10 +708,16 @@ export function buildInstrumentationPlan(
   const firstSection = arrangement.sections[0];
   const openingTexture = arrangement.openingGesture.textureEntry;
   if (firstSection && arrangement.openingGesture.sectionId === firstSection.id) {
-    activeRolesBySection[firstSection.id] = band.instrumentPool.filter((role) => {
+    const openingRoles = band.instrumentPool.filter((role) => {
       const delayBars = arrangement.openingGesture.roleDelayBars[role];
       return delayBars !== undefined && delayBars < firstSection.bars;
     });
+    // ACG 的开头也必须先有左手低根，不能让通用 openingGesture 把 piano score
+    // 拆成“孤立右手”。首小节延迟的最终豁免仍由 Arranger/gate 消费；这里先把
+    // bass/comp 的在场合同明确下发给所有后续消费者。
+    activeRolesBySection[firstSection.id] = isAcgPianoSong
+      ? band.instrumentPool.filter((role) => openingRoles.includes(role) || role === 'bass' || role === 'comp')
+      : openingRoles;
     if (openingTexture !== 'none') {
       textureBySection[firstSection.id] = OPENING_TEXTURE_TO_GENERIC[openingTexture];
     }
@@ -466,29 +755,51 @@ export function buildInstrumentationPlan(
     //   ambient/pedal 织体(否则糊在属动机上)。pickTextureForBarWithGroove 仍只掷一次 → rng 序列不变,只换更合适织体。
     // ★ Phase E §3.7:texture 选择消费 arranger 下发的 GrooveContract(preferred/allowed/forbidden + density/grid)→
     //   选中织体契合 groove(POP/JAZZ/RNB/LOFI/ACG);ACG 天然限制在 spacious 集。legacy contract 无偏好 → uniform=旧行为。
-    const grooveContract = arrangement.songGrooveContract;
     const isHigh = (r: string) => r === 'chorus' || r === 'bridge';
-    const lowDom = arrangement.sections.some((s) => !isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
-    const highDom = arrangement.sections.some((s) => isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
-    const low = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, contract: grooveContract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
-    const high = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, contract: grooveContract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
-    const lowTc = low?.textureCase ?? high?.textureCase;
-    const highTc = high?.textureCase ?? lowTc;
-    for (const s of arrangement.sections) {
-      const tc = (s.role === 'chorus' || s.role === 'bridge') ? highTc : lowTc;
-      if (tc) richTextureBySection[s.id] = tc;
+    const groups: Array<{
+      contract: typeof arrangement.songGrooveContract;
+      sections: typeof arrangement.sections[number][];
+    }> = [];
+    const groupByContractId = new Map<string, typeof groups[number]>();
+    for (const section of arrangement.sections) {
+      const contract = arrangement.grooveContractBySection?.[section.id] ?? arrangement.songGrooveContract;
+      let group = groupByContractId.get(contract.id);
+      if (!group) {
+        group = { contract, sections: [] };
+        groups.push(group);
+        groupByContractId.set(contract.id, group);
+      }
+      group.sections.push(section);
+    }
+    const slotsByContractId = new Map<string, { lowTc?: string; highTc?: string }>();
+    for (const group of groups) {
+      const lowDom = group.sections.some((s) => !isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
+      const highDom = group.sections.some((s) => isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
+      const low = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, contract: group.contract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+      const high = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, contract: group.contract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+      const lowTc = low?.textureCase ?? high?.textureCase;
+      const highTc = high?.textureCase ?? lowTc;
+      slotsByContractId.set(group.contract.id, { lowTc, highTc });
+      for (const section of group.sections) {
+        const tc = isHigh(section.role) ? highTc : lowTc;
+        if (tc) richTextureBySection[section.id] = tc;
+      }
     }
 
-    // ★ verse 段内受控变化(≤2/段):低概率,中段切到【兼容连续 ≠base】变体;所有 verse 段一致(repeatGroup)。
-    //   只切 rate='allow'(连续兼容,无需 bridge)→ 段内不留洞。rng 在 low/high 之后取(不扰前置)。
-    if (lowTc && rng.next() < (VERSE_VARIATION_PROB[richStyle] ?? 0.35)) {
+    // ★ verse 段内受控变化(≤2/段):同一 GrooveContract 的 verse 共用兼容变体。
+    //   单 contract 歌仍保持原 low/high/variation RNG 顺序。
+    for (const group of groups) {
+      const lowTc = slotsByContractId.get(group.contract.id)?.lowTc;
+      if (!lowTc || rng.next() >= (VERSE_VARIATION_PROB[richStyle] ?? 0.35)) continue;
       const variant = pickTextureForBarWithGroove({
         style: richStyle, phraseRole: 'develop', density: densityForCell('develop', 'VERSE'), energy: energyForCell('develop', 'VERSE'),
-        isDominantChain: false, contract: grooveContract, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
+        isDominantChain: false, contract: group.contract, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
       });
       const vtc = variant?.textureCase;
       if (vtc && rateTextureTransition(lowTc, vtc).rating === 'allow') {
-        for (const s of arrangement.sections) if (s.role === 'verse') richTextureSwitchBySection[s.id] = { atFraction: 0.5, toTexture: vtc };
+        for (const section of group.sections) {
+          if (section.role === 'verse') richTextureSwitchBySection[section.id] = { atFraction: 0.5, toTexture: vtc };
+        }
       }
     }
   }
@@ -504,6 +815,7 @@ export function buildInstrumentationPlan(
   }
   const variantByPerformanceKey: Record<string, number> = {};
   const drumPatternBySection: Record<string, DrumHit[]> = {};
+  const drumPatternBySectionBar: Record<string, DrumHit[][]> = {};
   for (const s of arrangement.sections) {
     const perf = arrangement.drumPerformanceBySection?.[s.id];
     if (perf) {
@@ -512,12 +824,31 @@ export function buildInstrumentationPlan(
       if (variantByPerformanceKey[key] === undefined) {
         variantByPerformanceKey[key] = rng && variants.length > 1 ? rng.int(variants.length) : 0;
       }
-      drumPatternBySection[s.id] = variants[variantByPerformanceKey[key]] ?? variants[0];
+      const baseVariant = variantByPerformanceKey[key] ?? 0;
+      drumPatternBySection[s.id] = variants[baseVariant] ?? variants[0];
+      const scoreBars = arrangement.grooveScorePlan?.bySection[s.id]?.bars;
+      drumPatternBySectionBar[s.id] = (scoreBars ?? Array.from({ length: s.bars }, (_, barInSection) => ({
+        role: 'base' as const,
+        phraseIndex: Math.floor(barInSection / 4),
+      }))).map((bar) => {
+        const phraseAnswer = bar.phraseIndex % 2;
+        const offset = bar.role === 'answer'
+          ? 1 + phraseAnswer
+          : bar.role === 'lift'
+            ? 2
+            : bar.role === 'turnaround'
+              ? 2 + phraseAnswer
+              : bar.role === 'breakdown'
+                ? 0
+                : phraseAnswer;
+        return variants[(baseVariant + offset) % variants.length] ?? variants[0];
+      });
       continue;
     }
     const gk = (arrangement.grooveBySection[s.id] ?? 'straight') as GrooveKind;
     const variants = drumGrooveVariants(band.style, gk);
     drumPatternBySection[s.id] = variants[variantByGroove[gk] ?? 0] ?? variants[0];
+    drumPatternBySectionBar[s.id] = Array.from({ length: s.bars }, () => drumPatternBySection[s.id]);
   }
 
   // ★ Loop D(2026-06-08):lineup-aware 修复 —— floating / 收尾(outro/tag/setup)段若【pad 不在场】但 lineup 有 comp,
@@ -529,6 +860,15 @@ export function buildInstrumentationPlan(
     const floating = GENERIC_TEXTURE_YIELD[textureBySection[s.id]] === 'floating';
     const isEnding = s.functionTag === 'outro' || s.functionTag === 'tag' || s.functionTag === 'setup';
     if (floating || isEnding) roles.push('comp');
+  }
+
+  // 有 resolved archetype 时，Arranger 的 rolePerformance 是段级在场唯一真源。
+  // Instrumental 仍负责音色/混音/具体演奏能力，但不能再按 style、拍号或段名重写编配。
+  if (arrangement.resolvedArchetype) {
+    for (const section of arrangement.sections) {
+      activeRolesBySection[section.id] = band.instrumentPool.filter((role) =>
+        arrangement.rolePerformanceBySection?.[role]?.[section.id]?.active === true);
+    }
   }
 
   // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):据 style+timbreWorld+role+【每段生效 program】算
@@ -543,17 +883,19 @@ export function buildInstrumentationPlan(
     }
   }
   // 关系型护栏(逐段:pad vs comp 混响差/响度/声像距离;该段无 comp 在场 → pad 是唯一和声,不压其响度)。
-  for (const s of arrangement.sections) {
-    const padOnlyHarmony = !((activeRolesBySection[s.id] as readonly InstrumentRoleName[] | undefined)?.includes('comp'));
-    const sec: Partial<Record<InstrumentRoleName, RoleMix>> = {};
-    for (const role of band.instrumentPool) sec[role] = mixByRoleSection[role]?.[s.id];
-    const fixed = enforceRelationalMix(sec, { padIsOnlyHarmony: padOnlyHarmony });
-    for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
+  if (!isDream5504DryBaselineStyle(band.style)) {
+    for (const s of arrangement.sections) {
+      const padOnlyHarmony = !((activeRolesBySection[s.id] as readonly InstrumentRoleName[] | undefined)?.includes('comp'));
+      const sec: Partial<Record<InstrumentRoleName, RoleMix>> = {};
+      for (const role of band.instrumentPool) sec[role] = mixByRoleSection[role]?.[s.id];
+      const fixed = enforceRelationalMix(sec, { padIsOnlyHarmony: padOnlyHarmony });
+      for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
+    }
   }
 
   // ★ ACG:lead/comp 是同一架钢琴的前景空间（大钢琴/亮钢琴/极少量柔电钢），
   //   统一 reverb/pan，只保留各程序自身的 chorus 差异。
-  if (band.style.toLowerCase() === 'acg') {
+  if (band.style.toLowerCase() === 'acg' && orchestrationPalette !== 'acoustic-debug') {
     for (const s of arrangement.sections) {
       const compMix = mixByRoleSection.comp?.[s.id];
       if (!compMix) continue;
@@ -564,9 +906,28 @@ export function buildInstrumentationPlan(
     }
   }
 
+  const pedalPlanByRole = buildPedalPlanByRole({
+    style: band.style,
+    lineup: band.instrumentPool,
+    arrangement,
+    harmonic,
+    programByRoleSection,
+    bankByRoleSection,
+    activeRolesBySection,
+    sharedPianoRoles: paletteSharedPianoRoles,
+  });
+  const controllerPlanByRole = buildControllerPlanByRole({
+    style: band.style,
+    lineup: band.instrumentPool,
+    arrangement,
+    activeRolesBySection,
+    voiceProfileByRoleSection,
+  });
+
   const data: InstrumentationPlanData = {
     activeRolesBySection,
     registerByRole,
+    strictRegisterByRole,
     textureBySection,
     richTextureBySection,
     richTextureSwitchBySection,
@@ -574,8 +935,11 @@ export function buildInstrumentationPlan(
     roleProgram, // ★ 生效基底 program(链式协同 + repair 后)→ render 单一真源
     roleBank,
     voiceNameByRole,
+    voiceProfileByRole,
     orchestrationChain: {
-      world: orch.world, profileId: orch.profileId, ensembleWorld: orch.ensembleWorld,
+      world: orchestrationPalette === 'acoustic-debug' ? 'acousticPianoBand' : orch.world,
+      profileId: orchestrationPalette === 'acoustic-debug' ? 'acoustic-debug' : orch.profileId,
+      ensembleWorld: orchestrationPalette === 'acoustic-debug' ? undefined : orch.ensembleWorld,
       compProgram: roleProgram.comp, compBank: roleBank.comp,
       leadProgram: roleProgram.lead, leadBank: roleBank.lead,
       bassProgram: roleProgram.bass, bassBank: roleBank.bass,
@@ -584,7 +948,7 @@ export function buildInstrumentationPlan(
       voiceNames: voiceNameByRole,
       decisions: [
         ...orch.decisions,
-        `Dream5504 world keyboard=${DREAM5504_VOICE_WORLD_COUNTS.keyboard} bass=${DREAM5504_VOICE_WORLD_COUNTS.bass} pad=${DREAM5504_VOICE_WORLD_COUNTS.pad} drum=${DREAM5504_VOICE_WORLD_COUNTS.drum}`,
+        `Dream5504 modern-GM melodic=${DREAM5504_MODERN_MELODIC_VOICE_COUNT} drumKits=${DREAM5504_DRUM_KIT_COUNT} MT32-excluded=${DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT}`,
         ...dream5504Decisions,
         ...(acgPianoVoice ? [`ACG PIANOSONG song-piano ${acgPianoVoice.name}(GM${acgPianoVoice.program},CC0=${acgPianoVoice.bank})`] : []),
         ...gmbkVoiceDecisions,
@@ -592,15 +956,22 @@ export function buildInstrumentationPlan(
     },
     hardwareVoiceWorld: {
       targetId: DREAM5504_TARGET_ID,
-      voiceCounts: { ...DREAM5504_VOICE_WORLD_COUNTS },
+      melodicVoiceCount: DREAM5504_MODERN_MELODIC_VOICE_COUNT,
+      drumKitCount: DREAM5504_DRUM_KIT_COUNT,
+      excludedMt32CompatibilityVoiceCount: DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT,
+      familyCounts: { ...DREAM5504_VOICE_FAMILY_COUNTS },
     },
     programByRoleSection,
     bankByRoleSection,
     voiceNameByRoleSection,
+    voiceProfileByRoleSection,
     mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
     spaceProfile,
     gestureExpressionByRole,
+    pedalPlanByRole,
+    controllerPlanByRole,
     drumPatternBySection,
+    drumPatternBySectionBar,
     timbreWorld,
     sameInstrumentPairs: samePairs.length ? samePairs : undefined,
     melodyReservationPlan: {

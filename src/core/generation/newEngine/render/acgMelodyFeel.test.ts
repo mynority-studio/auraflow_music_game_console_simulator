@@ -7,7 +7,7 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { createTimebase, createRandomContext, pc } from '../foundation';
 
 // ============================================================
-// MG 升级 Phase 2c(part 1)— ACG 旋律 grammar(复用 LOFI)+ feel(ballad/直拍)
+// ACG PIANOSONG：带标签的内部钢琴语料池 + feel(ballad/直拍)
 // ============================================================
 
 describe('render/acgMelodyFeel(MG 升级 Phase 2c)', () => {
@@ -24,7 +24,7 @@ describe('render/acgMelodyFeel(MG 升级 Phase 2c)', () => {
     expect(feelForStyle('pop').articulation).toBe('legato');
   });
 
-  it('★ ACG 旋律生成非空 + 音域合理(LOFI grammar + preserveSlope 链不崩)', () => {
+  it('★ ACG 旋律生成非空 + 音域合理(内部钢琴 grammar bank + preserveSlope 链不崩)', () => {
     for (const seed of [7, 42]) {
       const band = buildBandSpec({ seed, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
       const arrangement = buildArrangementPlan(band, { rng: createRandomContext(seed) });

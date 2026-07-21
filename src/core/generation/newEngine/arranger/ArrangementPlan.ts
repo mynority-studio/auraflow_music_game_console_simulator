@@ -9,6 +9,29 @@
 import { deepFreeze, type DeepReadonly, type Meter } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import type { GrooveKind } from '../knowledge/grooves';
+import type {
+  GrooveDrumFillFunction,
+  GrooveDrumFillScore,
+} from '../knowledge/drumFillVocabulary';
+import type {
+  GrooveBoundaryBaseMask,
+  GrooveContract,
+  GrooveDrumIntent,
+  GrooveDrumFillFamily,
+  GrooveGrid,
+  GrooveLandingGesture,
+  GroovePhraseBarRole,
+  GrooveSubdivision,
+} from '../knowledge/grooveContracts';
+import type { RoleRhythmPatternByRole } from '../knowledge/roleRhythmPatterns';
+import type { DrumFeelProfileId } from '../knowledge/drumPerformanceKnowledge';
+import type { AcgPianoArrangementProfileId } from './acgPianoArrangementProfiles';
+import type { AcousticInstrumentationIntent } from './acousticInstrumentationProfiles';
+import type { JazzArrangementArchetypeId } from './jazzArchetypePlanner';
+import type { ResolvedArrangementArchetypePlan } from './arrangementArchetypeContract';
+import type { JazzFiveFourHarmonicDirective } from './jazzFiveFourHarmonyScore';
+import type { LeadPhraseDirective } from './jazzFiveFourLeadScore';
+import type { JazzFiveFourEnsembleScore } from './jazzFiveFourEnsembleScore';
 
 export type SectionId = string;
 export type PhraseId = string;
@@ -34,6 +57,7 @@ export type HarmonyLinkKind =
   | 'backdoorToSubdominant'    // v/IV -> I7/IV -> next IV
   | 'minorIvHold'              // iv hold -> next I/vi
   | 'stopOnDominant';          // V stop -> next hook impact
+export type LeadCompCollisionPolicy = 'allow' | 'no-unison-when-same-program';
 
 // ★ 段落【边界行为】(2026-06-08,修 intro→verse 衔接 / outro 收尾):
 //   entry = 本段乐器【怎么进来】:'lead-in'=上一段末小节铺垫推进到本段下拍(release,能量跃升处);'downbeat'=直入(重复段/无跃升)。
@@ -167,12 +191,14 @@ export type PerformanceArticulationScope = 'none' | 'attribute' | 'direction';
 export type PerformanceArticulationExclusionGroup = 'none' | 'length' | 'pedal' | 'breath' | 'rudiment';
 export type PerformanceFollowSource = 'none' | 'chords' | 'bass' | 'comp' | 'lead' | 'drum';
 export type PerformancePreQuantizeGrid = 'none' | '8th' | '16th';
+/** Score-level keyboard touch intent. Instrumentation later resolves it against the actual voice capability. */
+export type KeyboardMotion = 'none' | 'lyrical' | 'broken-chord' | 'syncopated-comp' | 'sixteenth-ostinato' | 'percussive';
 
 export interface ScorePerformanceContract {
   sectionId: SectionId;
   grooveContractId: string;
   foregroundRole: InstrumentRoleName;
-  rhythmGrid: import('../knowledge/grooveContracts').GrooveGrid;
+  rhythmGrid: GrooveGrid;
   swingUnit: DrumSwingUnit;
   safeRangeTicks: number;
   maxMoveTicks: number;
@@ -196,11 +222,18 @@ export interface RolePerformanceContract extends ScorePerformanceContract {
   phraseVariation: 0 | 1 | 2 | 3;
   feelOffsetMs: number;
   followSource: PerformanceFollowSource;
+  // Arranger owns the rhythmic/touch intent. It deliberately does not name a
+  // MIDI controller or assume the eventual program is a keyboard.
+  keyboardMotion: KeyboardMotion;
 }
 
 export interface DrumPerformanceContract {
   id: string;
   sectionId: SectionId;
+  /** Compiled from this sole score-level groove authority. */
+  grooveContractId: string;
+  /** Evidence-backed performance grammar selected by the same GrooveContract. */
+  feelProfileId: DrumFeelProfileId;
   role: DrumPerformanceRole;
   kitProgram: 8 | 25 | 40;
   patternFamily: DrumPatternFamily;
@@ -212,11 +245,8 @@ export interface DrumPerformanceContract {
   fillAmount: 0 | 1 | 2 | 3;
   fillComplexity: 0 | 1 | 2 | 3;
   phraseVariation: 0 | 1 | 2 | 3;
-  swingUnit: DrumSwingUnit;
   timingProfile: DrumTimingProfile;
-  safeRangeTicks: number;
   maxMoveTicks: number;
-  preQuantizeGrid: PerformancePreQuantizeGrid;
   humanizeAmount: 0 | 1 | 2 | 3;
   feelOffsetMs: number;
   velocityProfile: DrumVelocityProfile;
@@ -226,6 +256,83 @@ export interface DrumPerformanceContract {
   cymbalPolicy: DrumCymbalPolicy;
   tomPolicy: DrumTomPolicy;
   foregroundGuard: DrumForegroundGuard;
+}
+
+export type GrooveBoundaryKind = 'pickup' | 'fill' | 'break' | 'dropout';
+export type GrooveBarTrajectory = 'settled' | 'rising' | 'arrival' | 'peak' | 'falling';
+
+/**
+ * Arranger-authored rhythm-section relationship for one bar. Structural beats
+ * are mandatory anchors; response limits keep source-following from becoming a
+ * mechanical copy of every bass, comp or lead onset.
+ */
+export interface GrooveDrumInteractionScore {
+  kickFollow: GrooveDrumIntent['kickFollow'];
+  snareFollow: GrooveDrumIntent['snareFollow'];
+  structuralKickBeats: readonly number[];
+  structuralSnareBeats: readonly number[];
+  kickResponseLimit: number;
+  snareResponseLimit: number;
+}
+
+/** One bar of the shared groove score. Instruments project from this bar; drums do not own it. */
+export interface GrooveBarScore {
+  sectionId: SectionId;
+  barInSection: number;
+  absoluteBar: number;
+  phraseIndex: number;
+  phraseBarIndex: number;
+  role: GroovePhraseBarRole;
+  beatStrength: readonly number[];
+  subdivision: GrooveSubdivision;
+  subdivisionAccent: readonly number[];
+  phraseAccent: number;
+  /** Arranger-owned local energy projection; optional only for legacy fixtures. */
+  energy?: number;
+  /** Macro direction materialized from section energy and climaxMap. */
+  trajectory?: GrooveBarTrajectory;
+  /** Materialized from the same GrooveContract; optional only for legacy fixtures. */
+  drumInteraction?: GrooveDrumInteractionScore;
+}
+
+/** A form boundary authored by Arranger from the selected GrooveContract vocabulary. */
+export interface GrooveBoundaryScore {
+  id: string;
+  fromSectionId?: SectionId;
+  toSectionId: SectionId;
+  sourceBar: number;
+  landingBar: number;
+  kind: GrooveBoundaryKind;
+  intensity: 1 | 2 | 3;
+  durationBeats: number;
+  baseMask: GrooveBoundaryBaseMask;
+  drumFillFamily: GrooveDrumFillFamily;
+  /** The boundary's dramatic job; optional only for legacy fixtures. */
+  fillFunction?: GrooveDrumFillFunction;
+  /** Concrete semantic hit score selected from the GrooveContract vocabulary. */
+  fillScore?: GrooveDrumFillScore;
+  landing: GrooveLandingGesture;
+  opening: boolean;
+}
+
+export interface GrooveSectionScore {
+  sectionId: SectionId;
+  grooveContractId: string;
+  /** Bass vocabulary already resolved by Arranger (archetype wins over song fallback). */
+  bassPatternId?: string;
+  /**
+   * Role-specific rhythm material resolved and cloned by Arranger.  Optional
+   * only for legacy hand-written fixtures; planGrooveScore always emits it.
+   */
+  roleRhythmByRole?: RoleRhythmPatternByRole;
+  bars: readonly GrooveBarScore[];
+}
+
+/** Materialized song score from the single GrooveContract truth. */
+export interface GrooveScorePlan {
+  grooveContractId: string;
+  bySection: Readonly<Record<SectionId, GrooveSectionScore>>;
+  boundaries: readonly GrooveBoundaryScore[];
 }
 
 export interface PhraseBreathing {
@@ -256,15 +363,46 @@ export interface ArrangementPlanData {
   harmonicRhythmTarget: HarmonicRhythmTarget;
   /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
   grooveBySection: Record<SectionId, GrooveKind>;
-  /** ★ 每段鼓手演奏合同:Arranger 总谱下发,drum 只消费合同,不偷看 lead/comp。 */
+  /** Unified, bar-level groove score authored before any instrument chooses notes. */
+  grooveScorePlan: GrooveScorePlan;
+  /** ★ 每段鼓手演奏合同:Arranger 下发关系意图;render 只消费获授权的 source onset,不反推风格规则。 */
   drumPerformanceBySection: Record<SectionId, DrumPerformanceContract>;
   /** ★ DAW 风格总谱合同:每段每个乐手都有演奏/时序/让位/手势意图;render 只解释合同。 */
   rolePerformanceBySection: Record<InstrumentRoleName, Record<SectionId, RolePerformanceContract>>;
+  /** ★ Arranger 明示 Lead/COMP 关系:同音色(program 相同)时 COMP 不得与 Lead 同 MIDI pitch 长时间重叠。 */
+  leadCompCollisionPolicy: LeadCompCollisionPolicy;
   // ★ GrooveContract(comp/melody 分开 swing + ms pocket + texture 偏好);arranger 拥有,render 消费。
   //   Phase D:全 MG-backed 风格走真 pool;BLUES/无 rng = legacy 派生兜底。grooveBySection(GrooveKind)保留作 drum 兼容字段。
-  songGrooveContract: import('../knowledge/grooveContracts').GrooveContract;
+  /** JAZZ only:拍号/曲式/角色轨迹主型，与表面 GrooveContract 分离。 */
+  arrangementArchetypeId?: JazzArrangementArchetypeId;
+  /** ACG PIANOSONG only: hidden song-level score blueprint; never a UI style selector. */
+  acgPianoArrangementProfileId?: AcgPianoArrangementProfileId;
+  /** Arranger-owned acoustic ensemble intent, consumed only by the acoustic palette. */
+  acousticInstrumentationIntent?: AcousticInstrumentationIntent;
+  /**
+   * Arranger 已按实际 section 展开的执行快照。下游只读这里与 rolePerformance，
+   * 不得再从 style/meter/GrooveContract id 反推编配。
+   */
+  resolvedArchetype?: ResolvedArrangementArchetypePlan;
+  /**
+   * Arranger-selected, whole-template Jazz 5/4 harmonic score. Harmony may
+   * compile this frozen list but must not select replacement templates.
+   */
+  jazzFiveFourHarmonyDirectives?: readonly JazzFiveFourHarmonicDirective[];
+  /**
+   * Reference-quartet only: Arranger-frozen Lead phrase score. Grammar and
+   * Harmony may compile it, but Render must not select or reshape templates.
+   */
+  jazzFiveFourLeadDirectives?: readonly LeadPhraseDirective[];
+  /**
+   * Reference-quartet only for now: Arranger-frozen per-bar ensemble score and
+   * indivisible Drum phrase placements. The generative planner API exists but
+   * is deliberately not selected by any current product archetype.
+   */
+  jazzFiveFourEnsembleScore?: JazzFiveFourEnsembleScore;
+  songGrooveContract: GrooveContract;
   songGrooveContractId: string;
-  grooveContractBySection: Record<SectionId, import('../knowledge/grooveContracts').GrooveContract>;
+  grooveContractBySection: Record<SectionId, GrooveContract>;
   /** ★ 每段乐器【进入方式】(Arranger 下发,修 intro→verse 衔接):能量跃升处=lead-in(上段末小节铺垫推进),其余=downbeat 直入。 */
   entryBySection: Record<SectionId, SectionEntry>;
   /** ★ 全曲开头【入场导演】:首段角色延迟 + 鼓/织体开场策略。render 层消费,ESP32 端可按同一小表落 MIDI 事件。 */

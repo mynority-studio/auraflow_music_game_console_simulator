@@ -1,0 +1,2852 @@
+[
+  {
+    "style": "pop",
+    "tempoBpm": 84,
+    "seed": 3,
+    "grooveContractId": "pop_citypop_boogie",
+    "patternFamilies": [
+      "citypop-syncopated-boogie",
+      "citypop-disco-boogie"
+    ],
+    "audit": {
+      "noteCount": 288,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 40.327586206896555,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 112,
+          "velocityMax": 112,
+          "velocityMean": 112,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 144,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 60.90277777777778,
+          "velocityStdDev": 10.8091521435184,
+          "uniqueVelocities": 24,
+          "repeatedVelocityRatio": 0.055944055944055944,
+          "timingOffsetMeanMs": -0.6200396825396829,
+          "timingOffsetStdDevMs": 1.6866902912618367,
+          "exactGridRatio": 0.3888888888888889
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 87,
+          "velocityMax": 118,
+          "velocityMean": 104.3529411764706,
+          "velocityStdDev": 10.881399004294323,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.8382352941176472,
+          "timingOffsetStdDevMs": 2.1063041693830473,
+          "exactGridRatio": 0.5
+        },
+        "percussion": {
+          "count": 22,
+          "velocityMin": 47,
+          "velocityMax": 52,
+          "velocityMean": 49.59090909090909,
+          "velocityStdDev": 1.7492619458994416,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.14285714285714285,
+          "timingOffsetMeanMs": -0.6764069264069265,
+          "timingOffsetStdDevMs": 1.600670936985827,
+          "exactGridRatio": 0.3181818181818182
+        },
+        "snare": {
+          "count": 87,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 83.64367816091954,
+          "velocityStdDev": 29.822454323436077,
+          "uniqueVelocities": 32,
+          "repeatedVelocityRatio": 0.011627906976744186,
+          "timingOffsetMeanMs": -0.5131362889983575,
+          "timingOffsetStdDevMs": 1.608554727081109,
+          "exactGridRatio": 0.22988505747126436
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 84,
+    "seed": 7,
+    "grooveContractId": "pop_jpop_push_8ths",
+    "patternFamilies": [
+      "jpop-driving-8ths",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 284,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 58.6051282051282,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 113,
+          "velocityMax": 113,
+          "velocityMean": 113,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 176,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 58.84090909090909,
+          "velocityStdDev": 11.960053172993272,
+          "uniqueVelocities": 26,
+          "repeatedVelocityRatio": 0.03428571428571429,
+          "timingOffsetMeanMs": -0.10146103896103909,
+          "timingOffsetStdDevMs": 1.8607338614013702,
+          "exactGridRatio": 0.3522727272727273
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 89,
+          "velocityMax": 118,
+          "velocityMean": 105,
+          "velocityStdDev": 10.571882797418487,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.531862745098039,
+          "timingOffsetStdDevMs": 2.0884944486064687,
+          "exactGridRatio": 0.47058823529411764
+        },
+        "percussion": {
+          "count": 10,
+          "velocityMin": 47,
+          "velocityMax": 54,
+          "velocityMean": 50.9,
+          "velocityStdDev": 2.467792535850613,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.2222222222222222,
+          "timingOffsetMeanMs": -0.1488095238095238,
+          "timingOffsetStdDevMs": 1.236104741505666,
+          "exactGridRatio": 0.6
+        },
+        "snare": {
+          "count": 59,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 87.33898305084746,
+          "velocityStdDev": 32.74638557852362,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.08620689655172414,
+          "timingOffsetMeanMs": -0.5044390637610975,
+          "timingOffsetStdDevMs": 1.6577559246524396,
+          "exactGridRatio": 0.3220338983050847
+        },
+        "tom": {
+          "count": 4,
+          "velocityMin": 107,
+          "velocityMax": 117,
+          "velocityMean": 110.5,
+          "velocityStdDev": 3.905124837953327,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.37202380952380953,
+          "timingOffsetStdDevMs": 0.6443641397205645,
+          "exactGridRatio": 0.75
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 84,
+    "seed": 42,
+    "grooveContractId": "pop_radio_straight",
+    "patternFamilies": [
+      "ballad-halftime",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 215,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 30.842948717948715,
+      "voices": {
+        "crash": {
+          "count": 2,
+          "velocityMin": 104,
+          "velocityMax": 105,
+          "velocityMean": 104.5,
+          "velocityStdDev": 0.5,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 116,
+          "velocityMin": 40,
+          "velocityMax": 65,
+          "velocityMean": 54.241379310344826,
+          "velocityStdDev": 9.016862258793505,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.10434782608695652,
+          "timingOffsetMeanMs": 0.538793103448276,
+          "timingOffsetStdDevMs": 1.7410752850290996,
+          "exactGridRatio": 0.3879310344827586
+        },
+        "kick": {
+          "count": 28,
+          "velocityMin": 85,
+          "velocityMax": 114,
+          "velocityMean": 99.39285714285714,
+          "velocityStdDev": 10.903273707975067,
+          "uniqueVelocities": 17,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.053146258503401364,
+          "timingOffsetStdDevMs": 1.564884339321371,
+          "exactGridRatio": 0.5357142857142857
+        },
+        "snare": {
+          "count": 61,
+          "velocityMin": 35,
+          "velocityMax": 113,
+          "velocityMean": 84.88524590163935,
+          "velocityStdDev": 24.863626972970124,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.03333333333333333,
+          "timingOffsetMeanMs": 1.9516003122560508,
+          "timingOffsetStdDevMs": 1.2505860282958916,
+          "exactGridRatio": 0.13114754098360656
+        },
+        "tom": {
+          "count": 8,
+          "velocityMin": 88,
+          "velocityMax": 103,
+          "velocityMean": 94.125,
+          "velocityStdDev": 4.702060718451007,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.1160714285714286,
+          "timingOffsetStdDevMs": 0.9842824817948626,
+          "exactGridRatio": 0.375
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 120,
+    "seed": 3,
+    "grooveContractId": "pop_citypop_boogie",
+    "patternFamilies": [
+      "citypop-syncopated-boogie",
+      "citypop-disco-boogie"
+    ],
+    "audit": {
+      "noteCount": 288,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 40.327586206896555,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 112,
+          "velocityMax": 112,
+          "velocityMean": 112,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 144,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 60.90277777777778,
+          "velocityStdDev": 10.8091521435184,
+          "uniqueVelocities": 24,
+          "repeatedVelocityRatio": 0.055944055944055944,
+          "timingOffsetMeanMs": -0.6365740740740741,
+          "timingOffsetStdDevMs": 1.688188905765604,
+          "exactGridRatio": 0.2847222222222222
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 87,
+          "velocityMax": 118,
+          "velocityMean": 104.3529411764706,
+          "velocityStdDev": 10.881399004294323,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.8075980392156863,
+          "timingOffsetStdDevMs": 2.1631290573656683,
+          "exactGridRatio": 0.47058823529411764
+        },
+        "percussion": {
+          "count": 22,
+          "velocityMin": 47,
+          "velocityMax": 52,
+          "velocityMean": 49.59090909090909,
+          "velocityStdDev": 1.7492619458994416,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.14285714285714285,
+          "timingOffsetMeanMs": -0.6155303030303032,
+          "timingOffsetStdDevMs": 1.6216424043128512,
+          "exactGridRatio": 0.13636363636363635
+        },
+        "snare": {
+          "count": 87,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 83.64367816091954,
+          "velocityStdDev": 29.822454323436077,
+          "uniqueVelocities": 32,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.4909003831417628,
+          "timingOffsetStdDevMs": 1.5701765485614898,
+          "exactGridRatio": 0.16091954022988506
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 120,
+    "seed": 7,
+    "grooveContractId": "pop_jpop_push_8ths",
+    "patternFamilies": [
+      "jpop-driving-8ths",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 284,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 58.6051282051282,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 113,
+          "velocityMax": 113,
+          "velocityMean": 113,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 176,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 58.84659090909091,
+          "velocityStdDev": 11.965114527275801,
+          "uniqueVelocities": 26,
+          "repeatedVelocityRatio": 0.03428571428571429,
+          "timingOffsetMeanMs": -0.12428977272727289,
+          "timingOffsetStdDevMs": 1.8050639566571243,
+          "exactGridRatio": 0.29545454545454547
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 89,
+          "velocityMax": 118,
+          "velocityMean": 105.02941176470588,
+          "velocityStdDev": 10.54537895483316,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.593137254901961,
+          "timingOffsetStdDevMs": 2.2058823529411766,
+          "exactGridRatio": 0.4411764705882353
+        },
+        "percussion": {
+          "count": 10,
+          "velocityMin": 47,
+          "velocityMax": 54,
+          "velocityMean": 50.9,
+          "velocityStdDev": 2.467792535850613,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.2222222222222222,
+          "timingOffsetMeanMs": -0.1041666666666667,
+          "timingOffsetStdDevMs": 1.576327703168912,
+          "exactGridRatio": 0.4
+        },
+        "snare": {
+          "count": 59,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 87.33898305084746,
+          "velocityStdDev": 32.74638557852362,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.08620689655172414,
+          "timingOffsetMeanMs": -0.5296610169491527,
+          "timingOffsetStdDevMs": 1.7086528371377419,
+          "exactGridRatio": 0.23728813559322035
+        },
+        "tom": {
+          "count": 4,
+          "velocityMin": 107,
+          "velocityMax": 117,
+          "velocityMean": 110.5,
+          "velocityStdDev": 3.905124837953327,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.2604166666666667,
+          "timingOffsetStdDevMs": 0.4510548978043951,
+          "exactGridRatio": 0.75
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 120,
+    "seed": 42,
+    "grooveContractId": "pop_radio_straight",
+    "patternFamilies": [
+      "ballad-halftime",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 215,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 30.842948717948715,
+      "voices": {
+        "crash": {
+          "count": 2,
+          "velocityMin": 104,
+          "velocityMax": 105,
+          "velocityMean": 104.5,
+          "velocityStdDev": 0.5,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 116,
+          "velocityMin": 40,
+          "velocityMax": 65,
+          "velocityMean": 54.25,
+          "velocityStdDev": 9.023795172229079,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.10434782608695652,
+          "timingOffsetMeanMs": 0.5567528735632183,
+          "timingOffsetStdDevMs": 1.6942261347392518,
+          "exactGridRatio": 0.29310344827586204
+        },
+        "kick": {
+          "count": 28,
+          "velocityMin": 85,
+          "velocityMax": 114,
+          "velocityMean": 99.42857142857143,
+          "velocityStdDev": 10.860901604998979,
+          "uniqueVelocities": 17,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0.11160714285714289,
+          "timingOffsetStdDevMs": 1.5334422504110825,
+          "exactGridRatio": 0.4642857142857143
+        },
+        "snare": {
+          "count": 61,
+          "velocityMin": 35,
+          "velocityMax": 113,
+          "velocityMean": 84.88524590163935,
+          "velocityStdDev": 24.863626972970124,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.016666666666666666,
+          "timingOffsetMeanMs": 1.8442622950819674,
+          "timingOffsetStdDevMs": 1.3521743780621005,
+          "exactGridRatio": 0.06557377049180328
+        },
+        "tom": {
+          "count": 8,
+          "velocityMin": 88,
+          "velocityMax": 103,
+          "velocityMean": 94.125,
+          "velocityStdDev": 4.702060718451007,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.5625000000000002,
+          "timingOffsetStdDevMs": 0.736569563735987,
+          "exactGridRatio": 0.125
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 168,
+    "seed": 3,
+    "grooveContractId": "pop_citypop_boogie",
+    "patternFamilies": [
+      "citypop-syncopated-boogie",
+      "citypop-disco-boogie"
+    ],
+    "audit": {
+      "noteCount": 288,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 40.327586206896555,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 112,
+          "velocityMax": 112,
+          "velocityMean": 112,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 144,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 60.916666666666664,
+          "velocityStdDev": 10.819542504191203,
+          "uniqueVelocities": 24,
+          "repeatedVelocityRatio": 0.055944055944055944,
+          "timingOffsetMeanMs": -0.6768766534391539,
+          "timingOffsetStdDevMs": 1.6565928582591394,
+          "exactGridRatio": 0.5138888888888888
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 87,
+          "velocityMax": 118,
+          "velocityMean": 104.41176470588235,
+          "velocityStdDev": 10.841417443301903,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.7944677871148456,
+          "timingOffsetStdDevMs": 2.143714442622279,
+          "exactGridRatio": 0.5
+        },
+        "percussion": {
+          "count": 22,
+          "velocityMin": 47,
+          "velocityMax": 52,
+          "velocityMean": 49.59090909090909,
+          "velocityStdDev": 1.7492619458994416,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.14285714285714285,
+          "timingOffsetMeanMs": -0.43966450216450226,
+          "timingOffsetStdDevMs": 1.6279500198266696,
+          "exactGridRatio": 0.45454545454545453
+        },
+        "snare": {
+          "count": 87,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 83.64367816091954,
+          "velocityStdDev": 29.822454323436077,
+          "uniqueVelocities": 32,
+          "repeatedVelocityRatio": 0.011627906976744186,
+          "timingOffsetMeanMs": -0.4789272030651339,
+          "timingOffsetStdDevMs": 1.5953138651848309,
+          "exactGridRatio": 0.42528735632183906
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 168,
+    "seed": 7,
+    "grooveContractId": "pop_jpop_push_8ths",
+    "patternFamilies": [
+      "jpop-driving-8ths",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 284,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 58.6051282051282,
+      "voices": {
+        "crash": {
+          "count": 1,
+          "velocityMin": 113,
+          "velocityMax": 113,
+          "velocityMean": 113,
+          "velocityStdDev": 0,
+          "uniqueVelocities": 1,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 176,
+          "velocityMin": 42,
+          "velocityMax": 76,
+          "velocityMean": 58.84659090909091,
+          "velocityStdDev": 11.965114527275801,
+          "uniqueVelocities": 26,
+          "repeatedVelocityRatio": 0.03428571428571429,
+          "timingOffsetMeanMs": -0.131053841991342,
+          "timingOffsetStdDevMs": 1.7855203126105643,
+          "exactGridRatio": 0.5227272727272727
+        },
+        "kick": {
+          "count": 34,
+          "velocityMin": 89,
+          "velocityMax": 118,
+          "velocityMean": 105.05882352941177,
+          "velocityStdDev": 10.510334344238611,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.6412815126050424,
+          "timingOffsetStdDevMs": 2.245085404486519,
+          "exactGridRatio": 0.47058823529411764
+        },
+        "percussion": {
+          "count": 10,
+          "velocityMin": 47,
+          "velocityMax": 54,
+          "velocityMean": 50.9,
+          "velocityStdDev": 2.467792535850613,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.2222222222222222,
+          "timingOffsetMeanMs": -0.14880952380952386,
+          "timingOffsetStdDevMs": 1.4806360671229464,
+          "exactGridRatio": 0.6
+        },
+        "snare": {
+          "count": 59,
+          "velocityMin": 38,
+          "velocityMax": 120,
+          "velocityMean": 87.33898305084746,
+          "velocityStdDev": 32.74638557852362,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.08620689655172414,
+          "timingOffsetMeanMs": -0.5927158999192896,
+          "timingOffsetStdDevMs": 1.6540102299348594,
+          "exactGridRatio": 0.5084745762711864
+        },
+        "tom": {
+          "count": 4,
+          "velocityMin": 107,
+          "velocityMax": 117,
+          "velocityMean": 110.5,
+          "velocityStdDev": 3.905124837953327,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.37202380952380953,
+          "timingOffsetStdDevMs": 0.6443641397205645,
+          "exactGridRatio": 0.75
+        }
+      }
+    }
+  },
+  {
+    "style": "pop",
+    "tempoBpm": 168,
+    "seed": 42,
+    "grooveContractId": "pop_radio_straight",
+    "patternFamilies": [
+      "ballad-halftime",
+      "pop-backbeat"
+    ],
+    "audit": {
+      "noteCount": 215,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 30.842948717948715,
+      "voices": {
+        "crash": {
+          "count": 2,
+          "velocityMin": 104,
+          "velocityMax": 105,
+          "velocityMean": 104.5,
+          "velocityStdDev": 0.5,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 116,
+          "velocityMin": 40,
+          "velocityMax": 65,
+          "velocityMean": 54.241379310344826,
+          "velocityStdDev": 9.013993613050971,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.11304347826086956,
+          "timingOffsetMeanMs": 0.6029351395730708,
+          "timingOffsetStdDevMs": 1.6663602259848889,
+          "exactGridRatio": 0.5086206896551724
+        },
+        "kick": {
+          "count": 28,
+          "velocityMin": 85,
+          "velocityMax": 114,
+          "velocityMean": 99.39285714285714,
+          "velocityStdDev": 10.893442607217182,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0.05314625850340139,
+          "timingOffsetStdDevMs": 1.3909706981613947,
+          "exactGridRatio": 0.6785714285714286
+        },
+        "snare": {
+          "count": 61,
+          "velocityMin": 35,
+          "velocityMax": 113,
+          "velocityMean": 84.88524590163935,
+          "velocityStdDev": 24.863626972970124,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.016666666666666666,
+          "timingOffsetMeanMs": 1.8784153005464492,
+          "timingOffsetStdDevMs": 1.4104869755536462,
+          "exactGridRatio": 0.29508196721311475
+        },
+        "tom": {
+          "count": 8,
+          "velocityMin": 88,
+          "velocityMax": 103,
+          "velocityMean": 94.125,
+          "velocityStdDev": 4.702060718451007,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.395089285714286,
+          "timingOffsetStdDevMs": 0.7836820845588132,
+          "exactGridRatio": 0.375
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 84,
+    "seed": 3,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 296,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 38.128078817733986,
+      "voices": {
+        "hat": {
+          "count": 157,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.28662420382165,
+          "velocityStdDev": 9.40392312456151,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.08333333333333333,
+          "timingOffsetMeanMs": 4.653851986654534,
+          "timingOffsetStdDevMs": 3.7395280703573888,
+          "exactGridRatio": 0.12738853503184713
+        },
+        "kick": {
+          "count": 53,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.18867924528301,
+          "velocityStdDev": 12.548857880487114,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.019230769230769232,
+          "timingOffsetMeanMs": 0.2807726864330636,
+          "timingOffsetStdDevMs": 2.920305900161677,
+          "exactGridRatio": 0.2641509433962264
+        },
+        "snare": {
+          "count": 86,
+          "velocityMin": 28,
+          "velocityMax": 98,
+          "velocityMean": 59.5,
+          "velocityStdDev": 23.19018938518895,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.011764705882352941,
+          "timingOffsetMeanMs": 7.87306201550388,
+          "timingOffsetStdDevMs": 3.455534994543002,
+          "exactGridRatio": 0.023255813953488372
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 84,
+    "seed": 7,
+    "grooveContractId": "rnb_gospel_triplet",
+    "patternFamilies": [
+      "rnb-gospel-triplet"
+    ],
+    "audit": {
+      "noteCount": 267,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 45.75000000000001,
+      "voices": {
+        "crash": {
+          "count": 3,
+          "velocityMin": 91,
+          "velocityMax": 93,
+          "velocityMean": 91.66666666666667,
+          "velocityStdDev": 0.9428090415820634,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0.5,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 10,
+          "velocityMin": 46,
+          "velocityMax": 52,
+          "velocityMean": 48.7,
+          "velocityStdDev": 1.5524174696260022,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.1111111111111111,
+          "timingOffsetMeanMs": 5.357142857142858,
+          "timingOffsetStdDevMs": 3.534030383046999,
+          "exactGridRatio": 0
+        },
+        "kick": {
+          "count": 69,
+          "velocityMin": 75,
+          "velocityMax": 108,
+          "velocityMean": 84.91304347826087,
+          "velocityStdDev": 10.03290113725804,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.058823529411764705,
+          "timingOffsetMeanMs": 0.40976535541752923,
+          "timingOffsetStdDevMs": 2.7623772573909653,
+          "exactGridRatio": 0.2753623188405797
+        },
+        "percussion": {
+          "count": 112,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 39.142857142857146,
+          "velocityStdDev": 8.891064076260124,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 6.909013605442177,
+          "timingOffsetStdDevMs": 5.207790996336671,
+          "exactGridRatio": 0.08928571428571429
+        },
+        "snare": {
+          "count": 70,
+          "velocityMin": 30,
+          "velocityMax": 100,
+          "velocityMean": 63.042857142857144,
+          "velocityStdDev": 27.563659156985103,
+          "uniqueVelocities": 23,
+          "repeatedVelocityRatio": 0.028985507246376812,
+          "timingOffsetMeanMs": 7.291666666666673,
+          "timingOffsetStdDevMs": 3.4410550498135173,
+          "exactGridRatio": 0
+        },
+        "tom": {
+          "count": 3,
+          "velocityMin": 87,
+          "velocityMax": 90,
+          "velocityMean": 88.33333333333333,
+          "velocityStdDev": 1.247219128924647,
+          "uniqueVelocities": 3,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 2.4801587301587302,
+          "timingOffsetStdDevMs": 2.5292755523773733,
+          "exactGridRatio": 0.3333333333333333
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 84,
+    "seed": 42,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 264,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 33.014285714285705,
+      "voices": {
+        "hat": {
+          "count": 138,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.73913043478261,
+          "velocityStdDev": 9.156691026140624,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0.0948905109489051,
+          "timingOffsetMeanMs": 4.2701863354037295,
+          "timingOffsetStdDevMs": 3.9970999380716514,
+          "exactGridRatio": 0.11594202898550725
+        },
+        "kick": {
+          "count": 50,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.24,
+          "velocityStdDev": 12.971599747139905,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.04081632653061224,
+          "timingOffsetMeanMs": -0.0892857142857143,
+          "timingOffsetStdDevMs": 3.279351370036957,
+          "exactGridRatio": 0.26
+        },
+        "snare": {
+          "count": 76,
+          "velocityMin": 27,
+          "velocityMax": 98,
+          "velocityMean": 64.52631578947368,
+          "velocityStdDev": 22.816472399176476,
+          "uniqueVelocities": 27,
+          "repeatedVelocityRatio": 0.05333333333333334,
+          "timingOffsetMeanMs": 8.067042606516296,
+          "timingOffsetStdDevMs": 3.6551572335770786,
+          "exactGridRatio": 0.013157894736842105
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 120,
+    "seed": 3,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 296,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 38.128078817733986,
+      "voices": {
+        "hat": {
+          "count": 157,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.28662420382165,
+          "velocityStdDev": 9.40392312456151,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.08333333333333333,
+          "timingOffsetMeanMs": 4.6510084925690025,
+          "timingOffsetStdDevMs": 3.7002192832916125,
+          "exactGridRatio": 0.10191082802547771
+        },
+        "kick": {
+          "count": 53,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.18867924528301,
+          "velocityStdDev": 12.548857880487114,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.019230769230769232,
+          "timingOffsetMeanMs": 0.31446540880503127,
+          "timingOffsetStdDevMs": 2.8587072068516837,
+          "exactGridRatio": 0.2830188679245283
+        },
+        "snare": {
+          "count": 86,
+          "velocityMin": 28,
+          "velocityMax": 98,
+          "velocityMean": 59.5,
+          "velocityStdDev": 23.19018938518895,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0.011764705882352941,
+          "timingOffsetMeanMs": 7.848837209302325,
+          "timingOffsetStdDevMs": 3.4610118894740287,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 120,
+    "seed": 7,
+    "grooveContractId": "rnb_gospel_triplet",
+    "patternFamilies": [
+      "rnb-gospel-triplet"
+    ],
+    "audit": {
+      "noteCount": 267,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 45.716666666666676,
+      "voices": {
+        "crash": {
+          "count": 3,
+          "velocityMin": 91,
+          "velocityMax": 93,
+          "velocityMean": 91.66666666666667,
+          "velocityStdDev": 0.9428090415820634,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0.5,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 10,
+          "velocityMin": 46,
+          "velocityMax": 52,
+          "velocityMean": 48.7,
+          "velocityStdDev": 1.5524174696260022,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.1111111111111111,
+          "timingOffsetMeanMs": 5.416666666666667,
+          "timingOffsetStdDevMs": 3.416920722261817,
+          "exactGridRatio": 0
+        },
+        "kick": {
+          "count": 69,
+          "velocityMin": 75,
+          "velocityMax": 108,
+          "velocityMean": 84.98550724637681,
+          "velocityStdDev": 10.005060681248,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.029411764705882353,
+          "timingOffsetMeanMs": 0.4679951690821256,
+          "timingOffsetStdDevMs": 3.0897581655715056,
+          "exactGridRatio": 0.2028985507246377
+        },
+        "percussion": {
+          "count": 112,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 39.142857142857146,
+          "velocityStdDev": 8.889055412272386,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 6.529017857142856,
+          "timingOffsetStdDevMs": 4.881846914163933,
+          "exactGridRatio": 0.0625
+        },
+        "snare": {
+          "count": 70,
+          "velocityMin": 30,
+          "velocityMax": 100,
+          "velocityMean": 63.05714285714286,
+          "velocityStdDev": 27.547821129439466,
+          "uniqueVelocities": 23,
+          "repeatedVelocityRatio": 0.028985507246376812,
+          "timingOffsetMeanMs": 7.2767857142857135,
+          "timingOffsetStdDevMs": 3.1814975050621297,
+          "exactGridRatio": 0
+        },
+        "tom": {
+          "count": 3,
+          "velocityMin": 87,
+          "velocityMax": 90,
+          "velocityMean": 88.33333333333333,
+          "velocityStdDev": 1.247219128924647,
+          "uniqueVelocities": 3,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 2.430555555555556,
+          "timingOffsetStdDevMs": 2.7340305118096566,
+          "exactGridRatio": 0.3333333333333333
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 120,
+    "seed": 42,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 264,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 33.014285714285705,
+      "voices": {
+        "hat": {
+          "count": 138,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.73913043478261,
+          "velocityStdDev": 9.155899616890798,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0.10948905109489052,
+          "timingOffsetMeanMs": 4.355374396135267,
+          "timingOffsetStdDevMs": 4.040658622326142,
+          "exactGridRatio": 0.057971014492753624
+        },
+        "kick": {
+          "count": 50,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.24,
+          "velocityStdDev": 12.974683040444575,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.04081632653061224,
+          "timingOffsetMeanMs": -0.12499999999999992,
+          "timingOffsetStdDevMs": 3.198035421247794,
+          "exactGridRatio": 0.28
+        },
+        "snare": {
+          "count": 76,
+          "velocityMin": 27,
+          "velocityMax": 98,
+          "velocityMean": 64.52631578947368,
+          "velocityStdDev": 22.816472399176476,
+          "uniqueVelocities": 27,
+          "repeatedVelocityRatio": 0.05333333333333334,
+          "timingOffsetMeanMs": 8.05921052631579,
+          "timingOffsetStdDevMs": 3.562120139527471,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 168,
+    "seed": 3,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 296,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 38.128078817733986,
+      "voices": {
+        "hat": {
+          "count": 157,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.28662420382165,
+          "velocityStdDev": 9.40392312456151,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.08333333333333333,
+          "timingOffsetMeanMs": 4.649112829845313,
+          "timingOffsetStdDevMs": 3.7411793558963673,
+          "exactGridRatio": 0.1592356687898089
+        },
+        "kick": {
+          "count": 53,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.18867924528301,
+          "velocityStdDev": 12.548857880487114,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.019230769230769232,
+          "timingOffsetMeanMs": 0.1263477088948788,
+          "timingOffsetStdDevMs": 2.961186944441699,
+          "exactGridRatio": 0.41509433962264153
+        },
+        "snare": {
+          "count": 86,
+          "velocityMin": 28,
+          "velocityMax": 98,
+          "velocityMean": 59.5,
+          "velocityStdDev": 23.19018938518895,
+          "uniqueVelocities": 29,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 7.821151716500556,
+          "timingOffsetStdDevMs": 3.4298791393099037,
+          "exactGridRatio": 0.023255813953488372
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 168,
+    "seed": 7,
+    "grooveContractId": "rnb_gospel_triplet",
+    "patternFamilies": [
+      "rnb-gospel-triplet"
+    ],
+    "audit": {
+      "noteCount": 267,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "crash",
+        "hat",
+        "kick",
+        "percussion",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 45.716666666666676,
+      "voices": {
+        "crash": {
+          "count": 3,
+          "velocityMin": 91,
+          "velocityMax": 93,
+          "velocityMean": 91.66666666666667,
+          "velocityStdDev": 0.9428090415820634,
+          "uniqueVelocities": 2,
+          "repeatedVelocityRatio": 0.5,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 0,
+          "exactGridRatio": 1
+        },
+        "hat": {
+          "count": 10,
+          "velocityMin": 46,
+          "velocityMax": 52,
+          "velocityMean": 48.7,
+          "velocityStdDev": 1.5524174696260022,
+          "uniqueVelocities": 6,
+          "repeatedVelocityRatio": 0.1111111111111111,
+          "timingOffsetMeanMs": 5.133928571428572,
+          "timingOffsetStdDevMs": 3.433116665196229,
+          "exactGridRatio": 0
+        },
+        "kick": {
+          "count": 69,
+          "velocityMin": 75,
+          "velocityMax": 108,
+          "velocityMean": 84.95652173913044,
+          "velocityStdDev": 10.023790226775349,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.014705882352941176,
+          "timingOffsetMeanMs": 0.4960317460317462,
+          "timingOffsetStdDevMs": 2.8793629060599315,
+          "exactGridRatio": 0.37681159420289856
+        },
+        "percussion": {
+          "count": 112,
+          "velocityMin": 27,
+          "velocityMax": 51,
+          "velocityMean": 39.11607142857143,
+          "velocityStdDev": 8.92002716174825,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 6.151679421768708,
+          "timingOffsetStdDevMs": 4.623094480448474,
+          "exactGridRatio": 0.16071428571428573
+        },
+        "snare": {
+          "count": 70,
+          "velocityMin": 30,
+          "velocityMax": 100,
+          "velocityMean": 63.05714285714286,
+          "velocityStdDev": 27.547821129439466,
+          "uniqueVelocities": 23,
+          "repeatedVelocityRatio": 0.028985507246376812,
+          "timingOffsetMeanMs": 7.2597789115646245,
+          "timingOffsetStdDevMs": 3.2902813872461656,
+          "exactGridRatio": 0.014285714285714285
+        },
+        "tom": {
+          "count": 3,
+          "velocityMin": 87,
+          "velocityMax": 90,
+          "velocityMean": 88.33333333333333,
+          "velocityStdDev": 1.247219128924647,
+          "uniqueVelocities": 3,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 2.4801587301587302,
+          "timingOffsetStdDevMs": 2.5292755523773733,
+          "exactGridRatio": 0.3333333333333333
+        }
+      }
+    }
+  },
+  {
+    "style": "rnb",
+    "tempoBpm": 168,
+    "seed": 42,
+    "grooveContractId": "rnb_neo_soul_laidback",
+    "patternFamilies": [
+      "tr808-rnb-pocket"
+    ],
+    "audit": {
+      "noteCount": 264,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 33.014285714285705,
+      "voices": {
+        "hat": {
+          "count": 138,
+          "velocityMin": 28,
+          "velocityMax": 51,
+          "velocityMean": 38.73913043478261,
+          "velocityStdDev": 9.155899616890798,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0.10948905109489052,
+          "timingOffsetMeanMs": 4.340277777777779,
+          "timingOffsetStdDevMs": 4.006401862808054,
+          "exactGridRatio": 0.18840579710144928
+        },
+        "kick": {
+          "count": 50,
+          "velocityMin": 72,
+          "velocityMax": 108,
+          "velocityMean": 84.24,
+          "velocityStdDev": 12.974683040444575,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.04081632653061224,
+          "timingOffsetMeanMs": 0.1488095238095239,
+          "timingOffsetStdDevMs": 3.277189813325185,
+          "exactGridRatio": 0.4
+        },
+        "snare": {
+          "count": 76,
+          "velocityMin": 27,
+          "velocityMax": 98,
+          "velocityMean": 64.52631578947368,
+          "velocityStdDev": 22.816472399176476,
+          "uniqueVelocities": 27,
+          "repeatedVelocityRatio": 0.05333333333333334,
+          "timingOffsetMeanMs": 8.125783208020051,
+          "timingOffsetStdDevMs": 3.5102117406787277,
+          "exactGridRatio": 0.013157894736842105
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 84,
+    "seed": 3,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 226,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.675238095238093,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.7,
+          "velocityStdDev": 8.300741394135086,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.06201550387596899,
+          "timingOffsetMeanMs": 6.570512820512821,
+          "timingOffsetStdDevMs": 4.32389373964531,
+          "exactGridRatio": 0.03076923076923077
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 63,
+          "velocityMax": 97,
+          "velocityMean": 80.34482758620689,
+          "velocityStdDev": 12.847315195358687,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.051313628899835734,
+          "timingOffsetStdDevMs": 3.6967187303628655,
+          "exactGridRatio": 0.3448275862068966
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 22,
+          "velocityMax": 81,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.94073172869851,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.749822316986503,
+          "timingOffsetStdDevMs": 4.01461390465352,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 84,
+    "seed": 7,
+    "grooveContractId": "lofi_tape_late_chords",
+    "patternFamilies": [
+      "tr808-lofi-dusty-break",
+      "tr808-lofi-minimal"
+    ],
+    "audit": {
+      "noteCount": 251,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.284210526315793,
+      "voices": {
+        "hat": {
+          "count": 156,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 28.51923076923077,
+          "velocityStdDev": 8.28844666546348,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.10967741935483871,
+          "timingOffsetMeanMs": 7.020757020757021,
+          "timingOffsetStdDevMs": 3.9972240461616715,
+          "exactGridRatio": 0.02564102564102564
+        },
+        "kick": {
+          "count": 31,
+          "velocityMin": 66,
+          "velocityMax": 94,
+          "velocityMean": 80.06451612903226,
+          "velocityStdDev": 11.905367409406804,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.7680491551459293,
+          "timingOffsetStdDevMs": 2.850428732585162,
+          "exactGridRatio": 0.4838709677419355
+        },
+        "snare": {
+          "count": 64,
+          "velocityMin": 23,
+          "velocityMax": 78,
+          "velocityMean": 45.5,
+          "velocityStdDev": 15.595472099298565,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0.015873015873015872,
+          "timingOffsetMeanMs": 9.649367559523819,
+          "timingOffsetStdDevMs": 4.023985587207845,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 84,
+    "seed": 42,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 230,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.42,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.692307692307693,
+          "velocityStdDev": 8.356339052890563,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.031007751937984496,
+          "timingOffsetMeanMs": 6.71932234432234,
+          "timingOffsetStdDevMs": 4.061645022105395,
+          "exactGridRatio": 0.046153846153846156
+        },
+        "kick": {
+          "count": 33,
+          "velocityMin": 62,
+          "velocityMax": 97,
+          "velocityMean": 78.12121212121212,
+          "velocityStdDev": 13.440683549892018,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.9018759018759023,
+          "timingOffsetStdDevMs": 4.22391920178445,
+          "exactGridRatio": 0.24242424242424243
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 23,
+          "velocityMax": 80,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.792102777524207,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.68319118692253,
+          "timingOffsetStdDevMs": 4.184755615097898,
+          "exactGridRatio": 0.029850746268656716
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 120,
+    "seed": 3,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 226,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.675238095238093,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.7,
+          "velocityStdDev": 8.300741394135086,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.06201550387596899,
+          "timingOffsetMeanMs": 6.546474358974361,
+          "timingOffsetStdDevMs": 4.2973003681928885,
+          "exactGridRatio": 0.03076923076923077
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 63,
+          "velocityMax": 97,
+          "velocityMean": 80.34482758620689,
+          "velocityStdDev": 12.847315195358687,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.3232758620689655,
+          "timingOffsetStdDevMs": 3.8599720206924393,
+          "exactGridRatio": 0.3448275862068966
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 22,
+          "velocityMax": 81,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.94073172869851,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.696517412935325,
+          "timingOffsetStdDevMs": 4.030671212773936,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 120,
+    "seed": 7,
+    "grooveContractId": "lofi_tape_late_chords",
+    "patternFamilies": [
+      "tr808-lofi-dusty-break",
+      "tr808-lofi-minimal"
+    ],
+    "audit": {
+      "noteCount": 251,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.284210526315793,
+      "voices": {
+        "hat": {
+          "count": 156,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 28.51923076923077,
+          "velocityStdDev": 8.28844666546348,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.10967741935483871,
+          "timingOffsetMeanMs": 6.837606837606836,
+          "timingOffsetStdDevMs": 3.6907329238159443,
+          "exactGridRatio": 0.01282051282051282
+        },
+        "kick": {
+          "count": 31,
+          "velocityMin": 66,
+          "velocityMax": 94,
+          "velocityMean": 80.06451612903226,
+          "velocityStdDev": 11.905367409406804,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.6048387096774193,
+          "timingOffsetStdDevMs": 3.354834401706635,
+          "exactGridRatio": 0.45161290322580644
+        },
+        "snare": {
+          "count": 64,
+          "velocityMin": 23,
+          "velocityMax": 78,
+          "velocityMean": 45.5,
+          "velocityStdDev": 15.595472099298565,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0.015873015873015872,
+          "timingOffsetMeanMs": 9.163411458333332,
+          "timingOffsetStdDevMs": 3.2846568349540526,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 120,
+    "seed": 42,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 230,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.42,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.692307692307693,
+          "velocityStdDev": 8.356339052890563,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.031007751937984496,
+          "timingOffsetMeanMs": 6.698717948717952,
+          "timingOffsetStdDevMs": 4.048687196421103,
+          "exactGridRatio": 0.046153846153846156
+        },
+        "kick": {
+          "count": 33,
+          "velocityMin": 62,
+          "velocityMax": 97,
+          "velocityMean": 78.12121212121212,
+          "velocityStdDev": 13.440683549892018,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -1.1047979797979797,
+          "timingOffsetStdDevMs": 3.980528169055255,
+          "exactGridRatio": 0.2727272727272727
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 23,
+          "velocityMax": 80,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.792102777524207,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.789800995024873,
+          "timingOffsetStdDevMs": 4.157723192980955,
+          "exactGridRatio": 0.014925373134328358
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 168,
+    "seed": 3,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 226,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.675238095238093,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.7,
+          "velocityStdDev": 8.300741394135086,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.06201550387596899,
+          "timingOffsetMeanMs": 5.906593406593408,
+          "timingOffsetStdDevMs": 5.033494174471236,
+          "exactGridRatio": 0.046153846153846156
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 63,
+          "velocityMax": 97,
+          "velocityMean": 80.34482758620689,
+          "velocityStdDev": 12.847315195358687,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.4105090311986866,
+          "timingOffsetStdDevMs": 3.811915390881131,
+          "exactGridRatio": 0.41379310344827586
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 22,
+          "velocityMax": 81,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.94073172869851,
+          "uniqueVelocities": 19,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.72761194029851,
+          "timingOffsetStdDevMs": 4.034868117871893,
+          "exactGridRatio": 0.014925373134328358
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 168,
+    "seed": 7,
+    "grooveContractId": "lofi_tape_late_chords",
+    "patternFamilies": [
+      "tr808-lofi-dusty-break",
+      "tr808-lofi-minimal"
+    ],
+    "audit": {
+      "noteCount": 251,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.284210526315793,
+      "voices": {
+        "hat": {
+          "count": 156,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 28.51923076923077,
+          "velocityStdDev": 8.28844666546348,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.10967741935483871,
+          "timingOffsetMeanMs": 6.143162393162396,
+          "timingOffsetStdDevMs": 2.8679470340259514,
+          "exactGridRatio": 0.05128205128205128
+        },
+        "kick": {
+          "count": 31,
+          "velocityMin": 66,
+          "velocityMax": 94,
+          "velocityMean": 80.06451612903226,
+          "velocityStdDev": 11.905367409406804,
+          "uniqueVelocities": 12,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.5280337941628268,
+          "timingOffsetStdDevMs": 3.0601723215263497,
+          "exactGridRatio": 0.4838709677419355
+        },
+        "snare": {
+          "count": 64,
+          "velocityMin": 23,
+          "velocityMax": 78,
+          "velocityMean": 45.5,
+          "velocityStdDev": 15.595472099298565,
+          "uniqueVelocities": 15,
+          "repeatedVelocityRatio": 0.015873015873015872,
+          "timingOffsetMeanMs": 7.661365327380956,
+          "timingOffsetStdDevMs": 2.1559722138765713,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "lofi",
+    "tempoBpm": 168,
+    "seed": 42,
+    "grooveContractId": "lofi_lazy_dilla",
+    "patternFamilies": [
+      "tr808-lofi-minimal",
+      "tr808-lofi-boombap"
+    ],
+    "audit": {
+      "noteCount": 230,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "snare"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": 27.42,
+      "voices": {
+        "hat": {
+          "count": 130,
+          "velocityMin": 20,
+          "velocityMax": 41,
+          "velocityMean": 30.692307692307693,
+          "velocityStdDev": 8.356339052890563,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.031007751937984496,
+          "timingOffsetMeanMs": 6.404532967032969,
+          "timingOffsetStdDevMs": 4.494229698410183,
+          "exactGridRatio": 0.06153846153846154
+        },
+        "kick": {
+          "count": 33,
+          "velocityMin": 62,
+          "velocityMax": 97,
+          "velocityMean": 78.12121212121212,
+          "velocityStdDev": 13.440683549892018,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.969516594516595,
+          "timingOffsetStdDevMs": 3.9604317088805545,
+          "exactGridRatio": 0.2727272727272727
+        },
+        "snare": {
+          "count": 67,
+          "velocityMin": 23,
+          "velocityMax": 80,
+          "velocityMean": 43.26865671641791,
+          "velocityStdDev": 15.792102777524207,
+          "uniqueVelocities": 18,
+          "repeatedVelocityRatio": 0.030303030303030304,
+          "timingOffsetMeanMs": 10.772032693674484,
+          "timingOffsetStdDevMs": 4.13241352883568,
+          "exactGridRatio": 0.029850746268656716
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 84,
+    "seed": 3,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride"
+    ],
+    "audit": {
+      "noteCount": 186,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 27,
+          "velocityMin": 65,
+          "velocityMax": 75,
+          "velocityMean": 69.4074074074074,
+          "velocityStdDev": 2.0231852272218758,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.15384615384615385,
+          "timingOffsetMeanMs": 1.0471781305114638,
+          "timingOffsetStdDevMs": 2.3551433663163026,
+          "exactGridRatio": 0.2962962962962963
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 50,
+          "velocityMax": 58,
+          "velocityMean": 54.48275862068966,
+          "velocityStdDev": 2.2068965517241375,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.17857142857142858,
+          "timingOffsetMeanMs": 0.6670771756978653,
+          "timingOffsetStdDevMs": 1.8979107151998083,
+          "exactGridRatio": 0.4482758620689655
+        },
+        "ride": {
+          "count": 76,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.96052631578947,
+          "velocityStdDev": 10.294915440814362,
+          "uniqueVelocities": 17,
+          "repeatedVelocityRatio": 0.09333333333333334,
+          "timingOffsetMeanMs": 1.9776002506265666,
+          "timingOffsetStdDevMs": 2.320315721230973,
+          "exactGridRatio": 0.2631578947368421
+        },
+        "snare": {
+          "count": 47,
+          "velocityMin": 33,
+          "velocityMax": 72,
+          "velocityMean": 38.91489361702128,
+          "velocityStdDev": 9.562403746664044,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.2826086956521739,
+          "timingOffsetMeanMs": 1.266464032421479,
+          "timingOffsetStdDevMs": 2.4934390111698557,
+          "exactGridRatio": 0.1276595744680851
+        },
+        "tom": {
+          "count": 7,
+          "velocityMin": 70,
+          "velocityMax": 82,
+          "velocityMean": 74.71428571428571,
+          "velocityStdDev": 4.2999762695121175,
+          "uniqueVelocities": 5,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": 0.6377551020408163,
+          "timingOffsetStdDevMs": 2.367246752903921,
+          "exactGridRatio": 0.42857142857142855
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 84,
+    "seed": 7,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-swing-ride",
+      "jazz-brush-ballad"
+    ],
+    "audit": {
+      "noteCount": 189,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 29,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.6896551724138,
+          "velocityStdDev": 1.8213948477578283,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.32142857142857145,
+          "timingOffsetMeanMs": 0.7697044334975369,
+          "timingOffsetStdDevMs": 1.8171111668335158,
+          "exactGridRatio": 0.1724137931034483
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 52,
+          "velocityMax": 60,
+          "velocityMean": 55.51724137931034,
+          "velocityStdDev": 2.191215843492035,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.07142857142857142,
+          "timingOffsetMeanMs": 0.1539408866995074,
+          "timingOffsetStdDevMs": 1.5799265515538436,
+          "exactGridRatio": 0.4482758620689655
+        },
+        "ride": {
+          "count": 87,
+          "velocityMin": 48,
+          "velocityMax": 77,
+          "velocityMean": 58.45977011494253,
+          "velocityStdDev": 10.285359081792222,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0.10465116279069768,
+          "timingOffsetMeanMs": 1.8472906403940892,
+          "timingOffsetStdDevMs": 2.175439668251867,
+          "exactGridRatio": 0.2413793103448276
+        },
+        "snare": {
+          "count": 38,
+          "velocityMin": 33,
+          "velocityMax": 70,
+          "velocityMean": 38.3421052631579,
+          "velocityStdDev": 7.484286401273546,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.13513513513513514,
+          "timingOffsetMeanMs": 2.662907268170426,
+          "timingOffsetStdDevMs": 3.6475974380310197,
+          "exactGridRatio": 0.18421052631578946
+        },
+        "tom": {
+          "count": 6,
+          "velocityMin": 69,
+          "velocityMax": 79,
+          "velocityMean": 71.5,
+          "velocityStdDev": 3.452052529534663,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.2,
+          "timingOffsetMeanMs": -0.24801587301587302,
+          "timingOffsetStdDevMs": 1.588076447776004,
+          "exactGridRatio": 0.3333333333333333
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 84,
+    "seed": 42,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride",
+      "jazz-bebop-comping"
+    ],
+    "audit": {
+      "noteCount": 161,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 14,
+      "performanceSignatureCount": 14,
+      "repeatedRhythmBarRatio": 0.125,
+      "repeatedPerformanceBarRatio": 0.125,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 24,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.41666666666667,
+          "velocityStdDev": 1.753963764987432,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.21739130434782608,
+          "timingOffsetMeanMs": 0.7440476190476191,
+          "timingOffsetStdDevMs": 1.9211226915711392,
+          "exactGridRatio": 0.16666666666666666
+        },
+        "kick": {
+          "count": 24,
+          "velocityMin": 52,
+          "velocityMax": 58,
+          "velocityMean": 55.208333333333336,
+          "velocityStdDev": 1.8022940628235142,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.17391304347826086,
+          "timingOffsetMeanMs": 0.682043650793651,
+          "timingOffsetStdDevMs": 1.547617060311097,
+          "exactGridRatio": 0.4166666666666667
+        },
+        "ride": {
+          "count": 72,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.40277777777778,
+          "velocityStdDev": 10.438523365961698,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.1267605633802817,
+          "timingOffsetMeanMs": 1.9221230158730163,
+          "timingOffsetStdDevMs": 2.332371388120541,
+          "exactGridRatio": 0.20833333333333334
+        },
+        "snare": {
+          "count": 36,
+          "velocityMin": 33,
+          "velocityMax": 71,
+          "velocityMean": 38.05555555555556,
+          "velocityStdDev": 7.579007720321397,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.08571428571428572,
+          "timingOffsetMeanMs": 1.9841269841269842,
+          "timingOffsetStdDevMs": 2.3788846841828963,
+          "exactGridRatio": 0.1388888888888889
+        },
+        "tom": {
+          "count": 5,
+          "velocityMin": 69,
+          "velocityMax": 81,
+          "velocityMean": 73.6,
+          "velocityStdDev": 4.029888335921977,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.25,
+          "timingOffsetMeanMs": 1.1904761904761905,
+          "timingOffsetStdDevMs": 1.4580296087995108,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 120,
+    "seed": 3,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride"
+    ],
+    "audit": {
+      "noteCount": 186,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 27,
+          "velocityMin": 65,
+          "velocityMax": 75,
+          "velocityMean": 69.4074074074074,
+          "velocityStdDev": 2.0231852272218758,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.15384615384615385,
+          "timingOffsetMeanMs": 1.1574074074074074,
+          "timingOffsetStdDevMs": 2.256202394631705,
+          "exactGridRatio": 0.2222222222222222
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 50,
+          "velocityMax": 58,
+          "velocityMean": 54.48275862068966,
+          "velocityStdDev": 2.2068965517241375,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.17857142857142858,
+          "timingOffsetMeanMs": 0.5387931034482761,
+          "timingOffsetStdDevMs": 1.9269753708335715,
+          "exactGridRatio": 0.41379310344827586
+        },
+        "ride": {
+          "count": 76,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.96052631578947,
+          "velocityStdDev": 10.294915440814362,
+          "uniqueVelocities": 17,
+          "repeatedVelocityRatio": 0.09333333333333334,
+          "timingOffsetMeanMs": 2.00109649122807,
+          "timingOffsetStdDevMs": 2.214634069291106,
+          "exactGridRatio": 0.18421052631578946
+        },
+        "snare": {
+          "count": 47,
+          "velocityMin": 33,
+          "velocityMax": 72,
+          "velocityMean": 38.91489361702128,
+          "velocityStdDev": 9.562403746664044,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.2826086956521739,
+          "timingOffsetMeanMs": 1.7730496453900708,
+          "timingOffsetStdDevMs": 1.9566408204205004,
+          "exactGridRatio": 0.0425531914893617
+        },
+        "tom": {
+          "count": 7,
+          "velocityMin": 70,
+          "velocityMax": 82,
+          "velocityMean": 74.71428571428571,
+          "velocityStdDev": 4.2999762695121175,
+          "uniqueVelocities": 5,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -6.344131569286608e-17,
+          "timingOffsetStdDevMs": 1.7607380306844098,
+          "exactGridRatio": 0.14285714285714285
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 120,
+    "seed": 7,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-swing-ride",
+      "jazz-brush-ballad"
+    ],
+    "audit": {
+      "noteCount": 189,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 29,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.6896551724138,
+          "velocityStdDev": 1.8213948477578283,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.32142857142857145,
+          "timingOffsetMeanMs": 0.646551724137931,
+          "timingOffsetStdDevMs": 1.7390400053031903,
+          "exactGridRatio": 0.13793103448275862
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 52,
+          "velocityMax": 60,
+          "velocityMean": 55.51724137931034,
+          "velocityStdDev": 2.191215843492035,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.07142857142857142,
+          "timingOffsetMeanMs": 0.25143678160919547,
+          "timingOffsetStdDevMs": 1.5391009544273384,
+          "exactGridRatio": 0.3448275862068966
+        },
+        "ride": {
+          "count": 87,
+          "velocityMin": 48,
+          "velocityMax": 77,
+          "velocityMean": 58.45977011494253,
+          "velocityStdDev": 10.285359081792222,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0.10465116279069768,
+          "timingOffsetMeanMs": 1.8199233716475094,
+          "timingOffsetStdDevMs": 2.2179811144401462,
+          "exactGridRatio": 0.16091954022988506
+        },
+        "snare": {
+          "count": 38,
+          "velocityMin": 33,
+          "velocityMax": 70,
+          "velocityMean": 38.3421052631579,
+          "velocityStdDev": 7.484286401273546,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.13513513513513514,
+          "timingOffsetMeanMs": 1.6721491228070178,
+          "timingOffsetStdDevMs": 3.652011320141376,
+          "exactGridRatio": 0.10526315789473684
+        },
+        "tom": {
+          "count": 6,
+          "velocityMin": 69,
+          "velocityMax": 79,
+          "velocityMean": 71.5,
+          "velocityStdDev": 3.452052529534663,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.2,
+          "timingOffsetMeanMs": 1.4802973661668753e-16,
+          "timingOffsetStdDevMs": 2.4796626487996005,
+          "exactGridRatio": 0.16666666666666666
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 120,
+    "seed": 42,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride",
+      "jazz-bebop-comping"
+    ],
+    "audit": {
+      "noteCount": 161,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 14,
+      "performanceSignatureCount": 14,
+      "repeatedRhythmBarRatio": 0.125,
+      "repeatedPerformanceBarRatio": 0.125,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 24,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.41666666666667,
+          "velocityStdDev": 1.753963764987432,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.21739130434782608,
+          "timingOffsetMeanMs": 0.7378472222222222,
+          "timingOffsetStdDevMs": 1.959864914040909,
+          "exactGridRatio": 0
+        },
+        "kick": {
+          "count": 24,
+          "velocityMin": 52,
+          "velocityMax": 58,
+          "velocityMean": 55.208333333333336,
+          "velocityStdDev": 1.8022940628235142,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.17391304347826086,
+          "timingOffsetMeanMs": 0.607638888888889,
+          "timingOffsetStdDevMs": 1.4705793703209564,
+          "exactGridRatio": 0.375
+        },
+        "ride": {
+          "count": 72,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.40277777777778,
+          "velocityStdDev": 10.438523365961698,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.1267605633802817,
+          "timingOffsetMeanMs": 2.0399305555555554,
+          "timingOffsetStdDevMs": 2.1852770616621715,
+          "exactGridRatio": 0.125
+        },
+        "snare": {
+          "count": 36,
+          "velocityMin": 33,
+          "velocityMax": 71,
+          "velocityMean": 38.05555555555556,
+          "velocityStdDev": 7.579007720321397,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.08571428571428572,
+          "timingOffsetMeanMs": 1.8807870370370372,
+          "timingOffsetStdDevMs": 2.2612065051577583,
+          "exactGridRatio": 0.1388888888888889
+        },
+        "tom": {
+          "count": 5,
+          "velocityMin": 69,
+          "velocityMax": 81,
+          "velocityMean": 73.6,
+          "velocityStdDev": 4.029888335921977,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.25,
+          "timingOffsetMeanMs": 0,
+          "timingOffsetStdDevMs": 1.7430417219459908,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 168,
+    "seed": 3,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride"
+    ],
+    "audit": {
+      "noteCount": 186,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 27,
+          "velocityMin": 65,
+          "velocityMax": 75,
+          "velocityMean": 69.4074074074074,
+          "velocityStdDev": 2.0231852272218758,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.15384615384615385,
+          "timingOffsetMeanMs": 1.0471781305114638,
+          "timingOffsetStdDevMs": 2.097255025401284,
+          "exactGridRatio": 0.48148148148148145
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 50,
+          "velocityMax": 58,
+          "velocityMean": 54.48275862068966,
+          "velocityStdDev": 2.2068965517241375,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.17857142857142858,
+          "timingOffsetMeanMs": 0.5644499178981938,
+          "timingOffsetStdDevMs": 1.829386645112468,
+          "exactGridRatio": 0.4827586206896552
+        },
+        "ride": {
+          "count": 76,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.96052631578947,
+          "velocityStdDev": 10.294915440814362,
+          "uniqueVelocities": 17,
+          "repeatedVelocityRatio": 0.09333333333333334,
+          "timingOffsetMeanMs": 2.0755012531328334,
+          "timingOffsetStdDevMs": 2.2687699228682634,
+          "exactGridRatio": 0.32894736842105265
+        },
+        "snare": {
+          "count": 47,
+          "velocityMin": 33,
+          "velocityMax": 72,
+          "velocityMean": 38.91489361702128,
+          "velocityStdDev": 9.562403746664044,
+          "uniqueVelocities": 13,
+          "repeatedVelocityRatio": 0.2826086956521739,
+          "timingOffsetMeanMs": 1.5830800405268488,
+          "timingOffsetStdDevMs": 2.1079351273909714,
+          "exactGridRatio": 0.2127659574468085
+        },
+        "tom": {
+          "count": 7,
+          "velocityMin": 70,
+          "velocityMax": 82,
+          "velocityMean": 74.71428571428571,
+          "velocityStdDev": 4.2999762695121175,
+          "uniqueVelocities": 5,
+          "repeatedVelocityRatio": 0,
+          "timingOffsetMeanMs": -0.6377551020408163,
+          "timingOffsetStdDevMs": 1.6120058341946324,
+          "exactGridRatio": 0
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 168,
+    "seed": 7,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-swing-ride",
+      "jazz-brush-ballad"
+    ],
+    "audit": {
+      "noteCount": 189,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 16,
+      "performanceSignatureCount": 16,
+      "repeatedRhythmBarRatio": 0,
+      "repeatedPerformanceBarRatio": 0,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 29,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.6896551724138,
+          "velocityStdDev": 1.8213948477578283,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.32142857142857145,
+          "timingOffsetMeanMs": 0.6927339901477833,
+          "timingOffsetStdDevMs": 1.7794069052134343,
+          "exactGridRatio": 0.2413793103448276
+        },
+        "kick": {
+          "count": 29,
+          "velocityMin": 52,
+          "velocityMax": 60,
+          "velocityMean": 55.51724137931034,
+          "velocityStdDev": 2.191215843492035,
+          "uniqueVelocities": 9,
+          "repeatedVelocityRatio": 0.07142857142857142,
+          "timingOffsetMeanMs": 0.25656814449917903,
+          "timingOffsetStdDevMs": 1.5295421347279226,
+          "exactGridRatio": 0.6206896551724138
+        },
+        "ride": {
+          "count": 87,
+          "velocityMin": 48,
+          "velocityMax": 77,
+          "velocityMean": 58.45977011494253,
+          "velocityStdDev": 10.285359081792222,
+          "uniqueVelocities": 16,
+          "repeatedVelocityRatio": 0.10465116279069768,
+          "timingOffsetMeanMs": 1.795977011494254,
+          "timingOffsetStdDevMs": 1.9492426019317104,
+          "exactGridRatio": 0.3218390804597701
+        },
+        "snare": {
+          "count": 38,
+          "velocityMin": 33,
+          "velocityMax": 70,
+          "velocityMean": 38.3421052631579,
+          "velocityStdDev": 7.484286401273546,
+          "uniqueVelocities": 11,
+          "repeatedVelocityRatio": 0.13513513513513514,
+          "timingOffsetMeanMs": 1.2922932330827066,
+          "timingOffsetStdDevMs": 3.853669987513328,
+          "exactGridRatio": 0.21052631578947367
+        },
+        "tom": {
+          "count": 6,
+          "velocityMin": 69,
+          "velocityMax": 79,
+          "velocityMean": 71.5,
+          "velocityStdDev": 3.452052529534663,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.2,
+          "timingOffsetMeanMs": -0.49603174603174605,
+          "timingOffsetStdDevMs": 1.8559808466140582,
+          "exactGridRatio": 0.3333333333333333
+        }
+      }
+    }
+  },
+  {
+    "style": "jazz",
+    "tempoBpm": 168,
+    "seed": 42,
+    "grooveContractId": "jazz_combo_swing",
+    "patternFamilies": [
+      "jazz-brush-ballad",
+      "jazz-swing-ride",
+      "jazz-bebop-comping"
+    ],
+    "audit": {
+      "noteCount": 161,
+      "barCount": 16,
+      "voicedKitPieces": [
+        "hat",
+        "kick",
+        "ride",
+        "snare",
+        "tom"
+      ],
+      "rhythmSignatureCount": 14,
+      "performanceSignatureCount": 14,
+      "repeatedRhythmBarRatio": 0.125,
+      "repeatedPerformanceBarRatio": 0.125,
+      "snareAccentGhostSeparation": null,
+      "voices": {
+        "hat": {
+          "count": 24,
+          "velocityMin": 67,
+          "velocityMax": 73,
+          "velocityMean": 69.41666666666667,
+          "velocityStdDev": 1.753963764987432,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.21739130434782608,
+          "timingOffsetMeanMs": 0.6820436507936508,
+          "timingOffsetStdDevMs": 1.8959430619321247,
+          "exactGridRatio": 0.2916666666666667
+        },
+        "kick": {
+          "count": 24,
+          "velocityMin": 52,
+          "velocityMax": 58,
+          "velocityMean": 55.208333333333336,
+          "velocityStdDev": 1.8022940628235142,
+          "uniqueVelocities": 7,
+          "repeatedVelocityRatio": 0.17391304347826086,
+          "timingOffsetMeanMs": 0.5270337301587302,
+          "timingOffsetStdDevMs": 1.4799997845089299,
+          "exactGridRatio": 0.5416666666666666
+        },
+        "ride": {
+          "count": 72,
+          "velocityMin": 49,
+          "velocityMax": 76,
+          "velocityMean": 58.40277777777778,
+          "velocityStdDev": 10.438523365961698,
+          "uniqueVelocities": 14,
+          "repeatedVelocityRatio": 0.1267605633802817,
+          "timingOffsetMeanMs": 2.087466931216932,
+          "timingOffsetStdDevMs": 2.132211402885167,
+          "exactGridRatio": 0.2638888888888889
+        },
+        "snare": {
+          "count": 36,
+          "velocityMin": 33,
+          "velocityMax": 71,
+          "velocityMean": 38.05555555555556,
+          "velocityStdDev": 7.579007720321397,
+          "uniqueVelocities": 10,
+          "repeatedVelocityRatio": 0.08571428571428572,
+          "timingOffsetMeanMs": 1.8187830687830688,
+          "timingOffsetStdDevMs": 2.151060157284671,
+          "exactGridRatio": 0.19444444444444445
+        },
+        "tom": {
+          "count": 5,
+          "velocityMin": 69,
+          "velocityMax": 81,
+          "velocityMean": 73.6,
+          "velocityStdDev": 4.029888335921977,
+          "uniqueVelocities": 4,
+          "repeatedVelocityRatio": 0.25,
+          "timingOffsetMeanMs": 0.1488095238095238,
+          "timingOffsetStdDevMs": 1.5888509303618024,
+          "exactGridRatio": 0.4
+        }
+      }
+    }
+  }
+]

@@ -26,6 +26,7 @@
 import { CHORD_TYPES, SCALE_TYPES } from '../knowledge/mgMusicTheory';
 import { lookupChordDef, type ImprovisorChordDef } from '../knowledge/improvisorChordVocab';
 import type { ChordBlock } from './mgChordPart';
+import type { AcgStableRole } from '../knowledge/melodyGrammarTypes';
 // ★ MG full-parity G2/G3:localScaleContext-aware orthogonal pitch sets(chord contract ∩ resolved local scale)。
 import {
   resolveMelodyAdmissionContext, resolveLocalScale, melodyContractPcsForStyle,
@@ -61,6 +62,66 @@ export interface ChordPitchSets {
    *  bias C/L token landings toward jazz-pianist preference order
    *  (typically 7 → 3 → 9 → 5 → root). */
   priorityPcs: number[];
+}
+
+/** ACG token-contract 的稳定声部候选。role 是和弦语义角色而非数组位置。 */
+export interface AcgStableToneCandidate {
+  pc: number;
+  role: AcgStableRole;
+}
+
+const normalizePc = (value: number): number => ((value % 12) + 12) % 12;
+
+/**
+ * ACG 的稳定落点必须来自 HarmonicPlan 的 stableToneMap ∩ chordScaleMap。
+ * 只有旧测试/外部调用没有下发 plan map 时才退回实际 chord spelling；这保证
+ * grammar 的 stableRoles 永远是在权威和声合同上筛选，而不是在 renderer 猜一遍。
+ */
+export function acgStablePcsForChord(chord: ChordBlock): number[] {
+  const declaredStable = [...(chord.stableTonePcs ?? [])].map(normalizePc);
+  const declaredScale = new Set([...(chord.chordScalePcs ?? [])].map(normalizePc));
+  if (declaredStable.length > 0) {
+    const admitted = declaredScale.size > 0
+      ? declaredStable.filter((pc) => declaredScale.has(pc))
+      : declaredStable;
+    if (admitted.length > 0) return [...new Set(admitted)].sort((a, b) => a - b);
+  }
+
+  const fallback = (CHORD_TYPES[chord.type] ?? [0, 4, 7])
+    .map((interval) => normalizePc(chord.rootPc + interval));
+  const admittedFallback = declaredScale.size > 0
+    ? fallback.filter((pc) => declaredScale.has(pc))
+    : fallback;
+  return [...new Set(admittedFallback.length > 0 ? admittedFallback : fallback)].sort((a, b) => a - b);
+}
+
+/**
+ * Map a declared stable pc to the limited role vocabulary used by ACG return
+ * grammar. Suspended fourths occupy the third-slot; extensions (9/11/13) do
+ * not impersonate a fifth, so stableRoles remains a genuinely hard filter.
+ */
+export function acgStableRoleForPc(chord: ChordBlock, pc: number): AcgStableRole | null {
+  const interval = normalizePc(normalizePc(pc) - normalizePc(chord.rootPc));
+  if (interval === 0) return 'root';
+  if (interval === 3 || interval === 4 || interval === 5) return 'third';
+  if (interval === 6 || interval === 7 || interval === 8) return 'fifth';
+  if (interval === 10 || interval === 11) return 'seventh';
+  return null;
+}
+
+/**
+ * The single source of truth for ACG arrival eligibility. Both scheduler and
+ * realizer call this, so `stableRoles` cannot be weakened by a later fallback.
+ */
+export function acgStableToneCandidates(
+  chord: ChordBlock,
+  allowedRoles: readonly AcgStableRole[],
+): AcgStableToneCandidate[] {
+  const allowed = new Set(allowedRoles);
+  return acgStablePcsForChord(chord)
+    .map((pc) => ({ pc, role: acgStableRoleForPc(chord, pc) }))
+    .filter((candidate): candidate is AcgStableToneCandidate => candidate.role !== null && allowed.has(candidate.role))
+    .sort((a, b) => a.pc - b.pc || a.role.localeCompare(b.role));
 }
 
 /** Map chord type → preferred scale name. CLEAN-ROOM: derived from
@@ -242,18 +303,41 @@ function priorityPcsForOrthogonalContract(chordType: string, rootPc: number, pcs
 function buildOrthogonalPitchSets(chord: ChordBlock, nextChord: ChordBlock | null, ctx: LocalScaleContext): ChordPitchSets {
   const chordLike = chordLikeFromBlock(chord);
   const admission = resolveMelodyAdmissionContext(ctx, chordLike);
-  const structural = admission.intersectionPcs.size > 0 ? admission.intersectionPcs : admission.contractPcs;
+  // ACG PIANOSONG 已有 HarmonicPlan 下发的 stableToneMap/chordScaleMap。这里直接
+  // 消费该权威合同，而非用通用 chord vocabulary 二次猜测；这样主链里的强拍/长音
+  // 从一开始就在 plan 的稳定音与局部音阶交集中，不依赖后段 pitch snap 修复。
+  const acgPlanSemantics = ctx.style.toUpperCase() === 'ACG' && (chord.stableTonePcs?.length ?? 0) > 0;
+  const declaredStable = new Set([...(chord.stableTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+  const declaredScale = new Set([...(chord.chordScalePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+  const structural = acgPlanSemantics
+    ? (() => {
+      const admitted = declaredScale.size > 0
+        ? [...declaredStable].filter((pc) => declaredScale.has(pc))
+        : [...declaredStable];
+      return new Set(admitted.length > 0 ? admitted : [...declaredStable]);
+    })()
+    : (admission.intersectionPcs.size > 0 ? admission.intersectionPcs : admission.contractPcs);
   const chordTones = [...structural].sort((a, b) => a - b);
   const colorTones = chordTones.filter((pc) => isDeclaredColorPc(chord.type, chord.rootPc, pc)).sort((a, b) => a - b);
-  const scaleTones = [...admission.localScale.pcs].filter((pc) => !structural.has(pc)).sort((a, b) => a - b);
+  const scalePcs = acgPlanSemantics && declaredScale.size > 0 ? declaredScale : admission.localScale.pcs;
+  const scaleTones = [...scalePcs].filter((pc) => !structural.has(pc)).sort((a, b) => a - b);
 
   let nextStructural: number[] | null = null;
   if (nextChord) {
-    const nextLike = chordLikeFromBlock(nextChord);
-    const nextScale = resolveLocalScale(ctx, nextLike);
-    const nextContract = melodyContractPcsForStyle(ctx.style, nextLike, nextChord.rootPc);
-    const nextIntersection = [...nextContract].filter((pc) => nextScale.pcs.has(pc));
-    nextStructural = (nextIntersection.length > 0 ? nextIntersection : [...nextContract]).sort((a, b) => a - b);
+    const nextDeclaredStable = new Set([...(nextChord.stableTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+    const nextDeclaredScale = new Set([...(nextChord.chordScalePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+    if (ctx.style.toUpperCase() === 'ACG' && nextDeclaredStable.size > 0) {
+      const admitted = nextDeclaredScale.size > 0
+        ? [...nextDeclaredStable].filter((pc) => nextDeclaredScale.has(pc))
+        : [...nextDeclaredStable];
+      nextStructural = (admitted.length > 0 ? admitted : [...nextDeclaredStable]).sort((a, b) => a - b);
+    } else {
+      const nextLike = chordLikeFromBlock(nextChord);
+      const nextScale = resolveLocalScale(ctx, nextLike);
+      const nextContract = melodyContractPcsForStyle(ctx.style, nextLike, nextChord.rootPc);
+      const nextIntersection = [...nextContract].filter((pc) => nextScale.pcs.has(pc));
+      nextStructural = (nextIntersection.length > 0 ? nextIntersection : [...nextContract]).sort((a, b) => a - b);
+    }
   }
   const approachTargets = buildApproachTargets(chordTones, nextStructural);
   const union = new Set<number>([...chordTones, ...scaleTones, ...approachTargets]);

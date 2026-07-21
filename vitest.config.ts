@@ -6,4 +6,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     environment: 'node',
   },
+  define: {
+    __AURA_TEST_DEFAULT_DREAM_PALETTE__: JSON.stringify('full-modern-gm'),
+  },
 });

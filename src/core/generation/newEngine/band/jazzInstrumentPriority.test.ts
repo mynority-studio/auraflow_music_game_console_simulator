@@ -4,6 +4,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { createRandomContext } from '../foundation';
 import { getInstrumentCatalog } from '../knowledge/instruments';
+import { JAZZ_4_4_ARCHETYPE_ID } from '../arranger/jazzArchetypePlanner';
 
 // ★ jazz 乐器优先级:用户 2026-07-03 明确不要 GM26 jazz guitar。
 //   Dream GM128 后 lead 聚焦 GM66 次中音/GM67 上低音萨克斯/钢琴;GM25 只在显式 guitarist fallback 兑现。
@@ -16,7 +17,10 @@ const dist = (role: 'lead' | 'bass', n = 32): Record<number, number> => {
   const h: Record<number, number> = {};
   for (let seed = 0; seed < n; seed++) {
     const b = buildBandSpec({ seed, styleHint: 'jazz', mood: 'x', targetDuration: 60 });
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+    const arr = buildArrangementPlan(b, {
+      rng: createRandomContext(seed),
+      jazzArchetypeId: JAZZ_4_4_ARCHETYPE_ID,
+    });
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
     const p = ip.roleProgram[role];
     if (p !== undefined) h[p] = (h[p] ?? 0) + 1;

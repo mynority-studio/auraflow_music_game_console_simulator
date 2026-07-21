@@ -66,6 +66,8 @@ describe('textureRenderer · articulation 各不相同(结构性)', () => {
   });
   it('Tape_Wobble 交替力度 dip(偶 0.32 / 奇 0.24)', () => {
     const w = renderTextureChordHits('Piano_Lofi_Tape_Wobble_Arp', VOICED, DUR);
+    expect(w[0].tRel).toBe(0);
+    expect(w[1].tRel).toBeCloseTo(0.52);
     expect(w[0].vel).toBeCloseTo(0.32);
     expect(w[1].vel).toBeCloseTo(0.24);
   });

@@ -6,7 +6,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { createTimebase, createRandomContext } from '../foundation';
-import { musicalIRToMidiEvents } from '../../../audio/musicalIrToMidi';
+import { musicalIRToMidiEvents, ROLE_CHANNEL } from '../../../audio/musicalIrToMidi';
 
 describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
   const band = buildBandSpec({ seed: 11, styleHint: 'pop', mood: 'build', targetDuration: 120 });
@@ -28,13 +28,39 @@ describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
     }
   });
 
-  it('混音承重不变量:bass 干居中 / pad 比 comp 更湿', () => {
+  it('Dream 默认通道不变量：所有轨 CC7=100、CC91/93=0，bass 居中', () => {
     const bass = ir.tracks.find((t) => t.role === 'bass')!.mix!;
     const comp = ir.tracks.find((t) => t.role === 'comp')?.mix;
     const pad = ir.tracks.find((t) => t.role === 'pad')?.mix;
-    expect(bass.reverb).toBeLessThanOrEqual(8);
+    expect(bass.reverb).toBe(0);
     expect(bass.pan).toBe(64);
-    if (comp && pad) expect(pad.reverb).toBeGreaterThanOrEqual(comp.reverb + 20);
+    for (const track of ir.tracks) {
+      expect(track.mix!.volume, track.role).toBe(100);
+      expect(track.mix!.reverb, track.role).toBe(0);
+      expect(track.mix!.chorus, track.role).toBe(0);
+    }
+    if (comp && pad) expect(pad.reverb).toBe(comp.reverb);
+  });
+
+  it('原声钢琴 CC11 计划按 beat 投影到 TrackIR tick，并只进入该钢琴硬件通道', () => {
+    const seed = 1662;
+    const pianoBand = buildBandSpec({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90 });
+    const pianoArrangement = buildArrangementPlan(pianoBand);
+    const pianoInstrumentation = buildInstrumentationPlan(pianoBand, pianoArrangement);
+    expect(pianoInstrumentation.roleProgram.comp).toBe(0);
+    const pianoHarmony = buildHarmonicPlanFromArrangement(pianoBand, pianoArrangement, createRandomContext(seed));
+    const pianoTimebase = createTimebase({ meter: pianoArrangement.meter });
+    const rendered = renderSongFull(pianoBand, pianoArrangement, pianoHarmony, pianoInstrumentation, pianoTimebase, createRandomContext(seed)).ir;
+    const compTrack = rendered.tracks.find((track) => track.role === 'comp');
+    expect(compTrack).toBeDefined();
+    const cc11 = (compTrack?.ccEvents ?? []).filter((event) => event.controller === 11);
+    expect(cc11.length).toBeGreaterThan(0);
+    expect(cc11.map((event) => event.value).every((value) => [70, 80, 90, 100].includes(value))).toBe(true);
+    expect(cc11.map((event) => event.value)).toEqual(expect.arrayContaining([70, 90]));
+
+    const outgoing = musicalIRToMidiEvents(rendered).filter((event) => event.type === 'cc' && event.data1 === 11);
+    expect(outgoing).toHaveLength(cc11.length);
+    expect(outgoing.every((event) => event.channel === ROLE_CHANNEL.comp)).toBe(true);
   });
 });
 
@@ -54,49 +80,36 @@ describe('render/gmMixAttachment — programChanges ⟹ mixChanges(同 tick 耦�
     }
   });
 
-  it('EP programChanges 同步 CC72/CC74,换出时重置避免 tail 残留', () => {
+  it('programChanges 不伪造 EP CC72/74；原生输出只允许钢琴安全 CC64 与 CC11', () => {
     const isEp = (p: number | undefined) => p === 4 || p === 5;
-    const programAt = (t: any, tick: number) => {
-      let p = t.program;
-      for (const pc of t.programChanges ?? []) {
-        if ((pc.atTick as number) <= tick) p = pc.program;
-        else break;
-      }
-      return p;
-    };
-    const hasCc = (t: any, tick: number, controller: number, value: number) =>
-      (t.ccEvents ?? []).some((e) => (e.atTick as number) === tick && e.controller === controller && e.value === value);
-
     const switched = res.ir!.tracks.filter((t) => (t.programChanges ?? []).some((pc) => isEp(t.program) !== isEp(pc.program)));
     expect(switched.length).toBeGreaterThan(0);
+    const midi = musicalIRToMidiEvents(res.ir!);
     for (const t of switched) {
       for (const pc of t.programChanges ?? []) {
         const tick = pc.atTick as number;
-        const before = programAt(t, tick - 1);
-        if (isEp(before) === isEp(pc.program)) continue;
-        const release = isEp(pc.program) ? (t.role === 'comp' ? 64 : 68) : 64;
-        const brightness = isEp(pc.program) ? 54 : 64;
-        expect(hasCc(t, tick, 72, release), `${t.role} pc@${tick} 缺 CC72=${release}`).toBe(true);
-        expect(hasCc(t, tick, 74, brightness), `${t.role} pc@${tick} 缺 CC74=${brightness}`).toBe(true);
+        expect((t.ccEvents ?? []).some((e) => (e.atTick as number) === tick && (e.controller === 72 || e.controller === 74)), `${t.role} pc@${tick} 不自动写 CC72/74`).toBe(false);
+        const outgoingCC = midi.filter((event) => event.ticks === tick && event.channel === ROLE_CHANNEL[t.role] && event.type === 'cc');
+        expect(outgoingCC.every((event) => [0, 11, 64].includes(event.data1)), `${t.role} pc@${tick} 只允许 CC0/钢琴 CC11/CC64`).toBe(true);
       }
     }
   });
 });
 
 describe('render/gmMixAttachment — Dream GM128 banked variations', () => {
-  it('RNB 的 GM5 lead/comp 消费 Dream CC0=16 St.FM Electric Piano,鼓组不发 bank', () => {
+  it('RNB 不把 St.FM 同时分给 lead/comp；完整地址按角色发送，鼓组不发 bank', () => {
     const res = generateSong({ seed: 0, styleHint: 'rnb', mood: 'build', targetDuration: 90 });
     const lead = res.ir!.tracks.find((t) => t.role === 'lead')!;
     const comp = res.ir!.tracks.find((t) => t.role === 'comp')!;
     const drum = res.ir!.tracks.find((t) => t.role === 'drum')!;
-    expect(lead).toMatchObject({ program: 5, bank: 16 });
+    expect(lead).toMatchObject({ program: 0, bank: 0 });
     expect(comp).toMatchObject({ program: 5, bank: 16 });
     expect(drum.bank).toBeUndefined();
 
     const events = musicalIRToMidiEvents(res.ir!);
-    const leadBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0 && e.data2 === 16);
+    const leadBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0 && e.data2 === 0);
     const leadBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32);
-    const leadPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0 && e.data1 === 5);
+    const leadPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0 && e.data1 === 0);
     const compBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 0 && e.data2 === 16);
     const compBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 32);
     const compPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 2 && e.ticks === 0 && e.data1 === 5);

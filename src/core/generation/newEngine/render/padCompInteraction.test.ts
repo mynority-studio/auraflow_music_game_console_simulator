@@ -10,8 +10,8 @@ import { createTimebase, createRandomContext, beats, pc } from '../foundation';
 // ============================================================
 // render/padCompInteraction · Golden Case Fmaj7 → Fm7(docs/pad_comp_interaction_directive §12)
 // ------------------------------------------------------------
-// comp active + pad active 时进入 pad-aware mode:pad 退成 guide-tone(≤2 音,省 root/5th),
-//   comp 保 GM 手感只避同绝对音高。验证 bass 有 F、pad 不复制完整和弦、无低 root、
+// comp active + pad active 时进入 pad-aware mode:pad 写当前和弦的 rootless 上层三声部,
+//   comp 保 GM 手感只避同绝对音高。验证 bass 有 F、pad 不复制含 root 的完整和弦、
 //   comp/pad exact-overlap≈0、comp 时值短于 pad、comp GM 不回退(仅丢避让音)。
 // ============================================================
 
@@ -45,7 +45,7 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
   const reservedLow = 67;
 
-  // chorus1:pop comp active + pad active → guide-tone(thin)。
+  // chorus1:pop comp active + pad active → 当前和弦的薄 chord-bed。
   const dec: PadCompDecision = decidePadComp({
     style: 'pop', sectionId: 'chorus1', sectionRole: 'chorus',
     padDensity: 0.5, padActive: true, compActive: true, bassActive: true,
@@ -54,11 +54,15 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
   const decisionBySection = { chorus1: dec };
 
   const pad = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection, leadReservedLow: reservedLow });
-  const padBySpan: Record<string, number[]> = {};
-  for (const n of pad.notes) {
-    const sid = n.startTick === timebase.beatToTick(beats(0)) ? 's0' : 's1';
-    (padBySpan[sid] ??= []).push(n.pitch as number);
-  }
+  const padBySpan: Record<string, number[]> = Object.fromEntries(plan.chordTimeline.map((span) => {
+    const lo = timebase.beatToTick(span.startBeat) as number;
+    const hi = lo + (timebase.beatToTick(span.durationBeats) as number);
+    const active = pad.notes.filter((note) => {
+      const start = note.startTick as number;
+      return start < hi && start + (note.durationTicks as number) > lo;
+    }).map((note) => note.pitch as number);
+    return [span.id, active];
+  }));
 
   const bass = renderBass(plan, timebase, 'pop');
 
@@ -69,11 +73,11 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
   const compWith = renderAccompaniment(plan, timebase, { ...compCtxBase, padCompDecisionBySection: decisionBySection, padOccupiedPitchesBySpan: padBySpan }).find((t) => t.role === 'comp')!;
   const compBase = renderAccompaniment(plan, timebase, compCtxBase).find((t) => t.role === 'comp')!;
 
-  it('guide-tone 决策:省 root + 省 5th + ≤2 音', () => {
-    expect(dec.padMode).toBe('guide-tone');
+  it('chord-bed 决策:有 bass 时省 root、保留 3/5/7 上层三声部', () => {
+    expect(dec.padMode).toBe('chord-bed');
     expect(dec.padOmitRoot).toBe(true);
-    expect(dec.padOmitFifth).toBe(true);
-    expect(dec.padMaxVoices).toBe(2);
+    expect(dec.padOmitFifth).toBe(false);
+    expect(dec.padMaxVoices).toBe(3);
     expect(dec.avoidExactPitchOverlap).toBe(true);
   });
 
@@ -81,9 +85,9 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
     expect(bass.notes.some((n) => ((n.pitch as number) % 12) === PC.F)).toBe(true);
   });
 
-  it('★ pad 每 span ≤ 2 音,且 < stableToneMap 长度(4)', () => {
+  it('★ pad 每 span = 3 个当前和弦上层音,且不复制含 root 的四音和弦', () => {
     for (const sid of ['s0', 's1']) {
-      expect(padBySpan[sid].length).toBeLessThanOrEqual(2);
+      expect(padBySpan[sid].length).toBe(3);
       expect(padBySpan[sid].length).toBeLessThan(plan.stableToneMap[sid].length);
     }
   });
@@ -94,13 +98,20 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
     // 完整四音集合不被复制
     expect([PC.F, PC.A, PC.C, PC.E].every((pc) => s0.has(pc))).toBe(false);
     expect([PC.F, PC.Ab, PC.C, PC.Eb].every((pc) => s1.has(pc))).toBe(false);
-    // guide tone 优先 3rd+7th;若 3rd 在 lead 预留地板下无可用八度,严格音域保护下只保留 7th。
-    expect([...s0].sort()).toEqual([PC.E].sort());
-    expect([...s1].sort()).toEqual([PC.Eb].sort());
+    expect([...s0].sort((a, b) => a - b)).toEqual([PC.A, PC.C, PC.E].sort((a, b) => a - b));
+    expect([...s1].sort((a, b) => a - b)).toEqual([PC.Ab, PC.C, PC.Eb].sort((a, b) => a - b));
   });
 
   it('★ pad 不输出低 root F(无 pc=F 的音,更无低区 root)', () => {
     for (const n of pad.notes) expect((n.pitch as number) % 12).not.toBe(PC.F);
+  });
+
+  it('★ 开放排列保留共同音，其他声部只作半音移动，不形成机械平行三度', () => {
+    const first = [...padBySpan.s0].sort((a, b) => a - b);
+    const second = [...padBySpan.s1].sort((a, b) => a - b);
+    expect(first[first.length - 1] - first[0]).toBeGreaterThanOrEqual(12);
+    expect(first.some((pitch) => second.includes(pitch))).toBe(true);
+    expect(first.map((pitch, index) => Math.abs(second[index] - pitch)).every((distance) => distance <= 1)).toBe(true);
   });
 
   it('★ comp 与 pad 在同 span 内 exact MIDI overlap = 0', () => {

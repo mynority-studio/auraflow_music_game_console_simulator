@@ -5,7 +5,6 @@ import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/playbackTypes';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { PRNGManager } from '../core/utils/PRNG';
-// MelodyEngine 已删(2026-05-24)
 import { runPipeline } from '../core/generation/pipeline';
 import {
     GeneratedChord,
@@ -16,7 +15,6 @@ import {
     ChordQuality,
     CHORD_SCALE_NAME,
 } from '../core/generation/types';
-// ★ Q+N 接管:旧 MusicianRegistry / GMSoundMap / BandSelectionStore / StyleFlags 已不再被本组件使用(Band Selection 走 Q+N)。
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, musicGenStyleLabel, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
 import type { MusicGenerationResult, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
@@ -69,7 +67,6 @@ const ROLE_TO_PART_NAME: Record<InstrumentRole, PartName> = {
     counter: 'counterMelody',
     secondary: 'secondaryMelody',
 };
-
 
 /** 完整和声色彩名 — root + quality + extensions + bass override(如 Dadd9/F#)*/
 function chordToFullName(chord: GeneratedChord): string {
@@ -167,9 +164,6 @@ interface FrameSnapshot {
     seed: number;
 }
 
-// ★ Q+N 接管(qn_main_engine_takeover §8):旧 BandRole 槽位顺序 / BandSelection 类型 / DEFAULT_MUSICIAN_BY_ROLE
-//   已删(Band Selection 改走 QnBandSelectionStore + QnBandPanel,见下)。
-
 // ★ Band Selection 面板(qn_takeover_followup §3):选「参与乐手/职能」,**不选 GM 音色**。
 //   每个乐手三态:自动(Q+N 默认)/ 参与(白名单)/ 禁用。具体音色由 Q+N 器配层按 style/seed 随机决定。
 const PARTICIPANT_STATES: { value: BandParticipantState; label: string; cls: string }[] = [
@@ -239,7 +233,7 @@ export const PipelineMonitor: React.FC = () => {
     const [monitorSections, setMonitorSections] = useState<TraceSection[]>([]);
     const [monitorIr, setMonitorIr] = useState<MusicGenerationResult['ir']>(null);
     const [rollWinOpen, setRollWinOpen] = useState(false);
-    // ★ Debug/Diagnostics 区(诊断能力从旧 NewEnginePanel 收口进 Q+H):A/B seed diff · MIDI 导出 · 音轨视图。
+    // ★ Debug/Diagnostics 区:A/B seed diff · MIDI 导出 · 音轨视图。
     const [showDebug, setShowDebug] = useState(false);
     const [abCmp, setAbCmp] = useState<TraceComparison | null>(null);
     const rafRef = useRef<number | null>(null);
@@ -306,9 +300,10 @@ export const PipelineMonitor: React.FC = () => {
     //   key/mode 不从 UI 传入,由 Q+N band 层在链路开头按 seed/style 抽取。
     const buildTraceRequest = useCallback((seed: number): GenerationRequest => {
         const bandConstraint = deriveLineupConstraint(QnBandSelectionStore.getParticipants());
+        const styleHint = MusicGenerationStyleStore.getStyleHint();
         const req: GenerationRequest = {
             seed,
-            styleHint: MusicGenerationStyleStore.getStyleHint(),
+            styleHint,
             mood: 'build',
             targetDuration: 120,
         };
@@ -369,9 +364,9 @@ export const PipelineMonitor: React.FC = () => {
             PRNGManager.setSeed(seed);
             PRNGManager.recordSnapshot('A');
 
-            // ★ Q+N 主链路:runPipeline 现是 Q+N 服务外观,返回完整 MusicGenerationResult(Band Selection 走 QnBandSelectionStore)。
-            //   真正播放走 AudioEngine.playMusicGeneration(result)(MusicalIR 正式音频合同),不再 playSong(mg track)。
-            const { result } = runPipeline({});
+            // ★ Q+N 主链路:runPipeline 是 Q+N 服务外观,返回完整 MusicGenerationResult。
+            //   真正播放走 AudioEngine.playMusicGeneration(result)(MusicalIR 正式音频合同)。
+            const { result } = runPipeline();
 
             if (activeSeedRef.current !== seed) return;
             if (result.status === 'failed' || !result.ir) throw new Error('音乐生成失败(audit fatal)');
@@ -436,7 +431,7 @@ export const PipelineMonitor: React.FC = () => {
     // ==========================================================
     const effectiveSeed = useCallback(() => currentSeed ?? hashSeedToInt(seedInput || '0'), [currentSeed, seedInput]);
 
-    // ⬇ MIDI:导出当前 seed/style 的成曲为 .mid(与播放同源 traceGeneration → 同一首)。
+    // ⬇ MIDI:普通生成使用同一条 trace/FinalIR 主链。
     const exportMidi = useCallback(() => {
         try {
             const s = effectiveSeed();
@@ -680,7 +675,7 @@ export const PipelineMonitor: React.FC = () => {
                     />
                 </div>
 
-                {/* ★ Debug/Diagnostics(诊断能力从旧 NewEnginePanel 收口进 Q+H;播放仍走上方 Play=playMusicGeneration)*/}
+                {/* ★ Debug/Diagnostics(播放仍走上方 Play=playMusicGeneration)*/}
                 <div className="px-4 py-2 border-b border-zinc-800/60">
                     <button
                         type="button"
@@ -754,7 +749,7 @@ export const PipelineMonitor: React.FC = () => {
                             currentSectionIdx={currentSectionIdx}
                             beatsPerBar={ui?.timeSignature?.[0]}
                         />
-                        <Stage5Ensemble qnRoster={ui?.roster} mutedParts={mutedParts} onToggleMute={togglePartMute} />
+                        <Stage5Ensemble styleHint={ui?.styleHint} qnRoster={ui?.roster} mutedParts={mutedParts} onToggleMute={togglePartMute} />
                     </div>
                 </div>
             </div>
@@ -779,6 +774,7 @@ export const PipelineMonitor: React.FC = () => {
             open={rollWinOpen}
             onClose={() => setRollWinOpen(false)}
             title={`${musicGenStyleLabel(musicStyle)} · seed ${currentSeed ?? musicGen?.seed ?? seedInput}`}
+            beatsPerBar={monitorIr?.timebase.meter.numerator ?? ui?.timeSignature?.[0]}
         />
         </>
     );
@@ -801,8 +797,8 @@ const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 interface Stage1Props {
     bpm: number | undefined;
     keyName: string | undefined;
-    tonality?: Tonality; // legacy enum 降级(仅无 chord 的局部音阶名兜底);Q+N 主显示走 tonalityLabel
-    tonalityLabel?: string; // ★ Q+N:uiSnapshot.tonality 字符串('major'|'minor'|教会调式)— 优先直显,不走 enum 降级
+    tonality?: Tonality; // enum 兜底(仅无 chord 的局部音阶名兜底);Q+N 主显示走 tonalityLabel
+    tonalityLabel?: string; // ★ Q+N:uiSnapshot.tonality 字符串('major'|'minor'|教会调式)— 优先直显
     seed: number;
     styleName: string | undefined;
     currentChord: GeneratedChord | null;
@@ -981,17 +977,28 @@ const EnergyBar: React.FC<{ level: number; active: boolean }> = ({ level, active
 
 interface Stage5Props {
     qnRoster?: import('../core/generation/musicGeneration/types').UiPlayer[]; // ★ Q+N ensemble/roster
+    styleHint?: string;
     mutedParts: Set<PartName>;
     onToggleMute: (partName: PartName) => void;
 }
 
 const QN_ROLE_LABEL: Record<string, string> = { lead: 'Lead', comp: 'Comping', bass: 'Bass', pad: 'Atmosphere', drum: 'Drum' };
+const ACG_PIANO_ROLE_LABEL: Record<string, string> = {
+    lead: 'Piano RH · Melody',
+    comp: 'Piano Mid · Harmony',
+    bass: 'Piano LH · Root',
+};
 const QN_ROLE_COLOR: Record<string, string> = { lead: 'text-emerald-300', comp: 'text-amber-300', bass: 'text-blue-300', pad: 'text-violet-300', drum: 'text-fuchsia-300' };
 // ★ Q+N roster role → 可 mute 的 PartName(对齐 AudioEngine.qnPartChannel;pad 无对应通道 → 不提供 mute)。
 const QN_ROLE_TO_PART: Record<string, PartName> = { lead: 'melody', comp: 'chord', bass: 'bass', drum: 'drums' };
 
-const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster, mutedParts, onToggleMute }) => {
-    // ★ Q+N ensemble:有 qnRoster 时直接展示乐手/乐器/状态(取代旧 palette 路径)。
+const roleLabelForStyle = (role: string, styleHint?: string): string =>
+    styleHint?.toLowerCase() === 'acg'
+        ? (ACG_PIANO_ROLE_LABEL[role] ?? QN_ROLE_LABEL[role] ?? role)
+        : (QN_ROLE_LABEL[role] ?? role);
+
+const Stage5Ensemble: React.FC<Stage5Props> = ({ styleHint, qnRoster, mutedParts, onToggleMute }) => {
+    // ★ Q+N ensemble:有 qnRoster 时直接展示乐手/乐器/状态。
     if (qnRoster && qnRoster.length > 0) {
         return (
             <section className="px-4 pt-4 pb-4">
@@ -1002,7 +1009,7 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster, mutedParts, onToggleM
                         const isMuted = part ? mutedParts.has(part) : false;
                         return (
                         <div key={p.role} className="flex items-center justify-between gap-2 text-xs">
-                            <span className={`${QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'} ${isMuted ? 'line-through opacity-50' : ''}`}>{QN_ROLE_LABEL[p.role] ?? p.role}</span>
+                            <span className={`${QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'} ${isMuted ? 'line-through opacity-50' : ''}`}>{roleLabelForStyle(p.role, styleHint)}</span>
                             <div className="flex items-center gap-1.5 min-w-0">
                                 {/* 音色只读(器配层随机选);标 参与/自动补位 */}
                                 <span className={`font-mono truncate ${isMuted ? 'text-zinc-600 line-through' : 'text-zinc-400'}`}>{p.instrumentName}
@@ -1027,7 +1034,7 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster, mutedParts, onToggleM
             </section>
         );
     }
-    // 无 Q+N roster(未生成)→ 空态。旧 palette/roster(BandRoster/ArrangedTrack)编制路径已随旧数据结构删除。
+    // 无 Q+N roster(未生成)→ 空态。
     return (
         <section className="px-4 pt-4 pb-4">
             <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />

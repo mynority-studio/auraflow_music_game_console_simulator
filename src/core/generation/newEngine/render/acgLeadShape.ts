@@ -165,8 +165,19 @@ export function resolveAcgTailExpectations(lead: TrackIR, timeline: readonly Cho
 //   ACG=melody-first;个别 section(seed99 chorus cov0.15/gap13)旋律生成太稀 → 听着"空床"不像 MG。
 //   保 MG 正常呼吸(gap≤MG phrase max ~3.75 不动),只填【远超】阈值的内部大空隙:插 soprano 和弦音(≈2/bar),
 //   声部就近(stepwise),harmonically-correct。不填曲首/曲末空隙(intro/outro 呼吸)。
+//   带有 phrase-level planned rest 的窗口是硬约束：不能因“防空床”逻辑又把它填回去。
 // ============================================================
-export function repairAcgLeadGaps(lead: TrackIR, timeline: readonly ChordSpan[], ppq: number): TrackIR {
+export interface AcgProtectedRestWindow {
+  startTick: number;
+  endTick: number;
+}
+
+export function repairAcgLeadGaps(
+  lead: TrackIR,
+  timeline: readonly ChordSpan[],
+  ppq: number,
+  protectedRestWindows: readonly AcgProtectedRestWindow[] = [],
+): TrackIR {
   const B = (beat: number) => beat * ppq;
   const GAP = B(5.5);  // 只修 >5.5 拍的内部空隙(MG phrase maxGap ~3.75 → 留足呼吸,只填"空床")
   const STEP = B(1.6); // 填充音间隔 ~1.6 拍(≈MG 密度但留气口)
@@ -185,6 +196,8 @@ export function repairAcgLeadGaps(lead: TrackIR, timeline: readonly ChordSpan[],
     return best;
   };
   const added: NoteIR[] = [];
+  const overlapsProtectedRest = (start: number, end: number): boolean =>
+    protectedRestWindows.some((window) => start < window.endTick && end > window.startTick);
   for (let i = 0; i < notes.length - 1; i++) {
     const gapStart = st(notes[i]) + du(notes[i]);
     const gapEnd = st(notes[i + 1]);
@@ -195,6 +208,7 @@ export function repairAcgLeadGaps(lead: TrackIR, timeline: readonly ChordSpan[],
       const p = sopranoNear(ch.pcs, prev);
       const dur = Math.min(STEP - B(0.2), gapEnd - t - B(0.35));
       if (dur < B(0.3)) break;
+      if (overlapsProtectedRest(t, t + dur)) continue;
       added.push({ pitch: midi(p), startTick: ticks(Math.round(t)) as Ticks, durationTicks: ticks(Math.round(dur)) as Ticks, velocity: 86 });
       prev = p;
     }

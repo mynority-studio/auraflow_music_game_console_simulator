@@ -33,6 +33,36 @@ export interface SlopeRuleConversionOptions {
   weightMultiplier?: number;
 }
 
+/**
+ * ACG PIANOSONG does not need a second, invented lick corpus: its lyrical
+ * piano vocabulary overlaps the quiet/cantabile portion of the existing
+ * Impro-Visor + LOFI-compatible pool.  These labels make that reuse explicit
+ * and give the ACG renderer internal, non-UI pools to choose from.
+ *
+ * They are metadata only.  Pitch, harmonic contracts and note realization
+ * remain owned by the normal grammar → scheduler → realizer chain.
+ */
+export type AcgPianoSongGrammarTag =
+  | 'acg_pianosong_pool'
+  | 'acg_pianosong_lofi_compatible'
+  | 'acg_pianosong_breath'
+  | 'acg_pianosong_cantabile'
+  | 'acg_pianosong_lyrical_answer'
+  | 'acg_pianosong_ascending_arrival'
+  | 'acg_pianosong_broken_chord_motion'
+  | 'acg_pianosong_modal_color'
+  | 'acg_pianosong_cadential_return'
+  | 'acg_pianosong_mid_variation';
+
+/** Internal arrangement-facing pools; never a user-selectable style. */
+export type AcgPianoSongGrammarSubset =
+  | 'all'
+  | 'intro-breath'
+  | 'cantabile-theme'
+  | 'ascending-lift'
+  | 'modal-color'
+  | 'cadential-return';
+
 function isBebopSourceRule(rule: ImprovisorSlopeRule): boolean {
   return /CharlieParker/i.test(rule.source) || /CharlieParker/i.test(rule.id);
 }
@@ -217,7 +247,10 @@ export function sourceSlopeRulesToGrammarRules(
     .map(rule => slopeRuleToGrammarRule(rule, options));
 }
 
-function lofiStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
+/** Shared compatibility test for the restrained LOFI-adjacent corpus.
+ * Exported so ACG PIANOSONG can label (rather than silently copy) the
+ * compatible material it reuses. */
+export function isLofiStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
   if (!hasAudibleBody(rule)) return false;
   if (isJazzSpecialSourceRule(rule)) return false;
   if (isJazzOnlyBrickType(rule.brickType)) return false;
@@ -257,11 +290,155 @@ function lofiStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
  *  continuous 16th motion erases the loop's chord color. */
 export function lofiStableSlopeRulesToGrammarRules(): GrammarRule[] {
   return IMPROVISOR_SLOPES
-    .filter(lofiStableSlopeRule)
+    .filter(isLofiStableSlopeRule)
     .map(rule => slopeRuleToGrammarRule(rule, {
       includeLofiMetadata: true,
       lofiTagBias: true,
       styleTags: ['lofi_pool'],
+    }));
+}
+
+interface AcgPianoSongSlopeCandidate {
+  rule: ImprovisorSlopeRule;
+  tags: AcgPianoSongGrammarTag[];
+}
+
+let acgPianoSongSlopeCandidatesCache: readonly AcgPianoSongSlopeCandidate[] | undefined;
+
+/**
+ * Classify a pre-existing slope rule for lyrical piano use.  This is
+ * deliberately a selection/tagging layer, not a new authored grammar:
+ * LOFI-compatible phrase shapes remain valid, while a small additional set
+ * supplies the upward broken-chord / color-answer movement needed after the
+ * opening.
+ */
+export function tagImprovisorSlopeRuleForAcgPianoSong(rule: ImprovisorSlopeRule): AcgPianoSongGrammarTag[] {
+  const features = extractLofiSlopeFeatures(rule);
+  const lofiTags = tagImprovisorSlopeRule(rule);
+  const tags = new Set<AcgPianoSongGrammarTag>(['acg_pianosong_pool']);
+  const terminalTypes = rule.bodyKind === 'slope'
+    ? rule.slopes.flatMap(group => group.notes.map(note => note.type))
+    : rule.flatTokens.map(token => token.kind === 'abstract' ? token.type : 'X');
+  const colorDegreeCount = rule.bodyKind === 'flat'
+    ? rule.flatTokens.filter(token => token.kind === 'scaleDegree'
+      && /^(b2|#4|#5|b6|#6|b7)$/i.test(token.degree)).length
+    : 0;
+  const ascendingGroups = rule.bodyKind === 'slope'
+    ? rule.slopes.filter(group => group.dirMin >= 1 && group.dirMax <= 9).length
+    : 0;
+  const chordCarrierCount = terminalTypes.filter(type => type === 'C' || type === 'G' || type === 'B').length;
+  const colorCarrierCount = terminalTypes.filter(type => type === 'L' || type === 'H').length;
+  const isCadentialSource = /Cadence|Turnaround|Launcher|Dropback|POT|Approach/i.test(rule.brickType);
+  const isLofiCompatible = isLofiStableSlopeRule(rule);
+
+  if (isLofiCompatible) tags.add('acg_pianosong_lofi_compatible');
+  if (features.restRatio >= 0.14 || features.restDuration >= 1) tags.add('acg_pianosong_breath');
+  if (
+    (features.longToneCount >= 1 || features.restRatio >= 0.12)
+    && features.audibleTokenCount >= 2
+    && features.audibleTokenCount <= 13
+  ) tags.add('acg_pianosong_cantabile');
+  if (lofiTags.includes('lofi_hold_answer') || lofiTags.includes('lofi_crawl_hold')) {
+    tags.add('acg_pianosong_lyrical_answer');
+  }
+  if (ascendingGroups >= 1 && (chordCarrierCount >= 2 || features.smallCrawlGroupCount >= 1)) {
+    tags.add('acg_pianosong_ascending_arrival');
+  }
+  if (ascendingGroups >= 1 && chordCarrierCount >= 3) {
+    tags.add('acg_pianosong_broken_chord_motion');
+  }
+  if (colorCarrierCount >= 1 || colorDegreeCount >= 1) {
+    tags.add('acg_pianosong_modal_color');
+  }
+  if (isCadentialSource && (features.longToneCount >= 1 || features.approachTokenCount >= 1 || features.restRatio >= 0.12)) {
+    tags.add('acg_pianosong_cadential_return');
+  }
+  if (
+    tags.has('acg_pianosong_ascending_arrival')
+    || tags.has('acg_pianosong_broken_chord_motion')
+    || tags.has('acg_pianosong_modal_color')
+    || tags.has('acg_pianosong_lyrical_answer')
+  ) tags.add('acg_pianosong_mid_variation');
+
+  return [...tags];
+}
+
+function isAcgPianoSongSlopeRule(rule: ImprovisorSlopeRule, tags = tagImprovisorSlopeRuleForAcgPianoSong(rule)): boolean {
+  if (!hasAudibleBody(rule)) return false;
+  // Keep the piano pool lyrical rather than importing instrument-specific
+  // bebop language.  The existing LOFI filter already makes the same broad
+  // distinction; ACG permits a little more shaped movement, not dense runs.
+  if (isJazzSpecialSourceRule(rule) || isJazzOnlyBrickType(rule.brickType) || isDenseJazzRunRule(rule)) return false;
+  const features = extractLofiSlopeFeatures(rule);
+  const audibleDensity = features.audibleDuration > 0
+    ? features.audibleTokenCount / features.audibleDuration
+    : features.audibleTokenCount;
+  if (features.shortestDuration > 0 && features.shortestDuration < 0.25) return false;
+  if (features.maxConsecutiveShortAudibleCount > 5) return false;
+  if (features.chromaticTokenCount > Math.max(3, Math.ceil(features.tokenCount * 0.3))) return false;
+  if (features.maxAbsSlope > 13 && features.restRatio < 0.14) return false;
+  if (audibleDensity > 2.3 && features.longToneCount === 0 && features.restRatio < 0.1) return false;
+
+  return tags.some(tag => tag !== 'acg_pianosong_pool' && tag !== 'acg_pianosong_lofi_compatible');
+}
+
+function acgPianoSongSubsetIncludes(
+  subset: AcgPianoSongGrammarSubset,
+  tags: readonly AcgPianoSongGrammarTag[],
+): boolean {
+  if (subset === 'all') return true;
+  const has = (tag: AcgPianoSongGrammarTag) => tags.includes(tag);
+  switch (subset) {
+    case 'intro-breath':
+      return has('acg_pianosong_breath') || (has('acg_pianosong_cantabile') && has('acg_pianosong_lofi_compatible'));
+    case 'cantabile-theme':
+      return has('acg_pianosong_cantabile') || has('acg_pianosong_lyrical_answer');
+    case 'ascending-lift':
+      return has('acg_pianosong_ascending_arrival') || has('acg_pianosong_broken_chord_motion');
+    case 'modal-color':
+      return has('acg_pianosong_modal_color') && (has('acg_pianosong_cantabile') || has('acg_pianosong_breath'));
+    case 'cadential-return':
+      return has('acg_pianosong_cadential_return')
+        && (has('acg_pianosong_cantabile') || has('acg_pianosong_ascending_arrival') || has('acg_pianosong_lyrical_answer'));
+  }
+}
+
+function acgPianoSongSlopeWeightMultiplier(tags: readonly AcgPianoSongGrammarTag[]): number {
+  let multiplier = 1;
+  const has = (tag: AcgPianoSongGrammarTag) => tags.includes(tag);
+  if (has('acg_pianosong_lofi_compatible')) multiplier *= 1.04;
+  if (has('acg_pianosong_cantabile')) multiplier *= 1.08;
+  if (has('acg_pianosong_lyrical_answer')) multiplier *= 1.08;
+  if (has('acg_pianosong_ascending_arrival')) multiplier *= 1.16;
+  if (has('acg_pianosong_broken_chord_motion')) multiplier *= 1.06;
+  if (has('acg_pianosong_modal_color')) multiplier *= 1.06;
+  if (has('acg_pianosong_cadential_return')) multiplier *= 1.10;
+  return Math.min(1.75, multiplier);
+}
+
+function acgPianoSongSlopeCandidates(): readonly AcgPianoSongSlopeCandidate[] {
+  if (acgPianoSongSlopeCandidatesCache) return acgPianoSongSlopeCandidatesCache;
+  acgPianoSongSlopeCandidatesCache = IMPROVISOR_SLOPES
+    .map(rule => ({ rule, tags: tagImprovisorSlopeRuleForAcgPianoSong(rule) }))
+    .filter(({ rule, tags }) => isAcgPianoSongSlopeRule(rule, tags));
+  return acgPianoSongSlopeCandidatesCache;
+}
+
+/**
+ * Existing-corpus ACG PIANOSONG subset.  `subset` is an internal
+ * arrangement selector (intro / theme / lift / color / return), never a UI
+ * style.  Every returned rule is labelled in `metadata.styleTags` so audits
+ * can prove what vocabulary was used.
+ */
+export function acgPianoSongSlopeRulesToGrammarRules(
+  subset: AcgPianoSongGrammarSubset = 'all',
+): GrammarRule[] {
+  return acgPianoSongSlopeCandidates()
+    .filter(({ tags }) => acgPianoSongSubsetIncludes(subset, tags))
+    .map(({ rule, tags }) => slopeRuleToGrammarRule(rule, {
+      includeLofiMetadata: true,
+      styleTags: tags,
+      weightMultiplier: acgPianoSongSlopeWeightMultiplier(tags),
     }));
 }
 

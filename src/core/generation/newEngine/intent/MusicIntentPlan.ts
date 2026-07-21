@@ -53,7 +53,8 @@ export interface CompOnsetFormSchedule { meta: IntentMeta; slots: CompOnsetFormS
 
 // —— §4.5 Bass pattern ——
 export type BassPatternFamily =
-  | 'rootAnchor' | 'walking' | 'syncopated' | 'pedal' | 'broken' | 'octaveAlternate' | 'fifthDrop' | 'minimal';
+  | 'rootAnchor' | 'walking' | 'syncopated'
+  | 'pedal' | 'broken' | 'octaveAlternate' | 'fifthDrop' | 'minimal';
 export interface BassPatternSlot {
   meta: IntentMeta;
   startBeat: number;

@@ -22,7 +22,12 @@ const inSpanTick = (tick: number, lo: number, hi: number) => tick >= lo - 1 && t
 
 /** dense-melody 和弦区间 id(MG :4565):melody≥10 || 短音≥8 || (melody≥8 && chord≥12)。
  *  ★ 共享:dense 区间 comp 被有意删除 → comp-continuity 审计须从"comp 应在场区间"里排除这些区间。 */
-export function denseMelodySpanIds(tracks: ReadonlyTracks, plan: HarmonicPlan, timebase: Timebase): Set<string> {
+export function denseMelodySpanIds(
+  tracks: ReadonlyTracks,
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  includeAlreadyShapedCompGaps = false,
+): Set<string> {
   const lead = tracks.find((t) => t.role === 'lead');
   const dense = new Set<string>();
   if (!lead) return dense;
@@ -34,14 +39,19 @@ export function denseMelodySpanIds(tracks: ReadonlyTracks, plan: HarmonicPlan, t
     const mel = lead.notes.filter((n) => inSpanTick(n.startTick as number, lo, hi));
     const chordCount = comp ? comp.notes.filter((n) => inSpanTick(n.startTick as number, lo, hi)).length : 0;
     const shortCount = mel.filter((n) => (n.durationTicks as number) / ppq <= DENSE_DURATION_BEATS).length;
-    if (mel.length >= 10 || shortCount >= 8 || (mel.length >= 8 && chordCount >= 12)) dense.add(s.id);
+    const denseChordTexture = mel.length >= 8
+      && (chordCount >= 12 || (includeAlreadyShapedCompGaps && chordCount === 0));
+    if (mel.length >= 10 || shortCount >= 8 || denseChordTexture) dense.add(s.id);
   }
   return dense;
 }
 
 /** dense-melody 区间的 tick 窗口(comp 被有意删 → comp-continuity 审计排除这些区间)。 */
 export function denseMelodySpanRanges(tracks: ReadonlyTracks, plan: HarmonicPlan, timebase: Timebase): { lo: number; hi: number }[] {
-  const dense = denseMelodySpanIds(tracks, plan, timebase);
+  // This helper is consumed after the LOFI shaper has intentionally removed
+  // the dense span's comp notes. Preserve that authored exclusion instead of
+  // asking the already-empty comp span to prove its former chord-note count.
+  const dense = denseMelodySpanIds(tracks, plan, timebase, true);
   if (dense.size === 0) return [];
   return plan.chordTimeline
     .filter((s) => dense.has(s.id))

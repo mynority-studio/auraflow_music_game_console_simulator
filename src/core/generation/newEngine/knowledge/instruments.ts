@@ -10,7 +10,7 @@
 import type { Rng } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import { GM128_MAIN_PROGRAMS } from '../../../sound/GMBK5X128Catalog';
-import { isAcgPianoSongPianoProgram } from '../../../sound/GMBK5X128Voices';
+import { isAcgPianoSongPianoProgram, isAcousticPianoProgram } from '../../../sound/GMBK5X128Voices';
 
 interface LineupRule {
   always: InstrumentRoleName[];                          // 必有(含 lead + 和声承载)
@@ -18,9 +18,9 @@ interface LineupRule {
 }
 
 // 各 style 编制规则:always 保证 ≥2 件且含 lead + 和声;optional 仍按旧序列抽样。
-// POP/RNB/LOFI/JAZZ 若抽样漏掉 drum,会在 lineup 阶段无 rng 补回,保住既有 lead/comp/bass program 序列。
+// Jazz rhythm section includes drums; pad remains outside the combo lineup.
 const LINEUP_RULES: Record<string, LineupRule> = {
-  jazz: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.85 }] },
+  jazz: { always: ['lead', 'bass', 'comp', 'drum'], optional: [] },
   pop: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.9 }, { role: 'pad', prob: 0.6 }] },
   // LOFI rich textures in MG all declare bass:required; keeping bass optional can
   // drop the sustaining anchor and make one-shot/chop bars feel like playback stalls.
@@ -76,6 +76,23 @@ const FAMILY_FALLBACK_PROGRAMS: Partial<Record<InstrumentFamily, readonly number
   mallet: [108],
   wind: [66, 67],
 };
+
+/**
+ * Explicit Dream variation decisions owned by orchestration. All other
+ * abstract GM programs enter the channel as their official Bank-0 capital
+ * tone; special bass/pad/FX variations require an explicit full address.
+ */
+export function dream5504OrchestrationBank(
+  style: string,
+  role: InstrumentRoleName,
+  program: number,
+): number | undefined {
+  if (role === 'drum') return undefined;
+  const normalizedStyle = style.toLowerCase();
+  if (role === 'comp' && program === 5 && ['pop', 'rnb', 'lofi', 'modal'].includes(normalizedStyle)) return 16;
+  if (role === 'lead' && program === 66 && ['jazz', 'blues'].includes(normalizedStyle)) return 8;
+  return 0;
+}
 
 // ★ 2026-06-23(用户:JAZZ 整编"是乐器问题,不要缩,做更高优先级"):候选池全保留(不缩),给地道音色【更高
 //   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— 上低音萨克斯/钢琴三重奏优先;
@@ -145,7 +162,14 @@ const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   107: { family: 'mallet', range: [48, 84] }, 108: { family: 'mallet', range: [60, 88] }, // 古筝 / 卡林巴(gentle 拨/击;17-key C4-E6 常用区)
   24: { family: 'guitar', range: [40, 88] }, 25: { family: 'guitar', range: [40, 88] }, 26: { family: 'guitar', range: [40, 88] }, // 尼龙 / 钢弦 / 爵士
   27: { family: 'guitar', range: [40, 88] }, 28: { family: 'guitar', range: [40, 88] }, 31: { family: 'guitar', range: [52, 88] }, // clean / 闷音 / 泛音
-  42: { family: 'strings', range: [36, 76] },  // 大提琴(暖音区独奏)
+  // 弓弦乐器按真实音区登记，供原声弦乐子集和 render 末端音域保护共用。
+  40: { family: 'strings', range: [55, 103] }, // Violin: G3-G7
+  41: { family: 'strings', range: [48, 91] },  // Viola: C3-G6
+  42: { family: 'strings', range: [36, 76] },  // Cello: C2-E5
+  43: { family: 'strings', range: [28, 60] },  // Contrabass: E1-C4
+  44: { family: 'pad', range: [36, 96] },      // Tremolo Strings
+  45: { family: 'strings', range: [36, 96] },  // Pizzicato Strings (held, plucked family)
+  46: { family: 'strings', range: [24, 103] }, // Harp (held, plucked family)
   75: { family: 'wind', range: [60, 96] }, 77: { family: 'wind', range: [55, 86] }, // 排箫 / 尺八(暖气声管乐,单音 → 仅 lead)
   32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
   34: { family: 'bass', range: [28, 60] }, 35: { family: 'bass', range: [28, 67] }, // 拨片 / 无品
@@ -167,7 +191,7 @@ export function instrumentInfo(program: number): InstrumentInfo {
 
 /** bass 职能可由真实贝斯家族或 ACG 白名单钢琴左手承担；模板仍决定何种风格允许后者。 */
 export function isBassRoleProgram(program: number): boolean {
-  return isAcgPianoSongPianoProgram(program) || instrumentInfo(program).family === 'bass';
+  return isAcgPianoSongPianoProgram(program) || isAcousticPianoProgram(program) || program === 43 || instrumentInfo(program).family === 'bass';
 }
 
 /** 真实乐器硬音域。角色音区分工另见 preferredRegisterForRole;这里不再把 sax 人为降八度。 */
@@ -187,7 +211,7 @@ export function preferredRegisterForRole(role: InstrumentRoleName, program: numb
   const info = instrumentInfo(program);
   const hard = info.range;
   // ACG 白名单钢琴担任 bass 职能时是左手低音，不放任到全键盘中高区；E1-G3 与现有 bassline renderer 的硬范围一致。
-  if (role === 'bass' && isAcgPianoSongPianoProgram(program)) return clampRangeToInstrument([28, 55], hard);
+  if (role === 'bass' && (isAcgPianoSongPianoProgram(program) || isAcousticPianoProgram(program))) return clampRangeToInstrument([28, 55], hard);
   if (role === 'bass') return clampRangeToInstrument([hard[0], Math.min(hard[1], 55)], hard);
   if (role === 'pad') return clampRangeToInstrument([48, 84], hard);
   if (role === 'drum') return [35, 81];
@@ -218,7 +242,7 @@ export function preferredRegisterForRole(role: InstrumentRoleName, program: numb
 export function fitMidiToProgramRange(value: number, role: InstrumentRoleName, program: number): number {
   const hard = playableRangeForRole(role, program);
   const info = instrumentInfo(program);
-  const [lo, hi] = role === 'bass' && isAcgPianoSongPianoProgram(program)
+  const [lo, hi] = role === 'bass' && (isAcgPianoSongPianoProgram(program) || isAcousticPianoProgram(program))
     ? clampRangeToInstrument([28, 55], hard)
     : role === 'lead' && program === 108
     ? clampRangeToInstrument([60, 81], hard)
@@ -368,7 +392,7 @@ export function repairWorldMismatches(rp: Record<InstrumentRoleName, number>, st
   return out;
 }
 
-/** 同乐器对(lead==comp):记录事实,不拒绝(同一乐器可同时承担多角色)。 */
+/** 同乐器对(lead==comp):记录事实；ACG 可用同一钢琴承担多个演奏职责。 */
 export function sameInstrumentPairs(rp: RoleProgramView): { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[] {
   const out: { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[] = [];
   if (rp.lead !== undefined && rp.lead === rp.comp) out.push({ a: 'lead', b: 'comp', program: rp.lead });
@@ -380,7 +404,7 @@ export function sameInstrumentPairs(rp: RoleProgramView): { a: InstrumentRoleNam
 //   联网研究(orchestration/arrangement):同族 or 同音色来源 = cohesive("Rhodes melts into layers,
 //   随同奏乐器变形");跨族跨源(如 acoustic 木琴 lead + electric 电钢 comp)在同音区竞争 = 糊/不搭。
 //   原声钢琴 comp 是百搭暖底(木琴/吉他/弦在其上是经典叠加,register 分离即可)。
-//   策略:只修【不搭】对,已和谐的保留(保多样性);优先改 lead(comp=和声床更该稳),
+//   策略:修【不搭】对，并避免非 ACG 的 lead/comp 重复使用同一音色；优先改 lead(comp=和声床更该稳),
 //   lead 池无相配 → 退而改 comp;都没招 → 原样(fail-open)。确定性、无 rng。
 //   ⇒ 用户诉求:电钢(electric kbd)comp 自动配电钢/键盘 lead;马林巴与电钢解绑(马林巴改配原声暖底)。
 // ============================================================
@@ -395,17 +419,26 @@ export function leadCompCompatible(lead: number, comp: number): boolean {
   return timbreSource(lead) === timbreSource(comp); // 同音色来源(都 acoustic / 都 electric / 都 synth)
 }
 
-/** 修不搭的 lead↔comp 对(器配层补充规则)。无 lead/comp 或已和谐 → 原对象返回。 */
-export function coherentLeadComp(rp: Record<InstrumentRoleName, number>, style: string): Record<InstrumentRoleName, number> {
+/**
+ * 修不搭的 lead↔comp 对，并避免两个独立乐手重复同一音色。
+ * ACG/Jazz 单钢琴模板可显式声明同一架钢琴的右手/和声职责，保留同音色。
+ */
+export function coherentLeadComp(
+  rp: Record<InstrumentRoleName, number>,
+  style: string,
+  allowSameInstrument = style.toLowerCase() === 'acg',
+): Record<InstrumentRoleName, number> {
   const lead = rp.lead, comp = rp.comp;
   if (lead === undefined || comp === undefined) return rp;   // 缺角 → 无需配对
-  if (leadCompCompatible(lead, comp)) return rp;             // 已和谐 → 保留多样性
-  const pool = INSTRUMENTS[style] ?? INSTRUMENTS.default;
-  // 1) 优先把 lead 换成与 comp 相配的同 style 候选(保 comp=和声床;池里若含同 comp 电钢 → 得"电钢配电钢")
-  const leadFix = (pool.lead ?? []).find((p) => p !== lead && leadCompCompatible(p, comp));
+  const normalizedStyle = style.toLowerCase();
+  const duplicateIndependentPlayers = !allowSameInstrument && lead === comp;
+  if (!duplicateIndependentPlayers && leadCompCompatible(lead, comp)) return rp;
+  const pool = INSTRUMENTS[normalizedStyle] ?? INSTRUMENTS.default;
+  // 1) 优先把 lead 换成与 comp 相配且不重复 comp 的同 style 候选。
+  const leadFix = (pool.lead ?? []).find((p) => p !== lead && p !== comp && leadCompCompatible(p, comp));
   if (leadFix !== undefined) return { ...rp, lead: leadFix };
-  // 2) lead 池无相配 → 把 comp 换成与 lead 相配的候选
-  const compFix = (pool.comp ?? []).find((p) => p !== comp && leadCompCompatible(lead, p));
+  // 2) lead 池无相配 → 把 comp 换成与 lead 相配且不重复 lead 的候选。
+  const compFix = (pool.comp ?? []).find((p) => p !== comp && p !== lead && leadCompCompatible(lead, p));
   if (compFix !== undefined) return { ...rp, comp: compFix };
   return rp;                                                 // 都没招 → 原样(fail-open)
 }
@@ -431,8 +464,14 @@ export function enforceRoleFamilies(
     const prog = out[role];
     if (!fams || !fams.length || prog === undefined) continue;
     if (fams.includes(programFamily(prog))) continue;          // 已合规
-    const match = (inst[role] ?? []).find((p) => fams.includes(programFamily(p)))
-      ?? fams.flatMap((family) => FAMILY_FALLBACK_PROGRAMS[family] ?? []).find((p) => fams.includes(programFamily(p)));
+    const counterpart = role === 'lead' ? out.comp : role === 'comp' ? out.lead : undefined;
+    const candidates = [
+      ...(inst[role] ?? []),
+      ...fams.flatMap((family) => FAMILY_FALLBACK_PROGRAMS[family] ?? []),
+    ].filter((program, index, all) => all.indexOf(program) === index && fams.includes(programFamily(program)));
+    // 家族约束也不能把非 ACG 的两个独立键盘手重新压回同一音色；若该家族确实只有一个候选才 fail-open。
+    const match = candidates.find((program) => style.toLowerCase() === 'acg' || program !== counterpart)
+      ?? candidates[0];
     if (match !== undefined) out = out === rp ? { ...rp, [role]: match } : { ...out, [role]: match };
   }
   return out;
@@ -441,13 +480,16 @@ export function enforceRoleFamilies(
 /** ★ 风格级【硬核心 role】(ACG comp 硬合同 P0):某些风格无论 Band Selection 选什么都必须保留这些 role。
  *  ACG = 钢琴写作模型:lead(旋律/topline)+ comp(独立钢琴伴奏:琶音/空气色彩/和声主体)+ bass。
  *  即便 lead/comp 同用 GM0 Acoustic Grand 也是两个音乐角色、两条轨,不能塌成 lead-only。
- *  drum 不属 MG-faithful ACG 核心(P0 不加鼓,留作单独产品决策)。 */
+ *  Jazz 的 rhythm section 则明确包含 drum；只有 ACG 保持无鼓。 */
 export function hardRequiredRolesForStyle(style: string): InstrumentRoleName[] {
-  return style.toLowerCase() === 'acg' ? ['lead', 'comp', 'bass'] : [];
+  const styleKey = style.toLowerCase();
+  if (styleKey === 'acg') return ['lead', 'comp', 'bass'];
+  if (styleKey === 'jazz') return ['lead', 'comp', 'bass', 'drum'];
+  return [];
 }
 
 function defaultDrumRequiredForStyle(style: string): boolean {
-  return ['pop', 'rnb', 'lofi', 'jazz'].includes(style.toLowerCase());
+  return ['pop', 'rnb', 'lofi'].includes(style.toLowerCase());
 }
 
 function shouldRestoreDefaultDrum(style: string, constraint?: LineupConstraint): boolean {
@@ -459,6 +501,9 @@ function shouldRestoreDefaultDrum(style: string, constraint?: LineupConstraint):
 export function pickBandInstrumentation(style: string, rng: Rng, constraint?: LineupConstraint): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;
   const chosen = new Set<InstrumentRoleName>(rule.always);
+  // Jazz 旧编制曾在挑音色前抽一次“是否有鼓”。鼓现为硬核心，但保留这一次空抽样，
+  // 只为不改变既有 seed 的 lead/comp/bass 音色结果。
+  if (style.toLowerCase() === 'jazz') rng.next();
   for (const o of rule.optional) if (rng.next() < o.prob) chosen.add(o.role);
   let lineup = ROLE_ORDER.filter((r) => chosen.has(r)); // 规范顺序
 
@@ -474,13 +519,17 @@ export function pickBandInstrumentation(style: string, rng: Rng, constraint?: Li
     lineup = ROLE_ORDER.filter((r) => kept.has(r)); // 规范顺序
   }
 
-  // ★ 风格硬核心(ACG P0):Band Selection 不能删掉 lead/comp/bass;ACG 排除 drum(不产 drum+lead 而缺 comp)。
-  //   缺省 ACG 已含 lead/comp/bass → 无改动(字节不变);被约束删掉时在此无条件补回并标 autoFilled。
+  // ★ 风格硬核心:ACG 保留三层钢琴且禁鼓；Jazz 保留 quartet rhythm section 且禁 pad。
   const hardRoles = hardRequiredRolesForStyle(style);
   if (hardRoles.length) {
     const set = new Set<InstrumentRoleName>(lineup);
     for (const r of hardRoles) if (!set.has(r)) { set.add(r); if (!autoFilled.includes(r)) autoFilled.push(r); }
-    if (style.toLowerCase() === 'acg') set.delete('drum'); // ACG 核心不含 drum(P0)
+    if (style.toLowerCase() === 'acg') {
+      set.delete('drum');
+      set.delete('pad');
+    } else if (style.toLowerCase() === 'jazz') {
+      set.delete('pad');
+    }
     lineup = ROLE_ORDER.filter((r) => set.has(r));
   }
 

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { renderBass } from './bassRenderer';
 import { buildHarmonicPlan } from '../harmony/harmonyEngine';
-import { createTimebase, pc } from '../foundation';
+import { beats, createTimebase, pc } from '../foundation';
+import { GROOVE_BASS_PATTERN_IDS, grooveBassPattern } from '../knowledge/grooveBassPatterns';
 
 describe('render/bassRenderer (1.2)', () => {
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
@@ -35,6 +36,23 @@ describe('render/bassRenderer (1.2)', () => {
     const def = renderBass(plan, timebase, 'default');
     expect(def.notes.length).toBe(plan.chordTimeline.length); // default 纯根音
     expect(lofi.notes.length).toBeGreaterThanOrEqual(def.notes.length); // lofi 加五度铺垫
+  });
+
+  it('R&B GrooveContract bassPattern IDs produce their authored KB onset cells', () => {
+    const sectionId = plan.chordTimeline[0].sectionId;
+    const ids = GROOVE_BASS_PATTERN_IDS.filter((id) => id.startsWith('rnb_') || id === 'dilla_pocket');
+    const signatures = new Set<string>();
+    for (const id of ids) {
+      const pattern = grooveBassPattern(id)!;
+      const bass = renderBass(plan, timebase, 'rnb', undefined, undefined, { [sectionId]: id });
+      const firstBarStarts = bass.notes
+        .filter((entry) => (entry.startTick as number) < timebase.ppq * 4)
+        .map((entry) => entry.startTick as number);
+      const expected = pattern.hits.map((hit) => timebase.beatToTick(beats(hit.beat)) as number);
+      expect(firstBarStarts, id).toEqual(expected);
+      signatures.add(firstBarStarts.join(','));
+    }
+    expect(signatures.size).toBe(ids.length);
   });
 
   it('全落 bass 音区 [28,55]=E1–G3,确定性', () => {

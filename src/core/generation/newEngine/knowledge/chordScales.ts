@@ -15,6 +15,14 @@ import { MAJOR_SCALE, NATURAL_MINOR, type DiatonicMode } from './scales';
 
 // 从根音起的调式半音程(离调类按和弦角色取)
 const MIXOLYDIAN: readonly number[] = [0, 2, 4, 5, 7, 9, 10]; // 属和弦(大调 V7 / 副属)
+// 7b13 必须包含 b6；普通 Mixolydian 的 natural 13 无法满足宽和弦音集合。
+const MIXOLYDIAN_B6: readonly number[] = [0, 2, 4, 5, 7, 8, 10];
+const MIXOLYDIAN_B2: readonly number[] = [0, 1, 4, 5, 7, 9, 10];
+const COMPOSITE_BLUES: readonly number[] = [0, 3, 4, 5, 6, 7, 10];
+const MIXOLYDIAN_AUGMENTED: readonly number[] = [0, 2, 4, 5, 8, 9, 10];
+const LYDIAN_DOMINANT: readonly number[] = [0, 2, 4, 6, 7, 9, 10];
+const MIXOLYDIAN_SHARP11_B6: readonly number[] = [0, 2, 4, 6, 7, 8, 10];
+const ALTERED: readonly number[] = [0, 1, 3, 4, 6, 8, 10];
 const DORIAN: readonly number[] = [0, 2, 3, 5, 7, 9, 10]; // 小调 iv(借和弦)
 const PHRYGIAN_DOMINANT: readonly number[] = [0, 1, 4, 5, 7, 8, 10]; // 和声小调第 5 调式:小调 V7(含升导音 + 调内 b6/b3)
 
@@ -25,6 +33,23 @@ export interface ChordScaleContext {
   isBorrowed?: boolean;
   /** 属七和弦(quality '7')→ 根音 Mixolydian。涵盖小调 harmonic-minor V7:含升导音。 */
   isDominant?: boolean;
+  /** 宽和弦类型；用于选择能完整包含 altered tensions 的 chord-scale。 */
+  dominantType?: string;
+}
+
+function dominantPattern(type: string, keyMode: DiatonicMode): readonly number[] {
+  if (/alt/.test(type)) return ALTERED;
+  if (/#11.*b13|b13.*#11/.test(type)) return MIXOLYDIAN_SHARP11_B6;
+  if (/13b9/.test(type)) return MIXOLYDIAN_B2;
+  if (/b9/.test(type)) return PHRYGIAN_DOMINANT;
+  if (/#9/.test(type)) return COMPOSITE_BLUES;
+  if (/#11/.test(type)) return LYDIAN_DOMINANT;
+  if (/^7b5/.test(type)) return LYDIAN_DOMINANT;
+  if (/b13|b6/.test(type)) return MIXOLYDIAN_B6;
+  if (/#5/.test(type)) return MIXOLYDIAN_AUGMENTED;
+  // 9/11/13 明确声明 natural tension；小调语境也不能用含 b9/b13 的 Phrygian Dominant。
+  if (/^(9|11|13)(sus4)?$/.test(type)) return MIXOLYDIAN;
+  return keyMode === 'minor' ? PHRYGIAN_DOMINANT : MIXOLYDIAN;
 }
 
 /**
@@ -39,11 +64,8 @@ export function realChordScale(
 ): PitchClass[] {
   let pattern: readonly number[];
   let anchor: PitchClass;
-  if (ctx.isDominant && !ctx.isSecondaryDominant && keyMode === 'minor') {
-    pattern = PHRYGIAN_DOMINANT; // 小调主属 V7:Phrygian dominant(升导音 + 调内 b6/b3)
-    anchor = rootPc;
-  } else if (ctx.isSecondaryDominant || ctx.isDominant) {
-    pattern = MIXOLYDIAN; // 大调 V7 / 副属:根音 Mixolydian(含大三/升导音)
+  if (ctx.isSecondaryDominant || ctx.isDominant) {
+    pattern = dominantPattern((ctx.dominantType ?? '').toLowerCase(), keyMode);
     anchor = rootPc;
   } else if (ctx.isBorrowed) {
     pattern = DORIAN;

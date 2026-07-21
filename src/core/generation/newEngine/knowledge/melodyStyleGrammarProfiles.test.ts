@@ -6,7 +6,13 @@ import {
   ENRICHED_GRAMMAR_RULE_COUNT,
   JAZZ_SAX_DEXTER_GORDON_GRAMMAR,
   JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT,
+  ACG_PIANOSONG_GRAMMAR,
+  ACG_PIANOSONG_GRAMMAR_RULE_COUNT,
+  ACG_PIANOSONG_INTERNAL_GRAMMAR_RULE_COUNTS,
+  acgPianoSongGrammarForContext,
+  acgPianoSongInternalSubsetForContext,
   LOFI_ENRICHED_GRAMMAR,
+  LOFI_ENRICHED_GRAMMAR_RULE_COUNT,
   POP_ENRICHED_GRAMMAR,
   RNB_ENRICHED_GRAMMAR,
 } from './melodyStyleGrammarProfiles';
@@ -34,7 +40,7 @@ const STYLE_GRAMMARS = [
   ['JAZZ', ENRICHED_GRAMMAR],
   ['POP', POP_ENRICHED_GRAMMAR],
   ['LOFI', LOFI_ENRICHED_GRAMMAR],
-  ['ACG', LOFI_ENRICHED_GRAMMAR],
+  ['ACG PIANOSONG', ACG_PIANOSONG_GRAMMAR],
   ['RNB', RNB_ENRICHED_GRAMMAR],
 ] as const;
 
@@ -91,5 +97,60 @@ describe('knowledge/melodyStyleGrammarProfiles · opening diversity', () => {
     expect(JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT).toBeLessThan(ENRICHED_GRAMMAR_RULE_COUNT);
     expect(sourceRules.length).toBe(dexterRules.length);
     expect(dexterRules.length).toBeGreaterThan(20);
+  });
+});
+
+describe('knowledge/melodyStyleGrammarProfiles · ACG PIANOSONG internal banks', () => {
+  it('reuses and labels a larger lyrical-piano subset instead of aliasing the LOFI grammar', () => {
+    const rules = ACG_PIANOSONG_GRAMMAR.rulesByLhs.get('Phrase') ?? [];
+    const sourceRules = rules.filter((rule) => Boolean(rule.metadata?.sourceRuleId));
+    const tagCounts = new Map<string, number>();
+    for (const rule of rules) {
+      for (const tag of rule.metadata?.styleTags ?? []) {
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+      }
+    }
+
+    expect(ACG_PIANOSONG_GRAMMAR_RULE_COUNT).toBeGreaterThan(LOFI_ENRICHED_GRAMMAR_RULE_COUNT);
+    expect(sourceRules.length).toBeGreaterThan(LOFI_ENRICHED_GRAMMAR_RULE_COUNT - 20);
+    expect(rules.every((rule) => rule.metadata?.styleTags?.includes('acg_pianosong_pool'))).toBe(true);
+    expect(sourceRules.some((rule) => rule.metadata?.styleTags?.includes('acg_pianosong_lofi_compatible'))).toBe(true);
+    expect(sourceRules.some((rule) => rule.metadata?.styleTags?.includes('lofi_pool'))).toBe(false);
+    for (const tag of [
+      'acg_pianosong_breath',
+      'acg_pianosong_cantabile',
+      'acg_pianosong_ascending_arrival',
+      'acg_pianosong_broken_chord_motion',
+      'acg_pianosong_modal_color',
+      'acg_pianosong_cadential_return',
+    ]) {
+      expect(tagCounts.get(tag) ?? 0, tag).toBeGreaterThan(20);
+    }
+  });
+
+  it('keeps ACG sub-banks internal and routes intro / middle contexts to distinct vocabulary', () => {
+    expect(acgPianoSongInternalSubsetForContext({ startBeat: 0, family: 'Cadence' })).toBe('intro-breath');
+    expect(acgPianoSongInternalSubsetForContext({ startBeat: 8, family: 'Cadence' })).toBe('cadential-return');
+    expect(acgPianoSongInternalSubsetForContext({ startBeat: 16, family: 'Cadence' })).toBe('ascending-lift');
+    expect(acgPianoSongInternalSubsetForContext({ startBeat: 20, family: 'Borrowed' })).toBe('modal-color');
+    expect(acgPianoSongInternalSubsetForContext({ startBeat: 20, family: 'Turnaround' })).toBe('ascending-lift');
+    for (const count of Object.values(ACG_PIANOSONG_INTERNAL_GRAMMAR_RULE_COUNTS)) {
+      expect(count).toBeGreaterThan(100);
+    }
+  });
+
+  it('middle cadence bank exposes varied ascending phrase shapes across seeds', () => {
+    const brick: BrickMatch = { ...PERFECT_CADENCE, startBeat: 16 };
+    const grammar = acgPianoSongGrammarForContext(brick);
+    const signatures = new Set<string>();
+
+    for (let seed = 0; seed < 48; seed++) {
+      const tokens = expandGrammarForRoadMap(grammar, [brick], makeSeededRng(seed))[0].tokens;
+      signatures.add(audibleTokenSignature(tokens));
+    }
+
+    expect(signatures.size).toBeGreaterThanOrEqual(35);
+    const liftRules = grammar.rulesByLhs.get('Phrase') ?? [];
+    expect(liftRules.some((rule) => rule.metadata?.styleTags?.includes('acg_pianosong_ascending_arrival'))).toBe(true);
   });
 });

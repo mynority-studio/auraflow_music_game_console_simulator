@@ -35,7 +35,7 @@ function toQnRequest(req: MusicGenerationRequest): GenerationRequest {
 function buildResult(req: MusicGenerationRequest, bundle: SongBundle, ir: MusicalIR | null, status: string, report: unknown, attempts: number): MusicGenerationResult {
   // ★ 不再后处理覆盖 program:IR 直用,音色已是器配层最终真源。
   // ★ Phase 7:优先用 render 已挂的【完整】intent(含 ACG bar-family enforce,准确反映所有权);缺省(理论不发生)才服务层派生 fallback。
-  //   消除服务层重派生(旧:无 active sections → 不含 acgBarFamilyBySpan)。musicGeneration 只【暴露】intent,不拥有(#4)。
+  //   musicGeneration 只【暴露】intent,不拥有(#4)。
   const rpt = (report && typeof report === 'object') ? (report as AuditReport) : undefined;
   const reportWithIntent = rpt
     ? { ...rpt, intent: rpt.intent ?? summarizeMusicIntent(deriveMusicIntentPlan(bundle.band.style, bundle.arrangement)) }

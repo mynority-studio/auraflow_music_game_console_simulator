@@ -3,13 +3,13 @@ import { generateMusicSync } from './MusicGenerationService';
 import { toPlaybackSong } from './playbackView';
 
 // ============================================================
-// playbackView 安全网(legacy 壳移除 Phase 0):锁 toPlaybackSong 与【旧 GeneratedTrack 内联投影】等价。
-// 旧 AuraBar/AuraJam 都这样构段:{ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb }
-// 迁移后走 toPlaybackSong;本测证两者逐段一致 → 段命中/jam 定时行为不变。
+// playbackView 安全网:锁 toPlaybackSong 与 app 段落公式一致。
+// AuraBar/AuraJam 段公式:{ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb }
+// 本测保证段命中/jam 定时行为稳定。
 // ============================================================
 
-describe('musicGeneration/playbackView · toPlaybackSong 等价旧投影', () => {
-  it('段 name=role、start/end 拍与旧内联公式逐段一致(pop/acg/jazz/rnb/lofi)', () => {
+describe('musicGeneration/playbackView · toPlaybackSong 段落视图', () => {
+  it('段 name=role、start/end 拍与 app 段公式逐段一致(pop/acg/jazz/rnb/lofi)', () => {
     for (const styleHint of ['pop', 'acg', 'jazz', 'rnb', 'lofi']) {
       const r = generateMusicSync({ seed: 11, styleHint, mood: 'build', targetDuration: 90 });
       const song = toPlaybackSong(r);
@@ -20,8 +20,8 @@ describe('musicGeneration/playbackView · toPlaybackSong 等价旧投影', () =>
       expect(song.sections.length).toBe(r.uiSnapshot.sections.length);
 
       r.uiSnapshot.sections.forEach((ui, i) => {
-        const legacy = { name: ui.role, startBeat: ui.startBeat, endBeat: ui.startBeat + ui.bars * tsBpb };
-        expect(song.sections[i]).toEqual(legacy); // 逐段等价旧 GeneratedTrack 投影
+        const expected = { name: ui.role, startBeat: ui.startBeat, endBeat: ui.startBeat + ui.bars * tsBpb };
+        expect(song.sections[i]).toEqual(expected);
       });
     }
   });

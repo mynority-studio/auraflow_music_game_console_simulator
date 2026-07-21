@@ -36,7 +36,7 @@ export interface TrackIR {
   pedalEvents?: { atTick: Ticks; down: boolean }[];      // ★ CC64 延音踏板(comp 每和弦踩,音尾 ring)
   mix?: TrackMix;                                          // ★ tick0 混音(随生效 program 定)
   mixChanges?: { atTick: Ticks; mix: TrackMix }[];         // ★ 段落程序切换处的混音刷新(与 programChanges 同 tick)
-  ccEvents?: { atTick: Ticks; controller: number; value: number }[]; // ★ 通用 CC 自动化(气声 lead 气口减弱=CC11 包络)
+  ccEvents?: { atTick: Ticks; controller: number; value: number }[]; // ★ 器配/手势 CC 自动化(当前硬件演奏只投影原声钢琴 CC11)
   pitchBendEvents?: { atTick: Ticks; value: number }[];    // ★ 14-bit pitch wheel 自动化(center=8192),用于吹奏/滑音轻量兜底
 }
 

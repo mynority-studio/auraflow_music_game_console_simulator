@@ -25,14 +25,11 @@ function acgComp(seed: number, forceCase: string, needsDownbeat: boolean) {
 }
 
 // ============================================================
-// ACG comp air — acg_music_fidelity_repair_directive §2.5(★ 2026-06-28 用户按 B:恢复 MG 高空气,反 round1)
+// ACG raw texture color — standalone renderer fallback
 // ------------------------------------------------------------
-// 设计(MG 久石让钢琴):ACG 织体 = bass gesture + 高位色音/air(>67)+ 软力度 + 有意留白。
-// ★ round1(af103f4)曾因「听不见 + 打架」反转成钳到旋律下方 + 大音量;但 fidelity directive §0/§2.5 指出
-//   那是【掩盖】上游错配(family/grammar/contract),且 round1 在 D/E/F 修上游【之前】做的。
-// ★ 现按 B 恢复:生产 accompanimentRenderer 走【未钳 air voicing】+ 传真和弦 acgCtx(高位色音)+ 软力度;
-//   听得见靠 register/mix 分离(soft air halo)非大音量(若仍埋 → ACG 专属 mix 分离,留耳朵复核)。
-//   端到端(§5.1)验:ACG comp 保 > 67 高位色音 air;§2.5 非 ACG case 不受影响(门控 isAcgTextureCase)。
+// 这里锁 raw ACG texture renderer 的色彩素材能力。生产 ACG PIANOSONG 会在它之前
+// 消费 PianoScorePlan，把 comp 折进 48–60 的中声部；因此本文件不再声称 raw >67
+// color 是最终轨合同。真实端到端手区合同见 arranger/acgPianoScorePlan.test.ts。
 // ============================================================
 
 const DUR = 4;
@@ -47,7 +44,7 @@ const EXTENDED = [
 
 const maxMidi = (hits: { midis: number[] }[]) => Math.max(...hits.flatMap((h) => h.midis));
 
-describe('render/acgCompAir(ACG comp air 回归修复)', () => {
+describe('render/acgCompAir(raw ACG texture color fallback)', () => {
   it('★ §3.3:扩展和弦 + 和弦语境 → ACG air case 至少 1 个 chord 音 > 67(高空气恢复)', () => {
     for (const ch of EXTENDED) {
       for (const tc of AIR_CASES) {
@@ -91,9 +88,9 @@ describe('render/acgCompAir(ACG comp air 回归修复)', () => {
     expect(maxVel, '仍软:generic comp 可到 100-120').toBeLessThanOrEqual(96);
   });
 
-  it('★ §5.1 端到端(§2.5 fidelity directive B):ACG comp 保高位色音 air(含 > 67 的高 air,不全钳到旋律下方)', () => {
-    // ★ 2026-06-28 fidelity directive B(反 round1):ACG 走【未钳】air voicing + 真和弦 acgCtx 上方色音 →
-    //   高位色音 halo 在旋律区/之上(MG 久石让钢琴的空气感),不再坐旋律地板下。端到端断言:comp 含 > 67 高 air 音。
+  it('★ raw renderer without PianoScorePlan can still emit high color material', () => {
+    // Production passes a PianoScorePlan and folds this material into the middle hand.
+    // This only protects the reusable raw texture fallback from losing its color vocabulary.
     const comp = acgComp(7, 'ACG_Quartal_Arp_Wave', false);
     expect(comp.notes.length).toBeGreaterThan(0);
     const maxPitch = Math.max(...comp.notes.map((n) => n.pitch as number));

@@ -9,6 +9,19 @@
 
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 
+/**
+ * Transient provenance carried from the grammar realizer to this one allowed
+ * output-touch pass.  It is stripped by `normalizeAcgDynamics` before FinalIR
+ * is produced, so arbitrary same-onset lead notes never acquire dyad semantics.
+ */
+export interface AcgDynamicsTaggedTrack extends TrackIR {
+  __acgQuietDyadNoteKeys?: readonly string[];
+}
+
+export function acgDynamicsNoteKey(note: Pick<NoteIR, 'pitch' | 'startTick' | 'durationTicks'>): string {
+  return `${note.pitch as number}:${note.startTick as number}:${note.durationTicks as number}`;
+}
+
 interface VelTarget { avg: number; max: number; min: number }
 // 目标(0-127)。★ 2026-07-02(用户:lead/comp 是一台钢琴,声音大小/音色要齐平):MG 原值 comp29/lead86 在采样钢琴
 //   上,velocity 决定【力度层音色】—— comp pp(29)触发暗/闷的采样层,和 lead f(86)的亮层像两台琴,
@@ -24,8 +37,15 @@ const PHRASE_ENERGY = [0.96, 1.00, 1.07, 0.97] as const;
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-/** 按 bar 把某轨 velocity 归一到目标(scale = target/avg,夹 [0.48,1.22]),逐音 clamp[min,max]。 */
-function rescaleByBar(notes: readonly NoteIR[], barTicks: number, targetFor: (bar: number) => VelTarget): NoteIR[] {
+/** 按 bar 把某轨 velocity 归一到目标。`maxScale` lets authored quiet lead
+ * responses remain quiet instead of being amplified back into a peak. */
+function rescaleByBar(
+  notes: readonly NoteIR[],
+  barTicks: number,
+  targetFor: (bar: number) => VelTarget,
+  maxScale = 1.22,
+  floorExemptNoteKeys?: ReadonlySet<string>,
+): NoteIR[] {
   const byBar = new Map<number, NoteIR[]>();
   for (const n of notes) {
     const bar = Math.floor((n.startTick as number) / barTicks);
@@ -35,12 +55,13 @@ function rescaleByBar(notes: readonly NoteIR[], barTicks: number, targetFor: (ba
   for (const [bar, g] of byBar) {
     const avg = g.reduce((s, x) => s + x.velocity, 0) / Math.max(1, g.length);
     const t = targetFor(bar);
-    scaleByBar.set(bar, { scale: clamp(t.avg / Math.max(1, avg), 0.48, 1.22), t });
+    scaleByBar.set(bar, { scale: clamp(t.avg / Math.max(1, avg), 0.48, maxScale), t });
   }
   return notes.map((n) => {
     const bar = Math.floor((n.startTick as number) / barTicks);
     const s = scaleByBar.get(bar)!;
-    return { ...n, velocity: Math.round(clamp(n.velocity * s.scale, s.t.min, s.t.max)) };
+    const min = floorExemptNoteKeys?.has(acgDynamicsNoteKey(n)) ? 1 : s.t.min;
+    return { ...n, velocity: Math.round(clamp(n.velocity * s.scale, min, s.t.max)) };
   });
 }
 
@@ -53,15 +74,37 @@ function phraseTarget(base: VelTarget, bar: number, phraseBars: number): VelTarg
   };
 }
 
-/** ACG 每句共享的微型力度弧：lead/comp/bass 同步呼吸，保留 melody-first 的相对层次。 */
-export function normalizeAcgDynamics(tracks: readonly TrackIR[], barTicks: number, phraseBars = 4): TrackIR[] {
+/** ACG 每句共享的微型力度弧：lead/comp/bass 同步呼吸，保留 melody-first 的相对层次。
+ *
+ * `leadPresenceBars` is a pre-score/output presence contract for the comp
+ * touch curve.  It lets an externally supplied lead keep its original
+ * arrangement relationship even if a later legacy gate removes that lead's
+ * NoteIR; score-owned comp must never have its velocities retroactively
+ * changed by such a gate.
+ */
+export function normalizeAcgDynamics(
+  tracks: readonly TrackIR[],
+  barTicks: number,
+  phraseBars = 4,
+  leadPresenceBars?: ReadonlySet<number>,
+): TrackIR[] {
   const lead = tracks.find((t) => t.role === 'lead');
-  const barHasLead = new Set<number>();
-  for (const n of lead?.notes ?? []) barHasLead.add(Math.floor((n.startTick as number) / barTicks));
+  const barHasLead = leadPresenceBars
+    ? new Set(leadPresenceBars)
+    : new Set((lead?.notes ?? []).map((n) => Math.floor((n.startTick as number) / barTicks)));
   return tracks.map((t) => {
-    if (t.role === 'lead') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(LEAD_T, bar, phraseBars)) };
-    if (t.role === 'bass') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(BASS_T, bar, phraseBars)) };
-    if (t.role === 'comp') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(barHasLead.has(bar) ? COMP_MEL_T : COMP_NOMEL_T, bar, phraseBars)) };
-    return t;
+    const taggedTrack = t as AcgDynamicsTaggedTrack;
+    const { __acgQuietDyadNoteKeys: quietDyadKeys, ...track } = taggedTrack;
+    const floorExemptNoteKeys = quietDyadKeys?.length ? new Set(quietDyadKeys) : undefined;
+    if (t.role === 'lead') {
+      // Return dyads and re-entry answers are deliberately softer at their
+      // source. Their explicit grammar provenance bypasses only the minimum
+      // floor; the phrase curve may still make them quieter, never louder.
+      const rescaled = rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(LEAD_T, bar, phraseBars), 1, floorExemptNoteKeys);
+      return { ...track, notes: rescaled };
+    }
+    if (t.role === 'bass') return { ...track, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(BASS_T, bar, phraseBars)) };
+    if (t.role === 'comp') return { ...track, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(barHasLead.has(bar) ? COMP_MEL_T : COMP_NOMEL_T, bar, phraseBars)) };
+    return track;
   });
 }

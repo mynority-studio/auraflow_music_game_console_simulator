@@ -67,6 +67,21 @@ describe('generation/GenerationController · runGenerationControl', () => {
     expect(r.attempts).toBe(1);
     expect(r.ir).toBeUndefined();
   });
+
+  it('显式授权的用户 lead 保留 audit、以 warning 交付，且不触发无效重试', () => {
+    const r = runGenerationControl(
+      () => ({ ir: fakeIR, audit: LEAD_ERROR }),
+      rng,
+      undefined,
+      undefined,
+      false,
+      true,
+    );
+    expect(r.status).toBe('warning');
+    expect(r.attempts).toBe(1);
+    expect(r.ir).toBeDefined();
+    expect(r.report.findings).toEqual(LEAD_ERROR.findings);
+  });
 });
 
 describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {

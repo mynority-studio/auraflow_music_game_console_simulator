@@ -11,6 +11,7 @@ import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { createRandomContext, createTimebase, beats, mod12, pc } from '../foundation';
 import type { HarmonicPlan, RomanChord } from '../harmony/HarmonicPlan';
+import type { AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
 
 const tb = createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm: 90 }] });
 const rc: RomanChord = { degree: 1, accidental: 'natural', quality: 'maj7' };
@@ -25,6 +26,38 @@ const handPlan = {
   stableToneMap: { c0: [0, 4, 7, 11], c1: [0, 4, 7, 11], c2: [7, 11, 2, 6] },
   avoidNoteMap: { c0: [5], c1: [5], c2: [0] },
 } as unknown as HarmonicPlan;
+
+// Deliberately separate the harmonic root from the inherited pedal colour.
+// This is the failure shape that used to make ACG render C pedal alone below
+// a G harmony even though PianoScorePlan had authored a G root anchor.
+const contrastingPedalPlan = {
+  chordTimeline: [
+    {
+      id: 'pedal-over-g', roman: rc, rootPc: pc(7), quality: '7', chordType: '7',
+      startBeat: beats(0), durationBeats: beats(4), sectionId: 'v',
+      bassRole: 'pedal', bassPedalPc: pc(0),
+    },
+  ],
+  stableToneMap: { 'pedal-over-g': [7, 11, 2, 5] },
+  avoidNoteMap: { 'pedal-over-g': [0] },
+} as unknown as HarmonicPlan;
+
+const acgRootAnchorOverPedal = {
+  spanById: {
+    'pedal-over-g': {
+      spanId: 'pedal-over-g',
+      bass: {
+        rootAnchorRequired: true,
+        maxNotesPerSpan: 2,
+        motion: 'pedal',
+        events: [
+          { atBeat: 0, durationBeats: 1, voice: 'root', velocity: 0.46 },
+          { atBeat: 2, durationBeats: 0.5, voice: 'fifth', velocity: 0.24 },
+        ],
+      },
+    },
+  },
+} as unknown as AcgPianoScorePlan;
 
 describe('bassRole 消费(手搭 plan)', () => {
   const bass = renderBass(handPlan, tb, 'lofi');
@@ -45,6 +78,33 @@ describe('bassRole 消费(手搭 plan)', () => {
     const n = atBeat(8);
     expect(n).toBeDefined();
     expect((n!.pitch as number) % 12).toBe(7); // G root
+  });
+});
+
+describe('ACG PianoScorePlan 的根音合同', () => {
+  it('在 root 与 pedal 不同的 span 中保留 score 根音，并仅把 pedal 留作支撑色彩', () => {
+    // Central production texture scheduling must not be allowed to replace
+    // the arranger-authored root with the inherited pedal PC.
+    const bass = renderBass(
+      contrastingPedalPlan,
+      tb,
+      'acg',
+      { 'pedal-over-g': 'ACG_Pedal_Wash_Color_Drops' },
+      acgRootAnchorOverPedal,
+    );
+    const downbeat = bass.notes.filter((note) => (note.startTick as number) === (tb.beatToTick(beats(0)) as number));
+    const downbeatPcs = downbeat.map((note) => (note.pitch as number) % 12);
+    expect(downbeatPcs).toContain(7); // authored G root
+    expect(downbeatPcs).toContain(0); // optional inherited C pedal colour
+    expect(downbeat.find((note) => (note.pitch as number) % 12 === 7)?.durationTicks as number)
+      .toBe(tb.beatToTick(beats(1)) as number);
+  });
+
+  it('不改变非 ACG 的 legacy pedal：score 参数不会替换其持续 pedal', () => {
+    const bass = renderBass(contrastingPedalPlan, tb, 'lofi', undefined, acgRootAnchorOverPedal);
+    expect(bass.notes).toHaveLength(1);
+    expect((bass.notes[0]!.pitch as number) % 12).toBe(0);
+    expect(bass.notes[0]!.durationTicks as number).toBe(tb.beatToTick(beats(4)) as number);
   });
 });
 

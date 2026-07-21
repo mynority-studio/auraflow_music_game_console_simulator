@@ -48,4 +48,8 @@ describe('arranger/arranger (composed ArrangementPlan)', () => {
     const again = buildArrangementPlan(band);
     expect(again.motifBindings.map((b) => b.motifId)).toEqual(plan.motifBindings.map((b) => b.motifId));
   });
+
+  it('明示 lead/comp 同音色同 pitch 避让策略', () => {
+    expect(plan.leadCompCollisionPolicy).toBe('no-unison-when-same-program');
+  });
 });

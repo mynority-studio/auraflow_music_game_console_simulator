@@ -5,11 +5,15 @@ import { createRandomContext } from '../foundation';
 import { grooveContractById } from '../knowledge/grooveContracts';
 import { planDrumPerformance } from './drumPerformancePlanner';
 import type { Section, SectionEntry } from './ArrangementPlan';
+import {
+  JAZZ_4_4_ARCHETYPE_ID,
+  type JazzArrangementArchetypeId,
+} from './jazzArchetypePlanner';
 
-const plan = (seed: number, style: string, mood = 'build') =>
+const plan = (seed: number, style: string, mood = 'build', jazzArchetypeId?: JazzArrangementArchetypeId) =>
   buildArrangementPlan(
     buildBandSpec({ seed, styleHint: style, mood, targetDuration: 96 }),
-    { rng: createRandomContext(seed), mood },
+    { rng: createRandomContext(seed), mood, jazzArchetypeId },
   );
 
 const drumIntentSections: Section[] = [
@@ -77,19 +81,38 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     expect(p.endingStyle).toBe('fade');
   });
 
-  it('★ DrumPerformanceContract 由 arranger 下发:每段有 pattern/fill/entry/guard', () => {
-    const p = plan(21, 'jazz');
-    for (const s of p.sections) {
-      const perf = p.drumPerformanceBySection[s.id];
-      expect(perf.sectionId).toBe(s.id);
-      expect([8, 25, 40]).toContain(perf.kitProgram);
-      expect(perf.patternFamily).toMatch(/jazz-/);
-      expect(['none', 'light', 'turnaround', 'big']).toContain(perf.fillPolicy);
-      expect(['strict', 'normal']).toContain(perf.foregroundGuard);
-      expect(perf.densityCeiling).toBeGreaterThan(0);
-      expect(perf.densityCeiling).toBeLessThanOrEqual(1);
-      expect(perf.maxMoveTicks).toBeGreaterThan(0);
-      expect(['none', '8th', '16th']).toContain(perf.preQuantizeGrid);
+  it('★ JAZZ 当前只开放已验证的 4/4 archetype，跨 seed 保持确定', () => {
+    const four = plan(9, 'jazz', 'build', JAZZ_4_4_ARCHETYPE_ID);
+
+    expect(four.arrangementArchetypeId).toBe(JAZZ_4_4_ARCHETYPE_ID);
+    expect(four.meter).toEqual({ numerator: 4, denominator: 4 });
+    expect(four.sections.some((section) => section.id === 'headA')).toBe(true);
+    expect(four.sections.some((section) => section.id === 'vamp' || section.id === 'reharm')).toBe(false);
+    for (const section of four.sections) {
+      expect(four.rolePerformanceBySection.bass[section.id].active).toBe(true);
+      expect(four.rolePerformanceBySection.comp[section.id].active).toBe(true);
+      expect(four.rolePerformanceBySection.lead[section.id].active).toBe(true);
+    }
+
+    for (let seed = 0; seed < 64; seed++) {
+      const first = plan(seed, 'jazz');
+      const again = plan(seed, 'jazz');
+      expect(again.arrangementArchetypeId).toBe(first.arrangementArchetypeId);
+      expect(again.meter).toEqual(first.meter);
+      expect(first.meter).toEqual({ numerator: 4, denominator: 4 });
+      expect(first.arrangementArchetypeId).toBe(JAZZ_4_4_ARCHETYPE_ID);
+    }
+  });
+
+  it('★ JAZZ swing/bebop comp 在演奏段明确为 syncopated-comp；仅收束段允许 lyrical 踏板', () => {
+    const four = plan(9, 'jazz', 'build', JAZZ_4_4_ARCHETYPE_ID);
+    expect(four.songGrooveContract.articulation).toBe('bebop');
+    for (const section of four.sections) {
+      const comp = four.rolePerformanceBySection.comp[section.id];
+      const isLyricalResolution = section.functionTag === 'setup' || section.functionTag === 'tag' || section.functionTag === 'outro';
+      expect(comp.keyboardMotion, section.id).toBe(isLyricalResolution ? 'lyrical' : 'syncopated-comp');
+      expect(comp.continuity, section.id).toBe('connected');
+      expect(comp.articulationExclusionGroup, section.id).toBe('length');
     }
   });
 
@@ -156,8 +179,8 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     }
   });
 
-  it('★ 4 个 macro 风格跨 seed 至少有 3 类鼓手打法(ACG 除外)', () => {
-    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+  it('★ 启用鼓的 3 个 macro 风格跨 seed 至少有 3 类鼓手打法', () => {
+    for (const style of ['pop', 'rnb', 'lofi']) {
       const families = new Set<string>();
       for (let seed = 1; seed <= 32; seed++) {
         const p = plan(seed, style, 'build');
@@ -167,10 +190,9 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     }
   });
 
-  it('★ POP/JAZZ/RNB 下发风格化鼓手打法,不只是一套通用 backbeat', () => {
+  it('★ POP/RNB 下发风格化鼓手打法,不只是一套通用 backbeat', () => {
     const expected: Record<string, readonly string[]> = {
       pop: ['citypop-syncopated-boogie', 'citypop-disco-boogie', 'jpop-driving-8ths', 'pop-backbeat'],
-      jazz: ['jazz-swing-ride', 'jazz-brush-ballad', 'smooth-jazz-backbeat'],
       rnb: ['tr808-rnb-pocket', 'tr808-dilla-pocket', 'rnb-gospel-triplet', 'tr808-trap-soul-halftime', 'pop-backbeat'],
     };
     for (const [style, wanted] of Object.entries(expected)) {
@@ -182,4 +204,5 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
       for (const family of wanted) expect(families.has(family), `${style}: ${[...families].join(',')}`).toBe(true);
     }
   });
+
 });

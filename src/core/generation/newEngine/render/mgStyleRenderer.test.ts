@@ -76,6 +76,14 @@ describe('render/mgStyleRenderer · renderStyleFeel + feelForStyle', () => {
     expect(out[1].velocity).toBe(90);           // beat1 accent 0.9 → 100*0.9
   });
 
+  it('5/4 accent 真消费第 5 拍，并在 beat=5 重置小节', () => {
+    const out = renderStyleFeel({
+      events: [mk(4), mk(5)],
+      feel: { beatsPerMeasure: 5, accentPattern: [1, 1, 1, 1, 0.5] },
+    });
+    expect(out.map((event) => event.velocity)).toEqual([50, 100]);
+  });
+
   it('★ bebop articulation:duration ×0.85', () => {
     const out = renderStyleFeel({ events: [mk(0, 0.5)], feel: feelForStyle('JAZZ') });
     expect(out[0].duration).toBeCloseTo(0.5 * 0.85, 5);

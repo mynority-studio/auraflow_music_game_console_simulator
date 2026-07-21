@@ -2,3 +2,4 @@
 export * from './HarmonicPlan';
 export * from './commonSafeToneQuery';
 export * from './harmonyEngine';
+export * from './jazzFiveFourHarmonyCompiler';

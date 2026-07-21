@@ -45,8 +45,8 @@ describe('arranger/openingGesturePlanner', () => {
     expect(plan(12, 'acg').openingGesture).toEqual(plan(12, 'acg').openingGesture);
   });
 
-  it('不同 seed 在五个 macro 风格里产生开头差异,但不靠巨权重压死', () => {
-    for (const style of ['pop', 'rnb', 'lofi', 'jazz', 'acg']) {
+  it('非 Jazz macro 跨 seed 仍产生开头差异,但不靠巨权重压死', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'acg']) {
       const signatures = new Set<string>();
       for (let seed = 0; seed < 32; seed++) {
         const g = plan(seed, style).openingGesture;

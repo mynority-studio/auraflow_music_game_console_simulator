@@ -9,7 +9,13 @@
 import type { Rng } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { Section, SectionRole } from '../arranger/ArrangementPlan';
-import { pickProgressionPrototypeWithPolicy, type HarmonyStyleName, type ProtoSectionRole, type ProgressionSlot, type ProgressionTransformPolicy } from '../knowledge/progressions';
+import {
+  pickProgressionPrototypeWithPolicy,
+  type HarmonyStyleName,
+  type ProtoSectionRole,
+  type ProgressionSlot,
+  type ProgressionTransformPolicy,
+} from '../knowledge/progressions';
 
 /** prototype 选择结果:slots + 该 prototype 的 transformPolicy(prototype 段离调变体门控)。 */
 export interface SelectedProgression {
@@ -37,8 +43,11 @@ export function selectProgressionSlots(args: {
   section: Section;
   hrng: Rng;
   protoByGroup: Map<string, SelectedProgression>;
+  beatsPerBar?: number;
 }): SelectedProgression | null {
   const { band, section, hrng, protoByGroup } = args;
+  const beatsPerBar = args.beatsPerBar ?? 4;
+
   const group = section.repeatGroup;
   if (group && protoByGroup.has(group)) return protoByGroup.get(group)!;
 
@@ -49,6 +58,7 @@ export function selectProgressionSlots(args: {
     mode: band.mode === 'minor' ? 'Minor' : 'Major',
     functionRole: section.harmonyRole ?? ROLE_MAP[section.role as SectionRole] ?? 'verse',
     bars: section.bars,
+    beatsPerBar,
     random: hrng,
   });
   if (group && picked) protoByGroup.set(group, picked);

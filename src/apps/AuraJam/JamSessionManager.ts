@@ -14,7 +14,7 @@ import { MotifRecorder } from './MotifRecorder';
 const JAM_STYLE_HINT: Partial<Record<StyleId, string>> = {
     [StyleId.ModernPop]: 'pop', [StyleId.ChillJazz]: 'jazz', [StyleId.NeoSoul]: 'rnb',
 };
-// getStyleStage5Bundle 已不需要(motif 预处理 topologyConfig 已删 2026-05-24)
+// motif 预处理直接使用本地 topology stub。
 
 export type JamAppState =
     | 'SCALE_VIEW'
@@ -30,7 +30,7 @@ export class JamSessionManager {
     private stateChangeCallback?: (state: JamAppState) => void;
     private generationId: number = 0;
 
-    public currentSong?: PlaybackSong;  // ★ Q+N 播放视图(取代旧 GeneratedTrack + StyleConfig 兼容投影)
+    public currentSong?: PlaybackSong;  // ★ Q+N 播放视图
 
     private scaleEngine: ScaleEngine;
     private recorder: MotifRecorder;
@@ -161,7 +161,7 @@ export class JamSessionManager {
             if (currentGenId !== this.generationId) return;
             if (result.status === 'failed' || !result.ir) throw new Error('Q+N motif 成曲失败');
 
-            // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot;不再假 GeneratedTrack/StyleConfig。
+            // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot。
             this.currentSong = toPlaybackSong(result);
 
             const playId = await AudioEngine.playMusicGeneration(result); // 返回本次实际启动的会话 id
@@ -200,7 +200,7 @@ export class JamSessionManager {
     // ================================================================
 
     public getCurrentChord(): any {
-        // 旧兼容投影从不填 chords → 本方法历来恒返回 null(和弦显示当前惰性)。迁移保持此行为。
+        // 当前播放视图不填 chords → 本方法恒返回 null(和弦显示惰性)。
         return null;
     }
 
@@ -227,8 +227,6 @@ export class JamSessionManager {
         const jamStartTick = countInMeasureStartTick + ticksPerMeasure;
 
         this.jamStartTick = jamStartTick;
-
-        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'cc', channel: 9, data1: 7, data2: 127 });
 
         // Count-in: Crash + Kick + Snare roll
         const beatsPerMeasure = timeSignature[0];
@@ -301,8 +299,6 @@ export class JamSessionManager {
 
             AudioEngine.muteChannel(9, false);
             AudioEngine.muteChannel(1, false);
-            AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'cc', channel: 9, data1: 7, data2: 100 });
-
             if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {
                 const restore = this.originalDrumEvents.filter((e: any) => e.ticks >= this.jamStartTick);
                 AudioEngine.replaceChannelEvents(9, this.jamStartTick, restore);

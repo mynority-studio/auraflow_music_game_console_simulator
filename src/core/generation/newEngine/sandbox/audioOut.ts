@@ -9,6 +9,7 @@
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
 import { AudioEngine, startAudioContext } from '../../../audio/AudioEngine';
 import { Dream5504MidiOutput } from '../../../audio/Dream5504MidiOutput';
+import { applyPopFiveTrackMidiGuard } from '../../../audio/popFiveTrackMidiGuard';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -19,7 +20,8 @@ import { resolveAudibleRoles } from './pianoRoll';
  *  会先确保 Dream 5504 MIDI 输出已开启。style → 共享房间混响湿度。 */
 export async function auditionMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
   await startAudioContext();
-  const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
+  const outputStyle = style ?? 'default';
+  const events = applyPopFiveTrackMidiGuard(musicalIRToMidiEvents(ir, roomWetFor(outputStyle), outputStyle), outputStyle);
   globalMidiScheduler.stop();
   globalMidiScheduler.loadTrack(events, bpm);
   globalMidiScheduler.start();

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { musicalIRToSMF, vlq } from './midiFile';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { createTimebase, midi, ticks } from '../foundation';
+import { parseSMF } from '../../../audio/smfParser';
 
 const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } }); // ppq 480
 const ir = freezeMusicalIR({
@@ -48,10 +49,20 @@ describe('sandbox · MIDI 文件导出 SMF (6.2)', () => {
     expect([...smf.slice(tempoIdx + 3, tempoIdx + 6)]).toEqual([0x07, 0xa1, 0x20]);
   });
 
+  it('writes the MusicalIR time signature instead of making DAWs assume 4/4', () => {
+    expect(find(smf, [0xff, 0x58, 0x04, 4, 2, 24, 8])).toBeGreaterThan(0);
+  });
+
   it('含 noteOn/noteOff + 结尾 end-of-track(FF 2F 00)', () => {
     expect(find(smf, [0x90 | 1, 72, 95])).toBeGreaterThan(0); // lead noteOn ch1 pitch72 vel95
     expect(find(smf, [0x80 | 3, 36, 0])).toBeGreaterThan(0);  // bass noteOff ch3 pitch36
     expect([...smf.slice(smf.length - 3)]).toEqual([0xff, 0x2f, 0x00]); // EOT
+  });
+
+  it('keeps the declared IR duration through end-of-track rather than cutting at the final note-off', () => {
+    // Fixture's final note-off is tick 720; durationTicks is 960, so EOT has a
+    // 240-tick (VLQ 81 70) silent tail before it.
+    expect([...smf.slice(-5)]).toEqual([0x81, 0x70, 0xff, 0x2f, 0x00]);
   });
 
   it('MTrk 长度字段 = 实际 track 数据字节数(自洽)', () => {
@@ -62,5 +73,55 @@ describe('sandbox · MIDI 文件导出 SMF (6.2)', () => {
 
   it('确定性:同 IR+bpm 两次导出字节完全一致', () => {
     expect([...musicalIRToSMF(ir, 120)]).toEqual([...musicalIRToSMF(ir, 120)]);
+  });
+
+  it('ACG 导出保留钢琴左手的非零 Program，而不回退成真实 Bass', () => {
+    const acgPianoIr = freezeMusicalIR({
+      tracks: [{
+        role: 'bass',
+        bank: 8,
+        program: 4, // Soft Electric Piano: ACG piano palette 中最容易暴露 style 遗失的地址
+        notes: [{ pitch: midi(40), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 }],
+      }],
+      timebase,
+      durationTicks: ticks(480),
+    });
+    const events = parseSMF(musicalIRToSMF(acgPianoIr, 120, 'acg')).events;
+    const bank = events.find((event) => event.type === 'cc' && event.channel === 3 && event.data1 === 0);
+    const program = events.find((event) => event.type === 'programChange' && event.channel === 3);
+
+    expect(bank).toMatchObject({ data2: 8 });
+    expect(program).toMatchObject({ data1: 4 });
+  });
+
+  it('原生默认 SMF 在钢琴切换时先抬 CC64，再 bank/program，最后 noteOn', () => {
+    const boundary = 480;
+    const handoffIr = freezeMusicalIR({
+      tracks: [{
+        role: 'comp', program: 0, bank: 0,
+        programChanges: [{ atTick: ticks(boundary), program: 5, bank: 2 }],
+        mix: { volume: 93, pan: 50, reverb: 50, chorus: 0 },
+        mixChanges: [{ atTick: ticks(boundary), mix: { volume: 93, pan: 50, reverb: 50, chorus: 0 } }],
+        pedalEvents: [{ atTick: ticks(0), down: true }, { atTick: ticks(boundary), down: false }, { atTick: ticks(boundary), down: true }],
+        notes: [
+          { pitch: midi(60), startTick: ticks(0), durationTicks: ticks(boundary), velocity: 80 },
+          { pitch: midi(64), startTick: ticks(boundary), durationTicks: ticks(240), velocity: 80 },
+        ],
+      }],
+      timebase,
+      durationTicks: ticks(960),
+    });
+    const parsed = parseSMF(musicalIRToSMF(handoffIr, 120));
+    const atBoundary = parsed.events
+      .filter((event) => event.ticks === boundary && event.channel === 2)
+      .map((event) => [event.type, event.data1, event.data2]);
+
+    expect(atBoundary).toEqual([
+      ['noteOff', 60, 0],
+      ['cc', 64, 0],
+      ['cc', 0, 2],
+      ['programChange', 5, 0],
+      ['noteOn', 64, 80],
+    ]);
   });
 });

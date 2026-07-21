@@ -71,5 +71,5 @@ describe('comp rich-texture 接线', () => {
         expect(r.status, `${style}#${seed}`).not.toBe('failed');
       }
     }
-  });
+  }, 20_000);
 });

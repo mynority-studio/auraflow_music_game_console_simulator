@@ -9,6 +9,8 @@ import { buildInstrumentationPlan } from './instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { isAcgTextureCase } from '../render/textureRenderer';
 import { createRandomContext, pc } from '../foundation';
+import { grooveContractsForStyle } from '../knowledge/grooveContracts';
+import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 
 // ============================================================
 // MG full-parity Phase E(directive §3.7)— GrooveContract-aware texture 选择验收
@@ -93,5 +95,24 @@ describe('instrumental/textureGrooveAware — Phase E §3.7', () => {
       return buildInstrumentationPlan(band, arr, createRandomContext(7).substream('timbre'), plan).richTextureBySection;
     };
     expect(JSON.stringify(build())).toBe(JSON.stringify(build()));
+  });
+
+  it('plans each section texture from grooveContractBySection instead of the song snapshot', () => {
+    const seed = 19;
+    const band = buildBandSpec({ seed, styleHint: 'pop', mood: 'build', targetDuration: 120, key: pc(0) });
+    const base = buildArrangementPlan(band, { rng: createRandomContext(seed) });
+    const contracts = grooveContractsForStyle('POP').slice(0, 2);
+    const bySection = Object.fromEntries(base.sections.map((section, index) => [section.id, contracts[index % 2]]));
+    const arrangement = { ...base, grooveContractBySection: bySection } as unknown as ArrangementPlan;
+    const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(seed));
+    const instrumentation = buildInstrumentationPlan(band, arrangement, createRandomContext(seed).substream('timbre'), harmonic);
+    for (const section of arrangement.sections) {
+      const texture = instrumentation.richTextureBySection[section.id];
+      if (!texture) continue;
+      expect(bySection[section.id].allowedTextureCases, `${section.id}/${texture}`)
+        .toContain(texture);
+      expect(bySection[section.id].forbiddenTextureCases ?? [], `${section.id}/${texture}`)
+        .not.toContain(texture);
+    }
   });
 });

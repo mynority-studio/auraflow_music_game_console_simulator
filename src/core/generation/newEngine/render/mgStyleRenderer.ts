@@ -171,6 +171,15 @@ export function feelForStyle(styleName: string): ImprovisorStyleFeel {
 //   lead 的 swing 真源 = contract.melodySwingRatio(与 comp/bass 的 compSwingRatio 分开)。
 //   GrooveArticulation 与 ImprovisorStyleFeel.articulation 值域全同 → 直传。
 //   ★ Phase D:全 MG-backed 风格(有 contract)走此桥;feelForStyle 仅【无 contract】兜底(见 mgLeadRenderer)。
-export function feelFromGrooveContract(c: { melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }): ImprovisorStyleFeel {
-  return { swingRatio: c.melodySwingRatio, articulation: c.articulation, accentPattern: [...c.accentPattern] };
+export function feelFromGrooveContract(
+  c: { melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[]; pushProbability?: number },
+  beatsPerMeasure = 4,
+): ImprovisorStyleFeel {
+  return {
+    swingRatio: c.melodySwingRatio,
+    articulation: c.articulation,
+    accentPattern: [...c.accentPattern],
+    pushProbability: c.pushProbability ?? 0,
+    beatsPerMeasure,
+  };
 }

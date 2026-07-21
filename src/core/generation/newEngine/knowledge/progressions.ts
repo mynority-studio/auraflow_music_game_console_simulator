@@ -6,7 +6,7 @@
 // Slice 1 tonal:大调/自然小调自然 7 和弦。
 // ============================================================
 
-import type { Rng } from '../foundation';
+import { mod12, type Rng } from '../foundation';
 import type { ChordQuality } from './chords';
 import type { DiatonicMode } from './scales';
 
@@ -63,6 +63,16 @@ export type BorrowedSource = 'secondary_dominant' | 'secondary_ii_v' | 'backdoor
 export type BassRole = 'root' | '3rd' | '5th' | '7th' | 'pedal';
 export type TonicizationPlacement = 'light' | 'approach' | 'iiv_split' | 'full_2bar';
 
+/**
+ * An applied-chord target expressed relative to the section key.  Keeping the
+ * target offset in knowledge (rather than a concrete pitch) preserves correct
+ * V/X analysis after any song transposition.
+ */
+export interface AppliedHarmonyTarget {
+  roman: string;
+  rootOffset: number;
+}
+
 /** 进行模板的单和弦槽(= melodygenerative ChordSkeletonSlot)。type = 和弦类型串(对应 ChordTypeId)。 */
 export interface ProgressionSlot {
   roman: string;
@@ -71,6 +81,9 @@ export interface ProgressionSlot {
   rootOffset: number;            // 相对 key 的半音
   bassRole?: BassRole;
   bassPedalPc?: number;          // bassRole='pedal' 时
+  bassOffset?: number;           // 显式 slash-bass:相对 section key 的半音，realizer 转为绝对 bassPc
+  /** V/X or ii/X target; makes the slash relation executable analysis data. */
+  appliedTarget?: AppliedHarmonyTarget;
   beats?: number;                // 默认整小节;两个 beats=2 拼成一小节(和声节奏 split)
   localTonalCenterPc?: number;
   forcedScale?: string;
@@ -116,7 +129,7 @@ export interface ProgressionPrototype {
 type ProtoRandom = { next(): number };
 
 /** roman → 级数(1..7)。 */
-function romanScaleDegree(roman: string): number {
+export function romanScaleDegree(roman: string): number {
   const stripped = roman.replace(/^[b#n]+/, '').split('/')[0];
   const head = stripped.match(/^[IVivXx]+/)?.[0] ?? '';
   const map: Record<string, number> = { I: 1, i: 1, II: 2, ii: 2, III: 3, iii: 3, IV: 4, iv: 4, V: 5, v: 5, VI: 6, vi: 6, VII: 7, vii: 7 };
@@ -126,9 +139,51 @@ function romanHead(roman: string): string {
   if (!roman) return '';
   return roman.replace(/^[b#n]+/, '').match(/^[IVivXx]+/)?.[0] ?? '';
 }
+
+const LOCAL_DEGREE_SEMITONES: Record<number, number> = {
+  1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11,
+};
+
+function accidentalSemitones(roman: string): number {
+  if (roman.startsWith('bb')) return -2;
+  if (roman.startsWith('b')) return -1;
+  if (roman.startsWith('x')) return 2;
+  if (roman.startsWith('#')) return 1;
+  return 0;
+}
+
+/**
+ * A slash numeral names a local function (`V/iv`), while rootOffset names the
+ * audible global root. Infer the local tonic's transposition-safe offset so
+ * the realizer can preserve both facts as RomanChord.secondaryTarget and
+ * localTonalCenterPc. The current library uses ordinary diatonic i/ii/V heads
+ * for applied harmony; unfamiliar forms deliberately return undefined rather
+ * than inventing an analysis.
+ */
+function inferredAppliedTarget(roman: string, rootOffset: number): AppliedHarmonyTarget | undefined {
+  const parts = roman.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+  const head = parts[0];
+  const localDegree = romanScaleDegree(head);
+  const localOffset = LOCAL_DEGREE_SEMITONES[localDegree];
+  if (localOffset === undefined) return undefined;
+  return {
+    roman: parts[1],
+    rootOffset: mod12(rootOffset - localOffset - accidentalSemitones(head)),
+  };
+}
 /** slot 工厂:rootOffset 必填;lockType=true 默认(Stage2 保留作者 chord type)。 */
 function ch(roman: string, type: string, rootOffset: number, extra: Partial<ProgressionSlot> = {}): ProgressionSlot {
-  return { roman, type, rootOffset, scaleDegree: romanScaleDegree(roman), lockType: true, ...extra };
+  const appliedTarget = inferredAppliedTarget(roman, rootOffset);
+  return {
+    roman,
+    type,
+    rootOffset,
+    scaleDegree: romanScaleDegree(roman),
+    lockType: true,
+    ...(appliedTarget ? { appliedTarget } : {}),
+    ...extra,
+  };
 }
 
 // LOFI 软 policy:不跑 tonicization / borrowed planner,色彩来自 prototype 自带。
@@ -166,6 +221,50 @@ const ACG_BORROWED_CADENCE_8: ProgressionSlot[] = [ch('I', 'maj9', 0, { bassRole
 const ACG_SUSPENDED_ARRIVAL_8: ProgressionSlot[] = [ch('I', 'maj9', 0, { bassRole: 'pedal', bassPedalPc: 0, preserveType: true, forcedScale: 'Ionian' }), ch('IV', 'maj9', 5, { bassRole: 'pedal', bassPedalPc: 0, preserveType: true, forcedScale: 'Lydian' }), ch('vi', 'm9', 9, { bassRole: 'pedal', bassPedalPc: 0, preserveType: true, forcedScale: 'Aeolian' }), ch('V', '13sus4', 7, { bassRole: 'pedal', bassPedalPc: 0, preserveType: true, forcedScale: 'Mixolydian' }), ch('ii', 'm9', 2, { preserveType: true, forcedScale: 'Dorian' }), ch('V', '9sus4', 7, { preserveType: true, forcedScale: 'Mixolydian', mustResolve: true }), ch('I', 'maj9', 0, { bassRole: '3rd', preserveType: true, forcedScale: 'Ionian' }), ch('I', '6/9', 0, { preserveType: true, forcedScale: 'Ionian' })];
 const ACG_JPOP_456_DECEPTIVE_8: ProgressionSlot[] = [ch('IV', 'maj9', 5, { preserveType: true, forcedScale: 'Lydian' }), ch('V', '9', 7, { preserveType: true, forcedScale: 'Mixolydian', mustResolve: true }), ch('vi', 'm9', 9, { preserveType: true, forcedScale: 'Aeolian' }), ch('vi', 'm9', 9, { preserveType: true, forcedScale: 'Aeolian' }), ch('IV', 'maj9', 5, { preserveType: true, forcedScale: 'Lydian' }), ch('V', '9', 7, { preserveType: true, forcedScale: 'Mixolydian', mustResolve: true }), ch('vi', 'm9', 9, { preserveType: true, forcedScale: 'Aeolian' }), ch('I', '6/9', 0, { bassRole: '3rd', preserveType: true, forcedScale: 'Ionian' })];
 const ACG_MINOR_CIRCLE_8: ProgressionSlot[] = [ch('i', 'm9', 0, { preserveType: true, forcedScale: 'Aeolian' }), ch('iv', 'm9', 5, { preserveType: true, forcedScale: 'Dorian' }), ch('VII', 'add9', 10, { preserveType: true, forcedScale: 'Aeolian' }), ch('III', 'maj9', 3, { preserveType: true, forcedScale: 'Ionian' }), ch('VI', 'maj9', 8, { preserveType: true, forcedScale: 'Lydian' }), ch('ii', 'm7b5', 2, { preserveType: true, forcedScale: 'Locrian' }), ch('V', '7b9', 7, { preserveType: true, forcedScale: 'Phrygian Dominant', mustResolve: true }), ch('i', 'm9', 0, { preserveType: true, forcedScale: 'Aeolian' })];
+
+// —— ACG PIANOSONG · 根音中心小调抒情 profile ——
+//   这不是替换旧的 ACG planing / common-tone 池，而是 ACG 处于 Minor 时优先可用的
+//   一套短篇钢琴 cue 骨架。ACG 曲式实际有 4-bar intro / lift / coda；旧池几乎全是 8-bar，
+//   短段会退回通用 degree-picker，因而无法保证低音、调式与终止语义。
+//
+//   规则：
+//   - 非 intro 的低音全部显式 root（不用 3rd / 5th 反复转位）；
+//   - 主体是 Aeolian i-bVI-bIII-bVII，色彩只用 add9 / madd9，不堆 maj9；
+//   - lift 的 raised-6 放在 i(m6/9) 上，forcedScale 以主音为锚才真实表达 Dorian，
+//     不把 "Dorian" 错挂到 IV 根音；
+//   - V7-i 不强塞 forcedScale（其锚点应是主音），由小调 V7 的 chord-scale 规则给出
+//     harmonic-minor 导音。intro 的 pedal 不写绝对 bassPedalPc，使其随歌曲 key 转置。
+const ACG_PIANO_MINOR_PEDAL_INTRO_4: ProgressionSlot[] = [
+  ch('i', 'madd9', 0, { bassRole: 'pedal', preserveType: true }),
+  ch('i', 'madd9', 0, { bassRole: 'pedal', preserveType: true }),
+  ch('i', 'madd9', 0, { bassRole: 'pedal', preserveType: true }),
+  ch('i', 'madd9', 0, { bassRole: 'pedal', preserveType: true }),
+];
+const ACG_PIANO_MINOR_AEOLIAN_CELL_4: ProgressionSlot[] = [
+  ch('i', 'madd9', 0, { bassRole: 'root', preserveType: true }),
+  ch('bVI', 'add9', 8, { bassRole: 'root', preserveType: true }),
+  ch('bIII', 'add9', 3, { bassRole: 'root', preserveType: true }),
+  ch('bVII', 'sus2', 10, { bassRole: 'root', preserveType: true }),
+];
+const ACG_PIANO_MINOR_AEOLIAN_THEME_8: ProgressionSlot[] = [
+  ...ACG_PIANO_MINOR_AEOLIAN_CELL_4,
+  ch('i', 'madd9', 0, { bassRole: 'root', preserveType: true }),
+  ch('iv', 'madd9', 5, { bassRole: 'root', preserveType: true }),
+  ch('bVI', 'add9', 8, { bassRole: 'root', preserveType: true }),
+  ch('bVII', 'sus2', 10, { bassRole: 'root', preserveType: true }),
+];
+const ACG_PIANO_MINOR_RELATIVE_DORIAN_LIFT_4: ProgressionSlot[] = [
+  ch('i', 'm6/9', 0, { bassRole: 'root', preserveType: true, forcedScale: 'Dorian', borrowedSource: 'modal_interchange', borrowedFrom: 'Dorian tonic colour (raised 6)' }),
+  ch('bIII', 'add9', 3, { bassRole: 'root', preserveType: true }),
+  ch('bVII', 'add9', 10, { bassRole: 'root', preserveType: true }),
+  ch('V', '7sus4', 7, { bassRole: 'root', preserveType: true, mustResolve: true }),
+];
+const ACG_PIANO_MINOR_HARMONIC_CADENCE_4: ProgressionSlot[] = [
+  ch('iv', 'madd9', 5, { bassRole: 'root', preserveType: true }),
+  ch('bVI', 'add9', 8, { bassRole: 'root', preserveType: true }),
+  ch('V', '7', 7, { bassRole: 'root', preserveType: true, mustResolve: true }),
+  ch('i', 'madd9', 0, { bassRole: 'root', preserveType: true }),
+];
 
 // —— JPOP canon ii-V 替换 + chromatic walkdown(follow MG styleDictionary PROGRESSION_POOL,逐 slot 对齐)——
 //   canon:原 canon 的 vii / IV-向 由 bar-级 ii/X→V/X cell(2+2 拍)替换。全 slot preserveType(精确 m7b5/m7/7,
@@ -218,6 +317,13 @@ const JAZZ_AUTUMN_LEAVES_8: ProgressionSlot[] = [
   ch('bIII', 'maj7', 3), ch('bVI', 'maj7', 8),
   ch('ii', 'm7b5', 2), ch('V', '7alt', 7), ch('i', 'm9', 0), ch('i', 'm9', 0),
 ];
+// 5/4 3+2 vamp learned from the supplied MIDI: the second harmony begins at
+// the additive group boundary, not at the next bar. In E minor this realizes
+// as Em9 (3 beats) -> Bm7 (2 beats).
+const JAZZ_FIVE_FOUR_MINOR_VAMP_1: ProgressionSlot[] = [
+  ch('i', 'm9', 0, { beats: 3, preserveType: true, forcedScale: 'Aeolian' }),
+  ch('v', 'm7', 7, { beats: 2, preserveType: true, forcedScale: 'Aeolian' }),
+];
 // 爵士 12-bar blues:含 #IV 替代位的 VI7 副属 + ii-V turnaround(比 BLUES_12BAR 更爵士)。
 const JAZZ_BLUES_12: ProgressionSlot[] = [
   ch('I', '9', 0), ch('IV', '9', 5), ch('I', '7', 0), ch('I', '7', 0),
@@ -245,12 +351,39 @@ const _MODERN_PROGRESSION_PROTOTYPES: ProgressionPrototype[] = [
   { id: 'rnb_backdoor_8', style: 'RNB', mode: 'Major', sectionRoles: ['chorus', 'ending'], lengthBars: 8, slots: RNB_BACKDOOR_8 },
   { id: 'jazz_1625_8', style: 'JAZZ', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_1625_8 },
   { id: 'jazz_min_251_8', style: 'JAZZ', mode: 'Minor', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_MINOR_251_8 },
+  {
+    id: 'jazz_five_four_minor_vamp_1',
+    style: 'JAZZ',
+    mode: 'Minor',
+    sectionRoles: ['loop'],
+    lengthBars: 1,
+    slots: JAZZ_FIVE_FOUR_MINOR_VAMP_1,
+    weight: 8,
+    cadence: 'loop',
+    transformPolicy: {
+      allowTonicization: false,
+      maxTonicizePer16: 0,
+      allowBorrowed: false,
+      maxBorrowedPer16: 0,
+      allowFullTwoFive: false,
+      allowSubV: false,
+      preferSusDominant: false,
+    },
+    subStyles: ['Modern Jazz 5/4 Piano'],
+  },
   // —— 联网补足(2026-06-05):3 条权威 jazz 进行,jazz 从 2 → 5 ——
   { id: 'jazz_rhythm_bridge_8', style: 'JAZZ', mode: 'Major', sectionRoles: ['bridge'], lengthBars: 8, slots: JAZZ_RHYTHM_BRIDGE_8 },
   { id: 'jazz_autumn_leaves_8', style: 'JAZZ', mode: 'Minor', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_AUTUMN_LEAVES_8 },
   { id: 'jazz_blues_12', style: 'JAZZ', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 12, slots: JAZZ_BLUES_12 },
   { id: 'blues_12bar_dom', style: 'BLUES', mode: 'Major', sectionRoles: ['verse', 'chorus', 'intro', 'ending'], lengthBars: 12, slots: BLUES_12BAR_DOMINANT, weight: 3 },
-  // ACG(久石让/坂本电影钢琴;MG 升级 Phase 2a。7 基底进行,权重对齐 MG)
+  // ACG PIANOSONG · 根音中心小调 cue profile。放在既有 ACG 池之前，令 Minor 的
+  // 4/8-bar 主题曲式优先命中它；旧 ACG planing / common-tone 原型仍完整保留在后面。
+  { id: 'acg_piano_minor_pedal_intro_4', style: 'ACG', mode: 'Minor', sectionRoles: ['intro'], lengthBars: 4, slots: ACG_PIANO_MINOR_PEDAL_INTRO_4, weight: 5.2, cadence: 'open', emotionTags: ['sad', 'float'], subStyles: ['ACG PIANOSONG Rooted Minor'] },
+  { id: 'acg_piano_minor_aeolian_theme_8', style: 'ACG', mode: 'Minor', sectionRoles: ['verse', 'chorus', 'loop'], lengthBars: 8, slots: ACG_PIANO_MINOR_AEOLIAN_THEME_8, weight: 5.4, cadence: 'modal', emotionTags: ['sad', 'nostalgic'], subStyles: ['ACG PIANOSONG Rooted Minor'] },
+  { id: 'acg_piano_minor_aeolian_cell_4', style: 'ACG', mode: 'Minor', sectionRoles: ['verse', 'chorus', 'loop'], lengthBars: 4, slots: ACG_PIANO_MINOR_AEOLIAN_CELL_4, weight: 1.15, cadence: 'loop', emotionTags: ['sad', 'nostalgic'], subStyles: ['ACG PIANOSONG Rooted Minor'] },
+  { id: 'acg_piano_minor_relative_dorian_lift_4', style: 'ACG', mode: 'Minor', sectionRoles: ['bridge'], lengthBars: 4, slots: ACG_PIANO_MINOR_RELATIVE_DORIAN_LIFT_4, weight: 4.8, cadence: 'modal', emotionTags: ['float', 'nostalgic'], subStyles: ['ACG PIANOSONG Rooted Minor'] },
+  { id: 'acg_piano_minor_harmonic_cadence_4', style: 'ACG', mode: 'Minor', sectionRoles: ['ending'], lengthBars: 4, slots: ACG_PIANO_MINOR_HARMONIC_CADENCE_4, weight: 5.0, cadence: 'soft_authentic', emotionTags: ['sad', 'nostalgic'], subStyles: ['ACG PIANOSONG Rooted Minor'] },
+  // ACG(既有久石让/坂本电影钢琴;MG 升级 Phase 2a。7 条 legacy 基底进行继续保留)
   { id: 'acg_topvoice_major_planing_8', style: 'ACG', mode: 'Major', sectionRoles: ['intro', 'verse', 'bridge', 'loop'], lengthBars: 8, slots: ACG_MAJOR_PLANING_8, weight: 1.7 },
   { id: 'acg_topvoice_common_tone_8', style: 'ACG', mode: 'Major', sectionRoles: ['verse', 'chorus', 'ending'], lengthBars: 8, slots: ACG_COMMON_TONE_8, weight: 1.1 },
   { id: 'acg_color_descent_8', style: 'ACG', mode: 'Major', sectionRoles: ['intro', 'verse', 'bridge'], lengthBars: 8, slots: ACG_COLOR_DESCENT_8, weight: 1.5 },
@@ -330,13 +463,14 @@ export function pickProgressionPrototype(args: {
   mode: ProtoMode;
   functionRole: ProtoSectionRole;
   bars: number;
+  beatsPerBar?: number;
   random: ProtoRandom;
 }): ProgressionSlot[] | null {
   const strict = listProgressionPrototypes({ style: args.style, mode: args.mode, functionRole: args.functionRole, maxBars: args.bars });
-  if (strict.length > 0) return fitProgressionToBars(weightedPickPrototype(strict, args.random).slots, args.bars);
+  if (strict.length > 0) return fitProgressionToBars(weightedPickPrototype(strict, args.random).slots, args.bars, args.beatsPerBar);
   const relaxed = PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
   if (relaxed.length === 0) return null;
-  return fitProgressionToBars(weightedPickPrototype(relaxed, args.random).slots, args.bars);
+  return fitProgressionToBars(weightedPickPrototype(relaxed, args.random).slots, args.bars, args.beatsPerBar);
 }
 
 /** 同 pickProgressionPrototype,但返回选中 prototype 的 transformPolicy(供 prototype 段离调变体门控)。 */
@@ -345,6 +479,7 @@ export function pickProgressionPrototypeWithPolicy(args: {
   mode: ProtoMode;
   functionRole: ProtoSectionRole;
   bars: number;
+  beatsPerBar?: number;
   random: ProtoRandom;
 }): { slots: ProgressionSlot[]; transformPolicy?: ProgressionTransformPolicy } | null {
   const strict = listProgressionPrototypes({ style: args.style, mode: args.mode, functionRole: args.functionRole, maxBars: args.bars });
@@ -352,21 +487,21 @@ export function pickProgressionPrototypeWithPolicy(args: {
     : PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
   if (pool.length === 0) return null;
   const proto = weightedPickPrototype(pool, args.random);
-  return { slots: fitProgressionToBars(proto.slots, args.bars), transformPolicy: proto.transformPolicy };
+  return { slots: fitProgressionToBars(proto.slots, args.bars, args.beatsPerBar), transformPolicy: proto.transformPolicy };
 }
 
-// KB prototype 约定:整小节 = 4 拍;slot.beats=2 = 半小节(两个拼一小节)。全曲皆 4/4,故此常量精确。
-const FULL_BAR_BEATS = 4;
-const slotBeats = (s: ProgressionSlot): number => s.beats ?? FULL_BAR_BEATS;
+const DEFAULT_BEATS_PER_BAR = 4;
+const slotBeats = (s: ProgressionSlot, beatsPerBar: number): number => s.beats ?? beatsPerBar;
 
 /** 把模板展开【按拍】填满 bars 小节;第 2 遍起末 V 和弦换 7sus4 作 cadence 变化(避免纯重复)。
  *  ★ 修(2026-06-08):按【拍】累计而非 slot 个数 —— 含半小节槽(beats:2,如副属 ii-V)的模板,
  *    bars 个 slot ≠ bars 小节,会让段落和声短缺、时间线整体前移、outro 被挤掉(戛然而止)。
- *    末槽按需截断到刚好填满 → 每段和声恰好 = bars × 4 拍,与 arrangement 对齐。 */
-export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number): ProgressionSlot[] {
+ *    beatsPerBar 缺省 4 以保持旧调用兼容；5/4 调用显式传 5。末槽按需截断到刚好填满。 */
+export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number, beatsPerBar = DEFAULT_BEATS_PER_BAR): ProgressionSlot[] {
   if (phrase.length === 0) return [];
-  const target = bars * FULL_BAR_BEATS; // 目标总拍
-  const phraseBeats = phrase.reduce((n, s) => n + slotBeats(s), 0);
+  if (!Number.isFinite(beatsPerBar) || beatsPerBar <= 0) throw new RangeError(`fitProgressionToBars(): beatsPerBar 须 > 0,得到 ${beatsPerBar}`);
+  const target = bars * beatsPerBar; // 目标总拍
+  const phraseBeats = phrase.reduce((n, s) => n + slotBeats(s, beatsPerBar), 0);
   if (phraseBeats === target) return phrase.map((x) => ({ ...x }));
   const out: ProgressionSlot[] = [];
   let acc = 0;
@@ -383,7 +518,7 @@ export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number): P
     }
     for (const s of copy) {
       if (acc >= target) break;
-      const b = slotBeats(s);
+      const b = slotBeats(s, beatsPerBar);
       if (acc + b <= target) { out.push(s); acc += b; }
       else { out.push({ ...s, beats: target - acc }); acc = target; } // 末槽截断到刚好填满
     }

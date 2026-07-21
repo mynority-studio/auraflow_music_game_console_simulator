@@ -20,6 +20,16 @@ describe('generation · traceGeneration 走真实控制环 (P1-1)', () => {
     if (g.ir) expect(t.ir.tracks).toEqual(g.ir.tracks); // 控制环同款渲染 → 逐音一致
   });
 
+  it('ACG trace 复用 production PianoScorePlan/RoadMap:同 request → 同最终 IR', () => {
+    const req = { seed: 13, styleHint: 'acg', mood: 'lyrical', targetDuration: 90, key: pc(0) } as const;
+    const t = traceGeneration(req);
+    const g = generateSong(req);
+    expect(t.status).toBe(g.status);
+    expect(t.attempts).toBe(g.attempts);
+    expect(g.ir, 'production generation should deliver an IR for this ACG seed').toBeDefined();
+    expect(t.ir.tracks).toEqual(g.ir!.tracks);
+  });
+
   it('多 seed 端到端:trace 不崩,status 非 failed(自愈渲染本就过)', () => {
     for (let seed = 0; seed < 8; seed++) {
       const t = traceGeneration({ seed, styleHint: 'lofi', mood: 'x', targetDuration: 120, key: pc(0) });

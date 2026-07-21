@@ -1,8 +1,7 @@
 import { NoteData, Tonality, SCALE_INTERVALS, TopologyConfig } from '@/src/core/generation/types';
 import { PRNGManager } from '@/src/core/utils/PRNG';
 
-// 2026-05-27 wipe music engines:原 af2-engine/utils/TopologyMutator 已删,
-// 这里 stub 一个 identity 版本(变奏 block 直接复用 core),等新引擎接管。
+// Motif 预处理只保留 identity topology stub;变奏 block 直接复用 core。
 const TopologyMutator = {
     applyTopologyChain(
         core: NoteData[],

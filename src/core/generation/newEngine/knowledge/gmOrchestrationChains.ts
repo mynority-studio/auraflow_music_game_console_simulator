@@ -24,6 +24,10 @@ export interface ChainProfile {
   bassPriority: number[];
   padPriority: number[];
   drumPriority: number[];                  // 通道10 Dream GM128 drum kit program(0/8/16/24/25/32/40...)
+  /** 多条 MIDI role 实际属于同一位乐手/同一实体乐器，不应被去重成不同音色。 */
+  sharedInstrumentRoleGroups?: readonly (readonly InstrumentRoleName[])[];
+  /** 同一编制内各职责的写作音区；未给出时继续按乐器通用音域推导。 */
+  registerByRole?: Partial<Record<InstrumentRoleName, readonly [number, number]>>;
 }
 
 /**
@@ -35,6 +39,8 @@ export type EnsembleWorldId =
   | 'cityPopElectricBand'
   | 'cityPopPianoBand'
   | 'jazzPianoTrio'
+  | 'jazzFiveFourSoloPiano'
+  | 'jazzFiveFourQuartet'
   | 'jazzSaxQuartet'
   | 'smoothJazzQuartet'
   | 'lofiBoomBap'
@@ -72,6 +78,7 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
       0: [0],
     },
     bassPriority: [0], padPriority: [89], drumPriority: [8],
+    sharedInstrumentRoleGroups: [['lead', 'comp', 'bass']],
   },
   // jazz
   jazzCombo: {
@@ -117,6 +124,38 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
     id: 'jazzPianoTrio', world: 'jazzCombo',
     compPriority: [0], leadByComp: { 0: [0] },
     bassPriority: [32], padPriority: [89], drumPriority: [40, 8],
+    sharedInstrumentRoleGroups: [['lead', 'comp']],
+  },
+  // 5/4 现代独奏钢琴：三个轨道是同一架钢琴的低/中/高职责。
+  // 音区来自用户 MIDI 的钢琴/Lead 实际范围，经低音安全边界收窄。
+  jazzFiveFourSoloPiano: {
+    id: 'jazzFiveFourSoloPiano', world: 'acousticPianoBand',
+    compPriority: [0], leadByComp: { 0: [0] },
+    bassPriority: [0], padPriority: [89], drumPriority: [40],
+    sharedInstrumentRoleGroups: [['bass', 'comp', 'lead']],
+    registerByRole: {
+      bass: [40, 52],
+      // Single foundation tones may descend to E2; voiced chord responses are
+      // filtered back into the middle register by the Comp renderer.
+      comp: [40, 66],
+      lead: [55, 78],
+    },
+  },
+  // MIDI-reference 5/4 quartet: Alto lead, acoustic piano, acoustic bass and
+  // ride/snare kit are independent participants.  It deliberately remains a
+  // separate world from the video-inspired solo-piano handoff so changing the
+  // debug palette never changes who owns the four musical roles.
+  jazzFiveFourQuartet: {
+    id: 'jazzFiveFourQuartet', world: 'jazzCombo',
+    compPriority: [0], leadByComp: { 0: [65] },
+    bassPriority: [32], padPriority: [89], drumPriority: [40, 8],
+    registerByRole: {
+      // Upper bound 48 preserves the source root/fifth octave gesture after
+      // transposition (for example Bb2=46 in Eb minor becomes B2=47 in E minor).
+      bass: [29, 48],
+      comp: [39, 66],
+      lead: [54, 78],
+    },
   },
   // 传统小编制的萨克斯前线：次中音/上低音 + 钢琴 comp + 原声贝斯 + 鼓。
   jazzSaxQuartet: {
@@ -147,6 +186,7 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
     id: 'acgPianoTrio', world: 'acousticPianoBand',
     compPriority: [0], leadByComp: { 0: [0] },
     bassPriority: [0], padPriority: [89], drumPriority: [8],
+    sharedInstrumentRoleGroups: [['lead', 'comp', 'bass']],
   },
 };
 
@@ -286,6 +326,8 @@ export interface OrchestrationResult {
   profileId: string;
   ensembleWorld?: EnsembleWorldId;
   roleProgram: Record<InstrumentRoleName, number>;
+  registerByRole?: Partial<Record<InstrumentRoleName, readonly [number, number]>>;
+  sharedInstrumentRoleGroups?: readonly (readonly InstrumentRoleName[])[];
   decisions: string[];
 }
 
@@ -360,5 +402,13 @@ export function orchestrateRolePrograms(args: {
     decisions.push(`drum kit GM${rp.drum}`);
   }
 
-  return { world: profile.world, profileId: profile.id, ensembleWorld: args.ensembleWorld, roleProgram: rp, decisions };
+  return {
+    world: profile.world,
+    profileId: profile.id,
+    ensembleWorld: args.ensembleWorld,
+    roleProgram: rp,
+    registerByRole: profile.registerByRole,
+    sharedInstrumentRoleGroups: profile.sharedInstrumentRoleGroups,
+    decisions,
+  };
 }

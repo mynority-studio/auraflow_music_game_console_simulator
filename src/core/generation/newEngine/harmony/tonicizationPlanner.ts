@@ -27,7 +27,7 @@ function isColored(c: ResolvedChord): boolean {
   return !!c.borrowedSource || !!c.borrowed || c.roman.secondaryTarget !== undefined;
 }
 
-/** V/X:目标的属(上方五度);major target→Mixolydian,minor target→Phrygian Dominant。 */
+/** V/X:目标的属(上方五度);7b13 需 Mixolydian b6 保留 b13，其余 major target→Mixolydian，minor target→Phrygian Dominant。 */
 function makeVX(target: ResolvedChord, dur: number, source: BorrowSourceName, minor: boolean, placement: TonicizationPlacement): ResolvedChord {
   const vType = vTypeFor(source, minor);
   return {
@@ -40,7 +40,7 @@ function makeVX(target: ResolvedChord, dur: number, source: BorrowSourceName, mi
     func: 'D',
     borrowedSource: 'secondary_dominant',
     mustResolve: true,
-    forcedScale: minor ? 'Phrygian Dominant' : 'Mixolydian',
+    forcedScale: vType === '7b13' ? 'Mixolydian b6' : minor ? 'Phrygian Dominant' : 'Mixolydian',
     localTonalCenterPc: target.rootPc,
     tonicizationPlacement: placement,
     sectionKeyPc: target.sectionKeyPc,

@@ -33,8 +33,10 @@ export function applyBassPatternSchedule(
   intentPlan: MusicIntentPlan,
   bpb: number,
   ppq: number,
+  patternOwnedSectionIndexes: ReadonlySet<number> = new Set(),
 ): TrackIR {
   return addRootAnchorFloor(bass, plan, sections, bpb, ppq, (_s, index) => {
+    if (patternOwnedSectionIndexes.has(index)) return [];
     const fam = intentPlan.sections[index]?.bassPatternSchedule?.slots[0]?.family;
     return fam ? FAMILY_FLOOR_BEATS[fam] : [];
   });

@@ -5,7 +5,9 @@ import { expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { scheduleBrickExpansions } from './mgTokenScheduler';
 import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
 import { makeSeededRng } from './mgRng';
-import { LOFI_ENRICHED_GRAMMAR } from '../knowledge/melodyStyleGrammarProfiles'; // ACG 用 LOFI grammar(grammarForStyle)
+import { ACG_PIANOSONG_GRAMMAR } from '../knowledge/melodyStyleGrammarProfiles';
+import type { AcgLeadPresencePlan } from './acgLeadPresencePlan';
+import type { AcgPianoReturnShape, AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
 
 // ============================================================
 // MG full-parity G4 — ACG cycle-cadence scheduler 不变量验收
@@ -23,7 +25,7 @@ function perBrickFor(chords: MgChordDef[]) {
   // ★ ACG fidelity directive §2.1(2026-06-28):ACG 生产走 parseFunctionalRoadMap(style 感知)→ 测试同源,
   //   不再喂旧 parseRoadMap 的 brick(否则 scheduler 测的是生产【不喂】的 brick)。
   const roadMap = parseFunctionalRoadMap({ part, songKeyPc: 0, style: 'ACG' });
-  const perBrick = expandGrammarForRoadMap(LOFI_ENRICHED_GRAMMAR, roadMap.bricks, makeSeededRng('acg_test'));
+  const perBrick = expandGrammarForRoadMap(ACG_PIANOSONG_GRAMMAR, roadMap.bricks, makeSeededRng('acg_test'));
   return { part, perBrick };
 }
 
@@ -84,5 +86,162 @@ describe('render/mgAcgCycleScheduler(MG full-parity G4)', () => {
   it('★ 确定性', () => {
     const { part, perBrick } = perBrickFor(REPEATED);
     expect(JSON.stringify(scheduleAcgCycleCadencePhrases(perBrick, part))).toBe(JSON.stringify(scheduleAcgCycleCadencePhrases(perBrick, part)));
+  });
+
+  it('turns arranger-owned lead silence into scheduler rests before any NoteIR is emitted', () => {
+    const { part, perBrick } = perBrickFor(SHORT);
+    const presence: AcgLeadPresencePlan = {
+      silenceWindows: [{ startBeat: 0, endBeat: 8, reason: 'planned-entry-delay', sectionId: 'intro' }],
+      returnRestCapBeats: 3,
+    };
+    const scheduled = scheduleAcgCycleCadencePhrases(perBrick, part, { leadPresencePlan: presence });
+    const audible = scheduled.filter((entry) => entry.token.kind !== 'R'
+      && entry.token.kind !== 'SlopeEnter'
+      && entry.token.kind !== 'SlopeExit');
+    const reentry = scheduled.filter((entry) => entry.acgReturn);
+
+    expect(scheduled.some((entry) => entry.token.kind === 'R' && entry.startBeat < 8)).toBe(true);
+    // A re-entry phrase is allowed only at/after the authored release. It is
+    // intentionally scheduled *forward* from the first carrier, so a planned
+    // rest gets a compact pickup → approach → dyad arrival instead of being
+    // forced into the old stable-single fallback.
+    expect(audible.length).toBeGreaterThan(0);
+    expect(audible.every((entry) => entry.startBeat >= 8 - 1e-4)).toBe(true);
+    expect(reentry.map((entry) => entry.acgReturn!.role)).toEqual(['pickup', 'approach', 'arrival']);
+    expect(reentry.every((entry) => entry.startBeat >= 8 - 1e-4)).toBe(true);
+    expect(reentry.at(-1)!.acgReturn).toMatchObject({ shape: 'liftRiff', dyad: { voicing: 'below-topline' } });
+  });
+
+  it('treats arranger returnShapes as a hard contract when a dyad response cannot resolve', () => {
+    // The score permits only a sigh, whose terminal requires a dyad. The
+    // harmonic contract admits one stable tone, so the dyad must fail. The
+    // old scheduler silently replaced it with stableSingle; the score now
+    // owns that decision and the original carrier survives without a return.
+    const part = buildChordPart(Array.from({ length: 4 }, () => ({
+      root: 'C', rootMidi: 60, type: 'maj9', bassMidi: 60, duration: 4,
+      effectiveFunc: 'T' as const, stableTonePcs: [0], chordScalePcs: [0],
+    })));
+    const expansion: Parameters<typeof scheduleAcgCycleCadencePhrases>[0][number] = {
+      brickIndex: 0,
+      brick: { name: 'Perfect-Cadence', family: 'Cadence', startBeat: 0, durationBeats: 16, chordIndices: [0, 1, 2, 3], cost: 0 },
+      tokens: [{ kind: 'R', duration: 1 }, { kind: 'C', duration: 1 }, { kind: 'C', duration: 1 }, { kind: 'G', duration: 2 }],
+    };
+    const scoreFor = (returnShapes: readonly AcgPianoReturnShape[]): AcgPianoScorePlan => ({
+      // The scheduler intentionally reads only phrase timing + lead directive.
+      phraseById: {
+        phrase: { startBeat: 0, endBeat: 16, lead: { returnShapes } },
+      },
+    } as unknown as AcgPianoScorePlan);
+
+    const constrained = scheduleAcgCycleCadencePhrases([expansion], part, {
+      pianoScorePlan: scoreFor(['sigh']),
+    });
+    expect(constrained.filter((entry) => entry.acgReturn)).toHaveLength(0);
+    expect(constrained.find((entry) => Math.abs(entry.startBeat - 3.1) < 1e-6)?.token.kind).toBe('C');
+
+    // An empty phrase set is likewise intentional: it does not mean "use the
+    // generic scheduler preference".
+    const noReturnAllowed = scheduleAcgCycleCadencePhrases([expansion], part, {
+      pianoScorePlan: scoreFor([]),
+    });
+    expect(noReturnAllowed.filter((entry) => entry.acgReturn)).toHaveLength(0);
+
+    // Existing production phrases include stableSingle in the permitted set,
+    // so their authored fallback remains available.
+    const fallbackAllowed = scheduleAcgCycleCadencePhrases([expansion], part, {
+      pianoScorePlan: scoreFor(['sigh', 'stableSingle']),
+    });
+    expect(fallbackAllowed.some((entry) => entry.acgReturn?.shape === 'stableSingle')).toBe(true);
+  });
+
+  it('closes or removes slope state cut by a planned silence before the new entry', () => {
+    const part = buildChordPart(SHORT);
+    const presence: AcgLeadPresencePlan = {
+      silenceWindows: [{ startBeat: 0, endBeat: 8, reason: 'planned-entry-delay', sectionId: 'intro' }],
+      returnRestCapBeats: 3,
+    };
+    const scheduled = scheduleAcgCycleCadencePhrases([{
+      brickIndex: 0,
+      brick: { name: 'Perfect-Cadence', family: 'Cadence', startBeat: 0, durationBeats: 16, chordIndices: [0, 1, 2, 3], cost: 0 },
+      // The open slope begins inside the deleted phrase and its source exit
+      // lies after re-entry. It must not constrain the new audible phrase.
+      tokens: [
+        { kind: 'SlopeEnter', dirMin: 2, dirMax: 4, duration: 0 },
+        { kind: 'C', duration: 4 },
+        { kind: 'SlopeExit', duration: 0 },
+        { kind: 'C', duration: 1 },
+        { kind: 'G', duration: 1 },
+      ],
+    }], part, { leadPresencePlan: presence });
+    let depth = 0;
+    for (const entry of scheduled) {
+      if (entry.token.kind === 'SlopeEnter') depth++;
+      else if (entry.token.kind === 'SlopeExit') depth = Math.max(0, depth - 1);
+      else if (entry.startBeat >= 8 - 1e-4 && entry.token.kind !== 'R') {
+        expect(depth, `new phrase at ${entry.startBeat} inherits no deleted slope`).toBe(0);
+      }
+    }
+  });
+
+  it('closes a SlopeExit exactly at planned-silence start so it cannot leak into the release', () => {
+    const part = buildChordPart(SHORT);
+    // With three one-beat audible tokens, the source exit falls exactly at
+    // 15.5 / 3 in the usable cycle. (Three audible atoms also ensure this
+    // fixture is selected instead of the scheduler's fallback cadence.)
+    const silenceStart = 15.5 / 3;
+    const silenceEnd = silenceStart + 0.5;
+    const presence: AcgLeadPresencePlan = {
+      silenceWindows: [{ startBeat: silenceStart, endBeat: silenceEnd, reason: 'planned-entry-delay', sectionId: 'intro' }],
+      returnRestCapBeats: 3,
+    };
+    const scheduled = scheduleAcgCycleCadencePhrases([{
+      brickIndex: 0,
+      brick: { name: 'Perfect-Cadence', family: 'Cadence', startBeat: 0, durationBeats: 16, chordIndices: [0, 1, 2, 3], cost: 0 },
+      tokens: [
+        { kind: 'SlopeEnter', dirMin: 2, dirMax: 4, duration: 0 },
+        { kind: 'C', duration: 1 },
+        { kind: 'SlopeExit', duration: 0 },
+        { kind: 'C', duration: 1 },
+        { kind: 'C', duration: 1 },
+      ],
+    }], part, { leadPresencePlan: presence });
+
+    const exitAtBoundary = scheduled.find((entry) => entry.token.kind === 'SlopeExit'
+      && Math.abs(entry.startBeat - silenceStart) < 1e-6);
+    expect(exitAtBoundary, 'boundary exit must survive as state-only closure').toBeDefined();
+
+    let depth = 0;
+    for (const entry of scheduled) {
+      if (entry.token.kind === 'SlopeEnter') depth++;
+      else if (entry.token.kind === 'SlopeExit') depth = Math.max(0, depth - 1);
+      else if (entry.startBeat >= silenceEnd - 1e-6 && entry.token.kind !== 'R') {
+        expect(depth, `release at ${entry.startBeat} cannot inherit the pre-silence slope`).toBe(0);
+      }
+    }
+  });
+
+  it('orders same-beat slope markers before audible tokens', () => {
+    const part = buildChordPart(SHORT);
+    // An unclosed legacy group is fail-closed by closeOpenSlopeGroups. Its
+    // synthesized exit shares the final source carrier's beat, so this catches
+    // any reliance on incidental stable-sort insertion order.
+    const scheduled = scheduleAcgCycleCadencePhrases([{
+      brickIndex: 0,
+      brick: { name: 'Perfect-Cadence', family: 'Cadence', startBeat: 0, durationBeats: 16, chordIndices: [0, 1, 2, 3], cost: 0 },
+      tokens: [
+        { kind: 'C', duration: 0.5 },
+        { kind: 'C', duration: 0.5 },
+        { kind: 'SlopeEnter', dirMin: 2, dirMax: 4, duration: 0 },
+        { kind: 'C', duration: 0.5 },
+      ],
+    }], part);
+    const syntheticExit = scheduled.find((entry) => entry.token.kind === 'SlopeExit');
+    expect(syntheticExit).toBeDefined();
+    const sameBeat = scheduled.filter((entry) => Math.abs(entry.startBeat - syntheticExit!.startBeat) < 1e-9);
+    const firstAudible = sameBeat.findIndex((entry) => entry.token.kind !== 'SlopeEnter'
+      && entry.token.kind !== 'SlopeExit' && entry.token.kind !== 'R');
+    expect(firstAudible).toBeGreaterThanOrEqual(0);
+    expect(sameBeat.slice(0, firstAudible).map((entry) => entry.token.kind))
+      .toEqual(['SlopeExit', 'SlopeEnter']);
   });
 });

@@ -37,12 +37,6 @@ const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 function mkDec(padMode: PadMode, interactionMode: PadCompInteractionMode, padMaxVoices: number, omitFifth: boolean): PadCompDecision {
   return { padMode, interactionMode, padMaxVoices, compAllowPedal: true, padOmitRoot: true, padOmitFifth: omitFifth, avoidExactPitchOverlap: true };
 }
-const topBySpan = (pad: { notes: readonly { startTick: unknown; pitch: unknown }[] }) => {
-  const m = new Map<number, number>();
-  for (const n of pad.notes) m.set(Number(n.startTick), Math.max(m.get(Number(n.startTick)) ?? 0, Number(n.pitch)));
-  return [...m.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
-};
-
 describe('render/padModes · inner-line', () => {
   // Fmaj7 → Fm7 → Em7 → A7(directive §4.4 例)— 内声部应级进下行 E→Eb→D→C#。
   const plan = makePlan([
@@ -55,7 +49,16 @@ describe('render/padModes · inner-line', () => {
   const pad = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67 });
 
   it('顶音逐段级进(相邻 ≤ 2 半音)= 慢内声部线条', () => {
-    const tops = topBySpan(pad);
+    // tied common tones do not re-attack at the next span, so inspect notes
+    // sounding in each harmonic window rather than only notes starting there.
+    const tops = plan.chordTimeline.map((span) => {
+      const lo = timebase.beatToTick(span.startBeat) as number;
+      const hi = lo + (timebase.beatToTick(span.durationBeats) as number);
+      return Math.max(...pad.notes.filter((note) => {
+        const start = note.startTick as number;
+        return start < hi && start + (note.durationTicks as number) > lo;
+      }).map((note) => note.pitch as number));
+    });
     expect(tops.length).toBe(4);
     for (let i = 1; i < tops.length; i++) expect(Math.abs(tops[i] - tops[i - 1])).toBeLessThanOrEqual(2);
   });

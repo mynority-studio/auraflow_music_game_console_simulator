@@ -38,11 +38,26 @@ function weightedPickContract(pool: readonly GrooveContract[], rng: Rng): Groove
 
 function fallbackDrumIntentForStyle(style: string): GrooveDrumIntent {
   const s = style.toLowerCase();
-  if (s === 'jazz' || s === 'blues') return { kitProgram: 40, timekeeperFamily: 'jazz-swing-ride', liftFamily: 'jazz-bebop-comping', pickupFamily: 'jazz-swing-ride', breakdownFamily: 'jazz-swing-ride' };
-  if (s === 'lofi') return { kitProgram: 25, timekeeperFamily: 'tr808-lofi-boombap', liftFamily: 'tr808-lofi-boombap', pickupFamily: 'tr808-lofi-boombap', breakdownFamily: 'tr808-lofi-minimal' };
-  if (s === 'rnb') return { kitProgram: 25, timekeeperFamily: 'tr808-rnb-pocket', liftFamily: 'tr808-rnb-pocket', pickupFamily: 'tr808-rnb-pocket', breakdownFamily: 'tr808-rnb-pocket' };
-  if (s === 'acg') return { kitProgram: 8, timekeeperFamily: 'ballad-halftime', liftFamily: 'jpop-driving-8ths', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime' };
-  return { kitProgram: 8, timekeeperFamily: 'pop-backbeat', liftFamily: 'pop-backbeat', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime' };
+  if (s === 'jazz' || s === 'blues') return {
+    kitProgram: 40, timekeeperFamily: 'jazz-swing-ride', liftFamily: 'jazz-bebop-comping', pickupFamily: 'jazz-swing-ride', breakdownFamily: 'jazz-brush-ballad',
+    fillFamilies: { light: 'jazz-triplet-setup', strong: 'jazz-triplet-setup', pickup: 'jazz-triplet-setup' }, landing: 'kick-ride', kickFollow: 'pulse', snareFollow: 'comping',
+  };
+  if (s === 'lofi') return {
+    kitProgram: 25, timekeeperFamily: 'tr808-lofi-boombap', liftFamily: 'tr808-lofi-boombap', pickupFamily: 'tr808-lofi-boombap', breakdownFamily: 'tr808-lofi-minimal',
+    fillFamilies: { light: 'lofi-one-shot', strong: 'lofi-one-shot', pickup: 'lofi-one-shot' }, landing: 'kick', kickFollow: 'bass', snareFollow: 'backbeat',
+  };
+  if (s === 'rnb') return {
+    kitProgram: 25, timekeeperFamily: 'tr808-rnb-pocket', liftFamily: 'tr808-rnb-pocket', pickupFamily: 'tr808-rnb-pocket', breakdownFamily: 'tr808-rnb-pocket',
+    fillFamilies: { light: 'rnb-pocket-turn', strong: 'rnb-pocket-turn', pickup: 'rnb-pocket-turn' }, landing: 'kick', kickFollow: 'bass', snareFollow: 'backbeat',
+  };
+  if (s === 'acg') return {
+    kitProgram: 8, timekeeperFamily: 'ballad-halftime', liftFamily: 'jpop-driving-8ths', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime',
+    fillFamilies: { light: 'pop-snare-pickup', strong: 'pop-tom-build', pickup: 'pop-tom-build' }, landing: 'kick-crash', kickFollow: 'pulse', snareFollow: 'backbeat',
+  };
+  return {
+    kitProgram: 8, timekeeperFamily: 'pop-backbeat', liftFamily: 'pop-backbeat', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime',
+    fillFamilies: { light: 'pop-snare-pickup', strong: 'pop-tom-build', pickup: 'pop-tom-build' }, landing: 'kick-crash', kickFollow: 'bass', snareFollow: 'backbeat',
+  };
 }
 
 function pickGrooveContractForMood(gs: GrooveStyleName, rng: Rng, mood?: string): GrooveContract {
@@ -62,6 +77,7 @@ function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
   const grid = feel.kind === 'swing' ? 'swing' : feel.kind === 'shuffle' ? 'shuffle' : 'straight';
   return {
     id: `legacy_${style.toLowerCase()}`, name: `legacy ${gs}`, style: gs, weight: 1, grid, density: 'medium',
+    rhythmProfile: gs === 'JAZZ' || gs === 'BLUES' ? 'jazz-swing' : gs === 'RNB' ? 'rnb-sixteenth' : gs === 'LOFI' ? 'lofi-pocket' : gs === 'ACG' ? 'rubato-four' : 'pop-straight',
     compSwingRatio: feel.swingRatio, melodySwingRatio: feel.swingRatio,
     bassPocketMs: [0, 0], chordPocketMs: [0, 0], melodyStrongPocketMs: [0, 0], melodyWeakPocketMs: [0, 0],
     velocityHumanize: 0, accentPattern: [1.0, 0.85, 0.95, 0.85], articulation: 'legato',

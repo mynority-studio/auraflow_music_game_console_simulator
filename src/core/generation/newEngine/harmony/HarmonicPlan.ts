@@ -42,6 +42,7 @@ export interface ChordSpan {
   localTonalCenterPc?: PitchClass; // 临时主音(离调);默认=调中心
   bassRole?: BassRole;             // 转位 intent(render 消费:3rd/5th/7th 转位、pedal 持续低音)
   bassPedalPc?: PitchClass;        // bassRole='pedal' 时的持续低音 pc
+  bassPc?: PitchClass;             // 作者显式 slash-bass 的绝对 pc（由 slot.bassOffset 相对 section key 实化）
   tonicizationPlacement?: TonicizationPlacement;
   // —— Gap A 全字段透传(2026-06-10):作者/计划层语义标签【从 slot/planner 携带,不在 render 二次推导】——
   //   borrowedFrom = 原始借用/调式来源标签(KB 作者写的 'soft V/vi'/'Dorian IV (raised 6)'/'V/ii' 精确保留;

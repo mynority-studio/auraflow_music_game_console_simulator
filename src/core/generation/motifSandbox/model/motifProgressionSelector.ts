@@ -12,7 +12,7 @@ import type { ScaleMode, SandboxStyle } from './types';
 import type { ProtoSectionRole } from '../../newEngine/knowledge/progressions';
 import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
 import type { UserMelodicBrick, MotifHarmonyIntent, SelectedMotifProgression } from './melodicBrickTypes';
-import { getProgressionCandidatesForMotif } from './progressionCandidateProvider';
+import { getProgressionCandidatesForMotif, type ProgressionCandidate } from './progressionCandidateProvider';
 import { scoreProgressionAgainstMelodicBrick } from './melodyProgressionScorer';
 
 const SUPPORT_EPS = 1e-6;
@@ -39,6 +39,11 @@ export interface UnsupportedFirstPhraseTone {
   durationBeat: number;
   weight: number;
   slotRoman: string;
+}
+
+export interface ProductionPlacementEvaluation {
+  score: number;
+  viable: boolean;
 }
 
 /** 首句硬合同:用户 motif 的结构音(强拍/长音/高结构分)必须被其落点和弦真实 chord tones 支持。 */
@@ -69,11 +74,22 @@ export function selectProgressionForMotif(args: {
   sectionRole?: ProtoSectionRole; // form 主段落角色(软权重;默认 verse)
   inputTonality?: import('./sandboxScales').SandboxTonality; // ★ followup 2.4:布鲁斯 → 评分 blues-aware
   requireFirstPhraseSupport?: boolean; // 产品播放:第一句用户 motif 结构音必须被和声接住;无可用模板时外层可局部修和弦兜底
+  /** Product Q+R: score the candidate at its real Functional RoadMap placement. */
+  evaluateProductionPlacement?: (candidate: ProgressionCandidate) => ProductionPlacementEvaluation | undefined;
 }): SelectedMotifProgression {
   const targetBars = args.targetBars ?? 16;
   const { candidates, modeName } = getProgressionCandidatesForMotif({ style: args.style, mode: args.mode, targetBars });
 
-  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, { sectionRole: args.sectionRole, seed: args.seed, inputTonality: args.inputTonality }) }));
+  const scored = candidates.map((c) => {
+    const musical = scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, { sectionRole: args.sectionRole, seed: args.seed, inputTonality: args.inputTonality });
+    const placement = args.evaluateProductionPlacement?.(c);
+    return {
+      c,
+      ...musical,
+      placement,
+      total: musical.total + (placement?.score ?? 0),
+    };
+  });
   // 评分降序 + id 稳定排序(确定性);轮换池据此索引。
   scored.sort((a, b) => b.total - a.total || a.c.prototype.id.localeCompare(b.c.prototype.id));
 
@@ -81,10 +97,15 @@ export function selectProgressionForMotif(args: {
   const nonDegen = scored.filter((s) => s.breakdown.degeneratePenalty === 0);
   const sameModeND = nonDegen.filter((s) => s.c.modeMatch);
   const pool = sameModeND.length ? sameModeND : nonDegen.length ? nonDegen : scored;
-  const hardPool = args.requireFirstPhraseSupport
-    ? pool.filter((s) => findUnsupportedFirstPhraseTones({ brick: args.brick, slots: s.c.fittedSlots, keyPc: args.keyPc }).length === 0)
+  const viablePlacements = pool.filter((candidate) => candidate.placement?.viable);
+  const placementBest = viablePlacements[0]?.total;
+  const placementPool = viablePlacements.length
+    ? viablePlacements.filter((candidate) => placementBest === undefined || candidate.total >= placementBest - 10)
     : pool;
-  const pickPool = hardPool.length ? hardPool : pool;
+  const hardPool = args.requireFirstPhraseSupport
+    ? placementPool.filter((s) => findUnsupportedFirstPhraseTones({ brick: args.brick, slots: s.c.fittedSlots, keyPc: args.keyPc }).length === 0)
+    : placementPool;
+  const pickPool = hardPool.length ? hardPool : placementPool;
   const pick = pickPool[((args.seed % pickPool.length) + pickPool.length) % pickPool.length]; // seed 轮换(全 pool 跨 seed 都被选到)
 
   return {

@@ -31,10 +31,7 @@ describe('instrumental/gestureExpression', () => {
     expect(plan.phrasePolicy).toBe('breath-group');
     expect(plan.breathModel).toBe('reed-continuous');
     expect(plan.noteShape).toBe('keyed-legato');
-    expect(plan.ccControllers).toEqual([
-      SAX_CC.expression,
-      SAX_CC.breath,
-    ]);
+    expect(plan.ccControllers).toEqual([SAX_CC.expression]);
     expect(plan.tailPolicy).toBe('wind-breath');
     expect(plan.evidenceRefs).toEqual(expect.arrayContaining(['sax-jazz-legato-tonguing', 'sax-light-airflow-tonguing', 'midi-cc-table']));
   });
@@ -67,8 +64,8 @@ describe('instrumental/gestureExpression', () => {
     expect(pop.bass.kind).toBe('bass-pluck-legato');
 
     const lofi = buildGestureExpressionByRole(['comp', 'drum', 'bass'], { comp: 7, drum: 25, bass: 39 }, 'lofi');
-    expect(lofi.comp.pedalPolicy).toBe('light-syncopated');
-    expect(lofi.comp.continuity).toBe('pedal-legato');
+    expect(lofi.comp.pedalPolicy).toBe('none');
+    expect(lofi.comp.continuity).toBe('connected');
     expect(lofi.drum.rudimentPolicy).toBe('lofi-dusty');
     expect(lofi.bass.kind).toBe('bass-muted');
     expect(lofi.bass.continuity).toBe('staccato');
@@ -127,7 +124,7 @@ describe('instrumental/gestureExpression', () => {
     expect(out.notes[1].velocity).toBeLessThan(track.notes[1].velocity);
     const controllers = new Set((out.ccEvents ?? []).map((e) => e.controller));
     expect(controllers.has(SAX_CC.expression)).toBe(true);
-    expect(controllers.has(SAX_CC.breath)).toBe(true);
+    expect(controllers.has(SAX_CC.breath)).toBe(false);
     expect(controllers.has(SAX_CC.portamentoOn)).toBe(false);
     expect(controllers.has(SAX_CC.portamentoTime)).toBe(false);
     expect(controllers.has(SAX_CC.portamentoControl)).toBe(false);

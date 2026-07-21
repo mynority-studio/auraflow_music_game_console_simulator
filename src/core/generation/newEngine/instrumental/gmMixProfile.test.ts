@@ -30,14 +30,40 @@ function eachRoleProgram(fn: (style: string, role: InstrumentRoleName, program: 
 }
 
 describe('knowledge/gmMixProfile — pickSpaceProfile', () => {
-  it('风格 / timbreWorld / 有无 pad → 空间', () => {
-    expect(pickSpaceProfile('jazz', undefined, true)).toBe('jazzClub');
+  it('POP/LOFI/JAZZ/RNB 共用无风格染色空间；ACG/BLUES 保留独立合同', () => {
+    expect(pickSpaceProfile('jazz', undefined, true)).toBe('dryFront');
     expect(pickSpaceProfile('blues', undefined, true)).toBe('jazzClub');
-    expect(pickSpaceProfile('lofi', undefined, true)).toBe('lofiTapeRoom');
-    expect(pickSpaceProfile('rnb', undefined, true)).toBe('rnbPlateRoom');
-    expect(pickSpaceProfile('pop', 'syntheticSoft' as TimbreWorld, true)).toBe('syntheticSoftRoom');
+    expect(pickSpaceProfile('lofi', undefined, true)).toBe('dryFront');
+    expect(pickSpaceProfile('rnb', undefined, true)).toBe('dryFront');
+    expect(pickSpaceProfile('pop', 'syntheticSoft' as TimbreWorld, true)).toBe('dryFront');
     expect(pickSpaceProfile('pop', undefined, false)).toBe('dryFront');
-    expect(pickSpaceProfile('pop', undefined, true)).toBe('popWarmRoom');
+    expect(pickSpaceProfile('pop', undefined, true)).toBe('dryFront');
+  });
+});
+
+describe('knowledge/gmMixProfile — 四风格采用 Dream 默认通道音量', () => {
+  it('POP/LOFI/JAZZ/RNB 的所有 role+program 都固定 CC7=100，且不按风格设例外', () => {
+    const styles = ['pop', 'lofi', 'jazz', 'rnb'] as const;
+    for (const role of ['lead', 'comp', 'bass', 'pad', 'drum'] as const) {
+      for (const program of PALETTE.pop[role] ?? [0]) {
+        const mixes = styles.map((style) => mixForProgram({
+          style,
+          timbreWorld: undefined,
+          role,
+          program,
+          hasPad: true,
+          space: pickSpaceProfile(style, undefined, true),
+        }));
+        for (const [index, mix] of mixes.entries()) {
+          expect(mix.volume, `${styles[index]}/${role}/GM${program}`).toBe(100);
+          expect(mix.reverb, `${styles[index]}/${role}/GM${program}`).toBe(0);
+          expect(mix.chorus, `${styles[index]}/${role}/GM${program}`).toBe(0);
+        }
+        expect(mixes[1], `${role}/GM${program}/lofi`).toEqual(mixes[0]);
+        expect(mixes[2], `${role}/GM${program}/jazz`).toEqual(mixes[0]);
+        expect(mixes[3], `${role}/GM${program}/rnb`).toEqual(mixes[0]);
+      }
+    }
   });
 });
 
@@ -59,12 +85,13 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   const mk = (role: InstrumentRoleName, program: number, hasPad = true) =>
     mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad, space });
 
-  it('bass.reverb ≤ 12 且有小 room send:bassline 可闻但不糊', () => {
-    for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) expect(mk('bass', p).reverb).toBeLessThanOrEqual(12);
-    expect(mk('bass', 32).reverb).toBe(10);
-    expect(mk('bass', 38).reverb).toBe(8);
-    expect(mk('bass', 32).volume).toBe(82);
-    expect(mk('bass', 38).volume).toBe(80);
+  it('Dream 干声基线：bass 不进共享 FX', () => {
+    for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) {
+      expect(mk('bass', p).reverb).toBe(0);
+      expect(mk('bass', p).chorus).toBe(0);
+    }
+    expect(mk('bass', 32).volume).toBe(100);
+    expect(mk('bass', 38).volume).toBe(100);
     expect(mk('bass', 38).chorus).toBeLessThanOrEqual(1);
   });
 
@@ -72,49 +99,51 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('drum', 0).chorus).toBe(0);
   });
 
-  it('drum 进受控 room:靠后一点但仍不超过小喇叭瞬态上限', () => {
+  it('Dream 干声基线：drum 不进共享 FX', () => {
     const drum = mk('drum', 0);
-    expect(drum.volume).toBe(78);
-    expect(drum.reverb).toBe(14);
+    expect(drum.volume).toBe(100);
+    expect(drum.reverb).toBe(0);
     expect(drum.chorus).toBe(0);
   });
 
-  it('Room 鼓组收回后排:保留 kick 空间,但不再比键盘/贝斯大一截', () => {
-    expect(mk('drum', 8)).toMatchObject({ volume: 60, reverb: 24, chorus: 0 });
-    expect(mk('drum', 25)).toMatchObject({ volume: 78, reverb: 14, chorus: 0 });
-    expect(mk('drum', 40)).toMatchObject({ volume: 78, reverb: 14, chorus: 0 });
+  it('Room 鼓组也服从干声基线', () => {
+    expect(mk('drum', 8)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mk('drum', 25)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mk('drum', 40)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
   });
 
-  it('FX pad 98/99/100/102:volume ≤ 60 且 reverb 保留空气层但不再淹没总线', () => {
+  it('FX pad 98/99/100/102 暂不进入共享 Reverb/Chorus', () => {
     for (const sp of ['popWarmRoom', 'lofiTapeRoom', 'rnbPlateRoom', 'jazzClub', 'dryFront', 'syntheticSoftRoom'] as SpaceProfile[]) {
       for (const p of [98, 99, 100, 102]) {
         const m = mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'pad', program: p, hasPad: true, space: sp });
-        expect(m.volume, `FX pad ${p}@${sp} vol`).toBeLessThanOrEqual(60);
-        expect(m.reverb, `FX pad ${p}@${sp} rev`).toBeGreaterThanOrEqual(72);
-        expect(m.chorus, `FX pad ${p}@${sp} chorus`).toBeLessThanOrEqual(56);
+        expect(m.volume, `FX pad ${p}@${sp} vol`).toBe(100);
+        expect(m.reverb, `FX pad ${p}@${sp} rev`).toBe(0);
+        expect(m.chorus, `FX pad ${p}@${sp} chorus`).toBe(0);
       }
     }
   });
 
-  it('电钢 4/5 都收干:不靠大 chorus/reverb 压住大钢琴', () => {
-    expect(mk('comp', 4)).toMatchObject({ volume: 72, reverb: 18, chorus: 12 });
-    expect(mk('lead', 4)).toMatchObject({ volume: 80, reverb: 22, chorus: 14 });
-    expect(mk('comp', 5)).toMatchObject({ volume: 70, reverb: 12, chorus: 6 });
-    expect(mk('lead', 5)).toMatchObject({ volume: 76, reverb: 16, chorus: 8 });
+  it('电钢 4/5 使用音符 gate，不靠共享 Reverb/Chorus 制造尾音', () => {
+    expect(mk('comp', 4)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mk('lead', 4)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mk('comp', 5)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mk('lead', 5)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+    expect(mixForProgram({ style: 'lofi', timbreWorld: undefined, role: 'lead', program: 5, hasPad: true, space: 'dryFront' }))
+      .toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
   });
 
-  it('GU Electric Grand 槽位 5 比 Rhodes 4 更少空间,避免电钢尾巴堆叠', () => {
-    expect(mk('comp', 5).chorus).toBeLessThan(mk('comp', 4).chorus);
-    expect(mk('lead', 5).chorus).toBeLessThan(mk('lead', 4).chorus);
-    expect(mk('comp', 5).reverb).toBeLessThan(mk('comp', 4).reverb);
-    expect(mk('lead', 5).reverb).toBeLessThan(mk('lead', 4).reverb);
+  it('Rhodes 与 Electric Grand 的共享空间均归零', () => {
+    for (const role of ['comp', 'lead'] as const) {
+      expect(mk(role, 4)).toMatchObject({ reverb: 0, chorus: 0 });
+      expect(mk(role, 5)).toMatchObject({ reverb: 0, chorus: 0 });
+    }
   });
 
   it('GU Electric Grand 槽位 5 只有少量空气:release 之外不再给大 reverb/chorus/delay', () => {
     const comp = mk('comp', 5);
     const lead = mk('lead', 5);
-    expect(comp.volume).toBeLessThanOrEqual(70);
-    expect(lead.volume).toBeLessThanOrEqual(76);
+    expect(comp.volume).toBe(100);
+    expect(lead.volume).toBe(100);
     expect(comp.reverb).toBeLessThanOrEqual(12);
     expect(lead.reverb).toBeLessThanOrEqual(16);
     expect(comp.chorus).toBeLessThanOrEqual(6);
@@ -134,7 +163,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   it('吉他 comp 保持干短:低 reverb/chorus,且不进 delay', () => {
     for (const p of [24, 25]) {
       const m = mk('comp', p);
-      expect(m.volume, `GM${p} comp volume`).toBeLessThanOrEqual(56);
+      expect(m.volume, `GM${p} comp volume`).toBe(100);
       expect(m.reverb, `GM${p} comp reverb`).toBeLessThanOrEqual(14);
       expect(m.chorus, `GM${p} comp chorus`).toBe(0);
       expect(m.delay, `GM${p} comp delay`).toBeUndefined();
@@ -149,13 +178,13 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('pad', 89).delay).toBeUndefined();
   });
 
-  it('POP 无 pad 的 dryFront 也打开 eighth delay bus,供 EP/lofi delay 使用', () => {
+  it('四风格统一关闭未确认的 song delay bus', () => {
     const warm = songSpaceProfile('pop', undefined, true);
     const dry = songSpaceProfile('pop', undefined, false);
-    expect(warm.delayMode).toBe('eighth');
-    expect(warm.delayFeedback).toBeGreaterThan(0);
-    expect(dry.delayMode).toBe('eighth');
-    expect(dry.delayFeedback).toBeGreaterThan(0);
+    expect(warm.delayMode).toBe('off');
+    expect(warm.delayFeedback).toBe(0);
+    expect(dry.delayMode).toBe('off');
+    expect(dry.delayFeedback).toBe(0);
   });
 
   it('Clav 7:reverb ≤ 30(各空间)', () => {
@@ -171,14 +200,14 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   it('颤音琴高区防刺耳:lead 不大湿、不高音量', () => {
     const m = mk('lead', 11);
-    expect(m.volume).toBeLessThanOrEqual(88);
+    expect(m.volume).toBe(100);
     expect(m.reverb).toBeLessThanOrEqual(40);
     expect(m.delay ?? 0).toBe(0);
   });
 
   it('卡林巴是轻拨弦热源:lead 不吃大音量/大空间', () => {
     const m = mk('lead', 108);
-    expect(m.volume).toBeLessThanOrEqual(72);
+    expect(m.volume).toBe(100);
     expect(m.reverb).toBeLessThanOrEqual(18);
     expect(m.chorus).toBe(0);
     expect(m.delay).toBeUndefined();
@@ -197,19 +226,18 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('drum', 0).pan).toBe(64);
   });
 
-  // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
-  it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
+  it('四风格不再用 CC7 制造 lead/comp 前后关系', () => {
     for (const p of [0, 12, 6]) { // jazz/暖路线代表 lead program;GM67 sax 是设备热源,有专属校平规则
       const lead = mk('lead', p).volume;
       const comp = mk('comp', p).volume;
-      expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);
-      expect(lead, `gm${p} lead CC7 ≥ 92`).toBeGreaterThanOrEqual(92);
+      expect(lead, `gm${p} lead default`).toBe(100);
+      expect(comp, `gm${p} comp default`).toBe(100);
     }
   });
 
   it('GM67 sax 是设备热源:保持前景但不走键盘类 CC92+ 规则', () => {
     const sax = mk('lead', 67);
-    expect(sax.volume).toBe(84);
+    expect(sax.volume).toBe(100);
     expect(sax.reverb).toBeLessThanOrEqual(52);
     expect(sax.chorus).toBe(0);
   });
@@ -274,9 +302,8 @@ describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lea
     expect(mAcg('bass', 32).volume, 'ACG bass 仍保托底').toBeGreaterThanOrEqual(60);
   });
 
-  it('★ LOFI bass 单独前移,避免 EP/质感层把低频主体盖住', () => {
-    expect(mLofi('bass', 32).volume).toBeGreaterThan(mPop('bass', 32).volume);
-    expect(mLofi('bass', 32).volume).toBeLessThanOrEqual(88);
+  it('★ LOFI bass 不再由风格单独前移', () => {
+    expect(mLofi('bass', 32).volume).toBe(mPop('bass', 32).volume);
   });
 
   it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {

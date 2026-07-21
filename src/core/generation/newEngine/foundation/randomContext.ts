@@ -11,7 +11,12 @@ export type StageName =
   | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
   | 'acgPianoVoice' // ACG PIANOSONG 整首钢琴音色；与 timbre/texture 分离，扩色不扰既有编配随机流
   | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize'
+  | 'jazzArchetype' // JAZZ 编配主型：独立于具体 GrooveContract，扩充候选不扰动其它随机子流
+  | 'jazzFiveFourEnsemble' // 5/4 whole-phrase Bass/Comp/Drum score choices
+  | 'jazzFiveFourLead' // 5/4 Lead rhythm/grammar phrase choices
+  | 'jazzFiveFourPerformance' // 5/4 score-owned microtiming/expression
   | 'grooveContract' // ★ GrooveContract 选择(独立子流;Phase D 起全 MG-backed 风格都抽,BLUES/无 rng 不抽)
+  | 'drumFill' // 鼓加花变体；只在 Arranger 已限定的功能/节奏/配器候选内抽取
   | 'openingGesture'; // ★ 开头编配导演(独立子流;只决定入场计划,不扰曲式/和声/器配)
 
 export interface Rng {

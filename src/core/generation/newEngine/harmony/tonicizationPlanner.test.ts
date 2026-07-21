@@ -47,6 +47,8 @@ describe('tonicizationPlanner placement', () => {
     expect(iix.rootPc).toBe(mod12((iix.localTonalCenterPc as number) + 2)); // ii = 上方大二度
     expect(iix.func).toBe('S');
     expect(vx.func).toBe('D');
+    expect(vx.chordType).toBe('7b13');
+    expect(vx.forcedScale).toBe('Mixolydian b6'); // 保留 natural 5 + b13，不能误配普通 Mixolydian
   });
 
   it('maxFires=0(LOFI/BLUES)→ 原样不动', () => {

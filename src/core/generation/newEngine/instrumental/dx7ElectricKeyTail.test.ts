@@ -1,8 +1,8 @@
 // ============================================================
 // Layer 1 · DX7 / Electric-Key Tail(three-layer mix plan, Checkpoint 1)
 // ------------------------------------------------------------
-// 验收:EP(GM4/5)lead 尾音靠 note gate 接到下一音前 + CC72 release 增强;lead 无 blanket pedal;
-//   EP comp 禁用 CC64;tail(CC72)与 reverb/chorus send(CC91/93)分开。
+// 验收:EP(GM4/5)的尾音先由 note gate 表达；CC72/74 在 Dream 5504
+// 具体音色未完成实板标定前不能自动写入，EP 也不能继承 CC64。
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -35,24 +35,24 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect(isElectricKeyProgram(0)).toBe(false); // 原声钢琴
   });
 
-  it('EP lead(program5):tailPolicy=electric-key-tail · releaseCc=72 · 无 blanket pedal(pedalPolicy none·无 CC64)', () => {
+  it('EP lead(program5):tailPolicy=electric-key-tail · 不自动写 CC72/74/CC64', () => {
     const g = gestureExpressionForProgram('lead', 5, 'pop');
     expect(g.tailPolicy).toBe('electric-key-tail');
-    expect(g.releaseCc).toBe(72);
+    expect(g.releaseCc).toBeUndefined();
     expect(g.pedalPolicy).toBe('none');
-    expect(g.ccControllers).toContain(72);
-    expect(g.ccControllers).toContain(74);
+    expect(g.ccControllers).not.toContain(72);
+    expect(g.ccControllers).not.toContain(74);
     expect(g.ccControllers).not.toContain(64); // ★ lead 永不 blanket pedal
   });
 
-  it('EP comp(program5,pop):禁用 harmonic-change pedal(CC64)· CC72 回默认释放,避免多音 comp 嗡成一团', () => {
+  it('EP comp(program5,pop):禁用 harmonic-change pedal(CC64)与未标定的 CC72/74', () => {
     const g = gestureExpressionForProgram('comp', 5, 'pop');
     expect(g.tailPolicy).toBe('electric-key-tail');
     expect(g.pedalPolicy).toBe('none');
     expect(g.ccControllers).not.toContain(64);
-    expect(g.ccControllers).toContain(72);
-    expect(g.ccControllers).toContain(74);
-    expect(g.releaseCc).toBe(72);
+    expect(g.ccControllers).not.toContain(72);
+    expect(g.ccControllers).not.toContain(74);
+    expect(g.releaseCc).toBeUndefined();
   });
 
   it('非 EP 键盘 lead(program0 钢琴):tailPolicy=keyboard-natural · 无 CC72', () => {
@@ -62,32 +62,23 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect(g.ccControllers).not.toContain(72);
   });
 
-  it('EP lead 落地:短 gate 延到下一音前 + 发 CC72 release 增强(>64),但不发 CC64', () => {
+  it('EP lead 落地:延长短 gate 并执行既有 soft 触键，不写未标定 CC', () => {
     const track = leadTrack(5);
     const g = gestureExpressionForProgram('lead', 5, 'lofi');
     const out = applyGestureExpressionToTrack(track, g, TB);
     expect(out.notes.map((n) => [n.pitch, n.startTick, n.durationTicks, n.velocity]))
       .toEqual([
-        [midi(72), ticks(0), ticks(960), 90],
-        [midi(74), ticks(960), ticks(240), 88],
+        [midi(72), ticks(0), ticks(960), 81],
+        [midi(74), ticks(960), ticks(240), 79],
       ]);
-    // 发了 CC72,值 >64(release 增强)
-    const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
-    expect(cc72.length).toBe(1);
-    expect(cc72[0].value).toBeGreaterThan(64);
-    const cc74 = (out.ccEvents ?? []).filter((e) => e.controller === 74);
-    expect(cc74).toEqual([{ atTick: ticks(0), controller: 74, value: 54 }]);
-    // tail(CC72)不是 reverb/chorus send(CC91/93)—— 分层
+    expect((out.ccEvents ?? []).some((e) => e.controller === 72 || e.controller === 74 || e.controller === 64)).toBe(false);
+    // 乐器尾音不由 reverb/chorus send(CC91/93)伪造—— 分层
     expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
   });
 
-  it('EP comp 落地:CC72 使用默认释放,且不混入 reverb/chorus send', () => {
+  it('EP comp 落地:不写未标定的 Sound Controller,且不混入 reverb/chorus send', () => {
     const out = applyGestureExpressionToTrack(compTrack(5), gestureExpressionForProgram('comp', 5, 'pop'), TB);
-    const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
-    expect(cc72.length).toBe(1);
-    expect(cc72[0].value).toBe(64);
-    expect((out.ccEvents ?? []).some((e) => e.controller === 64)).toBe(false);
-    expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([{ atTick: ticks(0), controller: 74, value: 54 }]);
+    expect((out.ccEvents ?? []).some((e) => [64, 72, 74].includes(e.controller))).toBe(false);
     expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
   });
 
@@ -96,7 +87,7 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect((out.ccEvents ?? []).some((e) => e.controller === 72)).toBe(false);
   });
 
-  it('同轨分段换进/换出 EP:CC72/CC74 在 programChanges 边界进入并重置', () => {
+  it('同轨分段换进/换出 EP:不由手势层伪造 CC72/CC74 参数切换', () => {
     const track: TrackIR = {
       ...leadTrack(0),
       programChanges: [
@@ -105,15 +96,6 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
       ],
     };
     const out = applyGestureExpressionToTrack(track, gestureExpressionForProgram('lead', 0, 'pop'), TB);
-    expect((out.ccEvents ?? []).filter((e) => e.controller === 72)).toEqual([
-      { atTick: ticks(0), controller: 72, value: 64 },
-      { atTick: ticks(960), controller: 72, value: 68 },
-      { atTick: ticks(1920), controller: 72, value: 64 },
-    ]);
-    expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([
-      { atTick: ticks(0), controller: 74, value: 64 },
-      { atTick: ticks(960), controller: 74, value: 54 },
-      { atTick: ticks(1920), controller: 74, value: 64 },
-    ]);
+    expect((out.ccEvents ?? []).filter((e) => e.controller === 72 || e.controller === 74)).toEqual([]);
   });
 });

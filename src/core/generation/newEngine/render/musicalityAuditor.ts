@@ -9,7 +9,13 @@
 
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { measureCompGaps } from './compContinuity';
+import {
+  grooveRhythmProfileForContract,
+  rhythmSwingSourceForContract,
+  type GrooveContract,
+} from '../knowledge/grooveContracts';
 import { isBreathingTexture } from '../knowledge/textureProfiles';
+import { swingBeat } from './swing';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { MusicalIR } from '../ir/MusicalIR';
@@ -22,6 +28,36 @@ const OPENING_RIFF_TEXTURES: ReadonlySet<string> = new Set(['pianoRiff', 'rhodes
 const OPENING_RIFF_BREATH_TOLERANCE_BEATS = 0.1;
 const ANCHOR_WINDOW_BEAT = 1.0; // 段起首拍内出现 anchor 即视为落地
 const SWUNG_POS = 0.66;
+
+type TextureClockContract = Readonly<Pick<
+  GrooveContract,
+  'id' | 'grid' | 'rhythmProfile' | 'rhythmSwingSource' | 'compSwingRatio'
+>>;
+
+function textureClockPhases(contract: TextureClockContract | undefined): number[] {
+  const requestedRatio = contract?.compSwingRatio;
+  const ratio = Number.isFinite(requestedRatio)
+    ? Math.max(0.5, Math.min(0.75, requestedRatio!))
+    : 0.5;
+  const source = rhythmSwingSourceForContract({
+    grid: contract?.grid ?? 'straight',
+    rhythmSwingSource: contract?.rhythmSwingSource,
+  });
+  let divisions = source === 'straight-sixteenths' ? 4 : 2;
+  if (source === 'authored' && contract) {
+    const subdivision = grooveRhythmProfileForContract(contract).subdivision;
+    divisions = subdivision === 'triplet' ? 3 : subdivision === 'sixteenth' ? 4 : 2;
+  }
+  return Array.from({ length: divisions }, (_, index) => {
+    const phase = swingBeat(index / divisions, ratio, source);
+    return ((phase % 1) + 1) % 1;
+  });
+}
+
+function circularPhaseDistance(phase: number, target: number): number {
+  const distance = Math.abs(phase - target);
+  return Math.min(distance, 1 - distance);
+}
 
 function isGuitarProgram(program: number | undefined): boolean {
   return program !== undefined && program >= 24 && program <= 31;
@@ -49,6 +85,8 @@ export function auditMusicality(
   timebase: Timebase,
   style: string,
   compGapExclude: readonly { lo: number; hi: number }[] = [], // ★ Loop 5:LOFI dense 区间 comp 被有意删,排除出 comp-continuity
+  scoreOwnedCompSilence: readonly { lo: number; hi: number }[] = [], // ACG PianoScorePlan 明写 tacet / phrase breath，不是缺口
+  scoreOwnsCompTiming = false,
 ): AuditReport {
   const findings: AuditFinding[] = [];
   const ppq = timebase.ppq;
@@ -131,7 +169,11 @@ export function auditMusicality(
   const compNotes = compTrack?.notes ?? [];
   const compIsGuitar = isGuitarProgram(compTrack?.program)
     && (compTrack?.programChanges ?? []).every((pc) => isGuitarProgram(pc.program));
-  if (compNotes.length && !compIsGuitar) {
+  // ACG's PianoScorePlan owns every comp onset/rest before rendering.  The
+  // generic density heuristic cannot distinguish a written arpeggio release
+  // from a dropped event, so production verifies score execution elsewhere
+  // and does not relabel authored air as a continuity warning here.
+  if (compNotes.length && !compIsGuitar && !scoreOwnsCompTiming) {
     const baseThresh = COMP_GAP_BEATS[style.toLowerCase()] ?? COMP_GAP_BEATS.default;
     const compTicks = compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number }));
     for (let i = 0; i < arrangement.sections.length; i++) {
@@ -149,8 +191,10 @@ export function auditMusicality(
         ? sectionStart
         : Math.min(sectionEnd, sectionStart + Math.max(0, plannedCompDelayBars) * barTicks);
       let ranges: { lo: number; hi: number }[] = [{ lo: plannedCompEntry, hi: sectionEnd }];
-      // ★ Loop 5:从 comp 应在场区间里【减去 dense-melody 区间】(那里 comp 被有意删,不算断层)。
-      if (compGapExclude.length) ranges = subtractRanges(ranges, compGapExclude);
+      // 从 comp 应在场区间里减去两种已授权留白：LOFI dense-melody
+      // carve，以及 ACG PianoScorePlan 明写的 tacet / phrase breath。
+      const authorizedCompSilence = [...compGapExclude, ...scoreOwnedCompSilence];
+      if (authorizedCompSilence.length) ranges = subtractRanges(ranges, authorizedCompSilence);
       if (!ranges.length) continue;
       // ★ Loop 6:固有呼吸型 rich 织体(稀疏 Lyrical_Felt/Ambient,或单音 arp/roll + pad 让位)的
       //   设计内间隙是作者意图 → 放宽阈值(段内任一织体呼吸即放宽整段:密集那半本就不会断)。
@@ -191,15 +235,33 @@ export function auditMusicality(
     if (lead >= 0 && comp > 0.15 && lead < 0.03) warn('lead', 0, 'lead-groove-desync', `swing 风格 lead 几乎不摆(${(lead * 100).toFixed(0)}%)而 comp 摆(${(comp * 100).toFixed(0)}%)`);
   }
 
-  // —— Loop I.4: texture-clock-drift —— LOFI comp【柱式块】【系统性】离 8 分格 > 0.055(roll 单音豁免;
-  //   按比例判,容个别 off-grid span 锚点 → 只在 dusty chop 整体漂[如原 0.58]时报)。
+  // —— Loop I.4: texture-clock-drift —— LOFI comp【柱式块】【系统性】离合同 source grid > 0.055
+  //   (roll 单音豁免;按比例判,容个别 off-grid span 锚点)。Dilla 用 16 分 pair，不能拿 8 分尺误报。
   if (s === 'lofi') {
     const blockTick: Record<number, number> = {};
     for (const n of ir.tracks.find((t) => t.role === 'comp')?.notes ?? []) blockTick[n.startTick as number] = (blockTick[n.startTick as number] ?? 0) + 1;
     const blocks = Object.entries(blockTick).filter(([, c]) => c >= 2);
-    const drift = blocks.filter(([tickStr]) => { const b = Number(tickStr) / ppq; return Math.abs(b - Math.round(b * 2) / 2) > 0.055; });
+    // Older isolated auditor fixtures predate SongGrooveContract.  Production
+    // arrangements always carry it; for a missing fixture contract, retain a
+    // meaningful audit on the neutral straight grid rather than throwing or
+    // silently skipping texture-clock-drift.
+    const drift = blocks.filter(([tickStr]) => {
+      const beat = Number(tickStr) / ppq;
+      const phase = ((beat % 1) + 1) % 1;
+      const absoluteBar = beat / bpb;
+      let sectionIndex = arrangement.sections.length - 1;
+      for (let i = 0; i < arrangement.sections.length; i++) {
+        const nextStart = startBar[i + 1] ?? Number.POSITIVE_INFINITY;
+        if (absoluteBar >= startBar[i] && absoluteBar < nextStart) { sectionIndex = i; break; }
+      }
+      const sectionId = arrangement.sections[sectionIndex]?.id;
+      const contract = (sectionId ? arrangement.grooveContractBySection?.[sectionId] : undefined)
+        ?? arrangement.songGrooveContract;
+      const nearestContractGrid = Math.min(...textureClockPhases(contract).map((target) => circularPhaseDistance(phase, target)));
+      return nearestContractGrid > 0.055;
+    });
     if (blocks.length >= 4 && drift.length / blocks.length > 0.15) {
-      warn('comp', Number(drift[0][0]), 'texture-clock-drift', `LOFI comp 柱式块 ${(100 * drift.length / blocks.length).toFixed(0)}% 离 8 分格 > 0.055(系统性漂)`);
+      warn('comp', Number(drift[0][0]), 'texture-clock-drift', `LOFI comp 柱式块 ${(100 * drift.length / blocks.length).toFixed(0)}% 偏离 groove contract 网格 > 0.055(系统性漂)`);
     }
   }
 

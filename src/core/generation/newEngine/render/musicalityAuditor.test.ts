@@ -80,6 +80,25 @@ describe('Loop H · 规则触发', () => {
     expect(ids).toContain('comp-continuity-gap');
   });
 
+  it('does not reinterpret an arranger-owned piano tacet as a comp continuity failure', () => {
+    const { ir, arrangement, instrumentation } = fixtures({
+      drumNotes: [note(BAR + 240)],
+      compNotes: [note(BAR * 2, 80, 240)],
+    });
+    const scoreTacet = [{ lo: BAR * 2 + 240, hi: BAR * 6 }];
+    const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'pop', [], scoreTacet).findings.map((f) => f.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
+  });
+
+  it('defers continuity semantics to an authoritative piano score instead of applying the generic density heuristic', () => {
+    const { ir, arrangement, instrumentation } = fixtures({
+      drumNotes: [note(BAR + 240)],
+      compNotes: [note(BAR * 2, 80, 240)],
+    });
+    const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'acg', [], [], true).findings.map((f) => f.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
+  });
+
   it('opening comp 计划入场前的留白不计入 continuity gap', () => {
     const f = openingCompFixture({
       compDelayBars: 1,
@@ -132,8 +151,9 @@ describe('Loop H · 规则触发', () => {
     expect(ids).not.toContain('comp-continuity-gap');
   });
 
-  it('texture-clock-drift(Loop I):LOFI comp 柱式块【系统性】离 8 分格远 → 报', () => {
-    // 4 个柱式块全落在 +0.58(dusty chop 整体漂)→ 100% drift > 15% 阈值
+  it('texture-clock-drift(Loop I):旧 fixture 缺 groove contract 时仍按直拍网格报警', () => {
+    // 4 个柱式块全落在 +0.58(dusty chop 整体漂)→ 100% drift > 15% 阈值。
+    // fixtures() 特意不带 songGrooveContract，覆盖历史测试/工具调用的安全回退。
     const blocks: ReturnType<typeof note>[] = [];
     for (const beat of [4, 5, 6, 7]) {
       const t = Math.round((beat + 0.58) * PPQ);
@@ -142,6 +162,36 @@ describe('Loop H · 规则触发', () => {
     const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: blocks });
     const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'lofi').findings.map((f) => f.ruleId);
     expect(ids).toContain('texture-clock-drift');
+  });
+
+  it('texture-clock-drift(Loop I):有 groove contract 时仍使用其 compSwingRatio', () => {
+    const blocks: ReturnType<typeof note>[] = [];
+    for (const beat of [4, 5, 6, 7]) {
+      const t = Math.round((beat + 0.66) * PPQ);
+      blocks.push(note(t, 60), { pitch: 64 as never, startTick: t as never, durationTicks: 240 as never, velocity: 60 });
+    }
+    const f = fixtures({ drumNotes: [note(BAR + 240)], compNotes: blocks });
+    (f.arrangement as unknown as { songGrooveContract: { compSwingRatio: number } }).songGrooveContract = { compSwingRatio: 0.66 };
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'lofi').findings.map((finding) => finding.ruleId);
+    expect(ids).not.toContain('texture-clock-drift');
+  });
+
+  it('texture-clock-drift: Dilla 合同按 16 分 swing source 验收', () => {
+    const blocks: ReturnType<typeof note>[] = [];
+    for (const beat of [4.29, 4.79, 5.29, 5.79]) {
+      const t = Math.round(beat * PPQ);
+      blocks.push(note(t, 60), { pitch: 64 as never, startTick: t as never, durationTicks: 240 as never, velocity: 60 });
+    }
+    const f = fixtures({ drumNotes: [note(BAR + 240)], compNotes: blocks });
+    (f.arrangement as unknown as { songGrooveContract: Record<string, unknown> }).songGrooveContract = {
+      id: 'lofi_lazy_dilla',
+      grid: 'dilla',
+      rhythmProfile: 'lofi-pocket',
+      rhythmSwingSource: 'straight-sixteenths',
+      compSwingRatio: 0.58,
+    };
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'lofi').findings.map((finding) => finding.ruleId);
+    expect(ids).not.toContain('texture-clock-drift');
   });
 
   it('structural-comp-anchor-late(Loop I):no-pad comp 支撑段下拍无 comp → 报', () => {

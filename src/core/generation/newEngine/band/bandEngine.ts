@@ -11,9 +11,15 @@ import { MAJOR_SCALE, NATURAL_MINOR } from '../knowledge/scales';
 import { modalScale, type ChurchMode } from '../knowledge/modes';
 import { pickBandInstrumentation, type LineupConstraint } from '../knowledge/instruments';
 import type { BandSpec, Mode, StyleProfile, TonalityKind } from './BandSpec';
+import type { JazzArrangementArchetypeId } from '../arranger/jazzArchetypePlanner';
 
 // seed 派生音乐身份的可调参数(都从 'band' 子流取,key/mode 未显式指定才生效)
 const MINOR_PROBABILITY = 0.3;                       // 未指定 mode 时落小调的概率
+// ACG PIANOSONG 的抒情电影钢琴语汇以小调为默认重心，但不锁死：仍保留
+// 少量大调种子，供明亮段落和跨曲多样性使用。显式 request.mode 始终优先。
+const STYLE_MINOR_PROBABILITY: Partial<Record<string, number>> = {
+  acg: 0.64,
+};
 const MODAL_MODE_POOL: ChurchMode[] = ['dorian', 'mixolydian', 'aeolian', 'lydian', 'phrygian']; // modal 调式池
 
 export interface GenerationRequest {
@@ -27,6 +33,8 @@ export interface GenerationRequest {
   modalMode?: ChurchMode;      // modal 时指定教会调式(默认 dorian)
   allowModulation?: boolean;   // 可选:开启段落转调(默认 false)
   bandConstraint?: LineupConstraint; // ★ Band Selection「参与乐手/职能」推导的 lineup/家族约束(音色仍 rng 选)
+  /** Internal audition/test override. Ordinary product Jazz still selects the approved 4/4 baseline. */
+  jazzArchetypeId?: JazzArrangementArchetypeId;
 }
 
 // ★ Q+N macro 风格:POP / JAZZ / LOFI / RNB / ACG(modal 是正交 regime,非 genre)。
@@ -38,11 +46,15 @@ const STYLE_PROFILES: Record<string, StyleProfile> = {
   rnb: { accompDensity: 0.6, padDensity: 0.4, melodyFreedom: 0.6, tensionCarrier: 'both', colorBudget: 0.6, beatStrictness: 0.6 },
   // modal:和声静态(低 colorBudget=不加功能离调)+ 旋律自由跑音阶(高 melodyFreedom)
   modal: { accompDensity: 0.45, padDensity: 0.6, melodyFreedom: 0.85, tensionCarrier: 'melody', colorBudget: 0.2, beatStrictness: 0.5 },
-  // ★ ACG(久石让/坂本电影钢琴;MG 升级 Phase 2a):钢琴主导多轨。高 colorBudget(quartal/maj9/maj13 色彩,近 jazz)
-  //   + 暖弦 pad 在场 + cantabile topVoice 旋律(melodyFreedom 中)+ rubato 倾向(beatStrictness 偏低,jpop 变体直)。
+  // ★ ACG PIANOSONG:纯钢琴三职责（低根 / 中部琶音 / 顶声部）。高 colorBudget 供 add9、调式与
+  //   终止色彩使用；实际编制不启用 pad，cantabile top voice 以中等 melodyFreedom 和轻 rubato 呈现。
   acg: { accompDensity: 0.5, padDensity: 0.55, melodyFreedom: 0.6, tensionCarrier: 'both', colorBudget: 0.75, beatStrictness: 0.55 },
   default: { accompDensity: 0.5, padDensity: 0.4, melodyFreedom: 0.5, tensionCarrier: 'both', colorBudget: 0.4, beatStrictness: 0.6 },
 };
+
+function minorProbabilityForStyle(style: string): number {
+  return STYLE_MINOR_PROBABILITY[style] ?? MINOR_PROBABILITY;
+}
 
 export function buildBandSpec(req: GenerationRequest): BandSpec {
   const style = Object.prototype.hasOwnProperty.call(STYLE_PROFILES, req.styleHint)
@@ -54,7 +66,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
   //   显式 req.key/req.mode 永远优先(测试/指定调用不受扰)。
   const brng = createRandomContext(req.seed).substream('band');
   const key = req.key ?? pc(brng.int(12));
-  const mode: Mode = req.mode ?? (brng.next() < MINOR_PROBABILITY ? 'minor' : 'major');
+  const mode: Mode = req.mode ?? (brng.next() < minorProbabilityForStyle(style) ? 'minor' : 'major');
 
   // ★ 乐器要素:独立 'instrumental' 子流(不扰 key/mode)→ 编制(2–5 件)+ 每件 GM program。
   // ★ 2026-06-10(gm128_chain_orchestration):此处 roleProgram 仅为 **provisional 候选**(seed 多样性来源)。
@@ -95,5 +107,18 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     roleProgram,
     autoFilledRoles,
     familyByRole: req.bandConstraint?.familyByRole,
+  };
+}
+
+/** Arranger 已选定 archetype 后对全局调式语境做一次一致化；不改变 key/编制/style。 */
+export function withBandMode(band: BandSpec, mode: Mode): BandSpec {
+  if (band.mode === mode && band.tonalityKind === 'tonal') return band;
+  const intervals = mode === 'minor' ? NATURAL_MINOR : MAJOR_SCALE;
+  return {
+    ...band,
+    tonalityKind: 'tonal',
+    mode,
+    primaryScale: intervals.map((interval) => pc(((band.key as number) + interval) % 12)),
+    modalModeName: undefined,
   };
 }

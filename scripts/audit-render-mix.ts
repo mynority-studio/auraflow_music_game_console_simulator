@@ -5,9 +5,19 @@ import { auditRenderedMix, HARDWARE_SPEAKER_PROFILE } from '../src/core/generati
 import type { TrackIR } from '../src/core/generation/newEngine/ir/MusicalIR';
 import type { MixAuditReport } from '../src/core/generation/newEngine/render/renderMixAudit';
 
-const STYLES = ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const;
+const ALL_STYLES = ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const;
+type AuditStyle = typeof ALL_STYLES[number];
+const requestedStyles = (process.env.AUDIT_STYLES ?? '')
+  .split(',')
+  .map((style) => style.trim().toLowerCase())
+  .filter(Boolean);
+const unknownStyles = requestedStyles.filter((style) => !ALL_STYLES.includes(style as AuditStyle));
+if (unknownStyles.length > 0) throw new Error(`Unknown AUDIT_STYLES: ${unknownStyles.join(', ')}`);
+const STYLES: readonly AuditStyle[] = requestedStyles.length > 0
+  ? requestedStyles as AuditStyle[]
+  : ALL_STYLES;
 const SEEDS = [0, 1, 2, 3, 4, 5, 7, 11, 42, 99] as const;
-const OUT = resolve('docs/generated/render_mix_mastering_audit_report.md');
+const OUT = resolve(process.env.AUDIT_MIX_OUT ?? 'docs/generated/render_mix_mastering_audit_report.md');
 
 function fmt(n: number, digits = 2): string {
   return Number.isFinite(n) ? n.toFixed(digits) : 'n/a';
@@ -27,7 +37,7 @@ const lines: string[] = [
   `Hardware speaker target: ${HARDWARE_SPEAKER_PROFILE.model}, ${HARDWARE_SPEAKER_PROFILE.sizeMm.join('x')}mm, ${HARDWARE_SPEAKER_PROFILE.impedanceOhm}ohm, ${HARDWARE_SPEAKER_PROFILE.ratedPowerWRms}W RMS, F0 ${HARDWARE_SPEAKER_PROFILE.resonanceHz}Hz in ${HARDWARE_SPEAKER_PROFILE.enclosureCc}cc box.`,
   `Speaker mix guardrails: kick/body ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.kickBody.join('-')}Hz, mid body ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.midBody.join('-')}Hz, presence attack ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.presenceAttack.join('-')}Hz, harshness control ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.harshnessControl.join('-')}Hz; drum reverb CC <= ${HARDWARE_SPEAKER_PROFILE.guardrails.drumReverbCcMax}, drum transient CC <= ${HARDWARE_SPEAKER_PROFILE.guardrails.drumTransientCcMax}.`,
   '',
-  '| Style | Seed | Status | Est. LUFS | Playback LUFS | Target | Delta | Master Lift | Recommended | Wet Energy | Hardware Drive Proxy dBFS | Tracks | Diagnosis | Findings |',
+  '| Style | Seed | Status | Est. LUFS | Playback LUFS | Target | Delta | Master Gain | Master NRPN | Wet Energy | Hardware Drive Proxy dBFS | Tracks | Diagnosis | Findings |',
   '|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|',
 ];
 
@@ -48,11 +58,9 @@ function range(vals: readonly number[], digits = 1): string {
 
 function diagnoseTags(report: MixAuditReport): string[] {
   const tags: string[] = [];
-  const allowed = report.standard.hardwareMaster.playbackStyleMasterLiftCalibration[
-    report.style as keyof typeof report.standard.hardwareMaster.playbackStyleMasterLiftCalibration
-  ]?.acceptablePlaybackLufs;
-  if (allowed && report.estimatedPlaybackIntegratedLufs < allowed[0]) tags.push('音量小');
-  if (allowed && report.estimatedPlaybackIntegratedLufs > allowed[1]) tags.push('音量偏大');
+  const allowed = report.standard.acceptableEstimatedLufs;
+  if (report.estimatedPlaybackIntegratedLufs < allowed[0]) tags.push('音量小');
+  if (report.estimatedPlaybackIntegratedLufs > allowed[1]) tags.push('音量偏大');
   if (report.estimatedDeviceOutputPeakDbfs > report.standard.esp32SamplePeakCeilingDbfs + 6) tags.push('软削偏多');
   else if (report.estimatedDeviceOutputPeakDbfs > report.standard.esp32SamplePeakCeilingDbfs) tags.push('软削工作');
   const pad = report.trackMetrics.find((m) => m.role === 'pad');
@@ -113,8 +121,8 @@ for (const style of STYLES) {
       fmt(report.estimatedPlaybackIntegratedLufs, 1),
       fmt(report.targetPlaybackIntegratedLufs, 1),
       fmt(report.playbackLoudnessDeltaDb, 1),
-      fmt(report.playbackMasterLift, 2),
-      fmt(report.recommendedPlaybackMasterLift, 2),
+      fmt(report.appliedMasterGain, 2),
+      report.dream5504MasterPlan.volume,
       fmt(report.totalWetEnergyPerBeat, 3),
       fmt(report.estimatedDeviceOutputPeakDbfs, 1),
       tracks,
@@ -125,27 +133,28 @@ for (const style of STYLES) {
 }
 
 const styleSummary = [
-  '## Style Master Lift Calibration',
+  '## Dream 5504 Score Master Plan',
   '',
-  '| Style | Target Playback LUFS | Allowed | Current Lift | Recommended From Avg | Avg Playback LUFS | Playback Range | Avg Delta | Max Drive Proxy dBFS | Diagnosis |',
-  '|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+  '| Style | Target Playback LUFS | Allowed | Avg Master NRPN | Master NRPN Range | Avg Master Gain | Avg Playback LUFS | Playback Range | Avg Delta | Max Drive Proxy dBFS | Diagnosis |',
+  '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
 ];
 for (const style of STYLES) {
   const reports = styleReports.get(style) ?? [];
   const first = reports[0];
   if (!first) continue;
-  const cal = first.standard.hardwareMaster.playbackStyleMasterLiftCalibration[style];
   const play = reports.map((r) => r.estimatedPlaybackIntegratedLufs);
   const delta = reports.map((r) => r.playbackLoudnessDeltaDb);
   const drive = reports.map((r) => r.estimatedDeviceOutputPeakDbfs);
-  const rec = reports.map((r) => r.recommendedPlaybackMasterLift);
+  const volumes = reports.map((r) => r.dream5504MasterPlan.volume);
+  const gains = reports.map((r) => r.dream5504MasterPlan.gain);
   const tags = [...new Set(reports.flatMap(diagnoseTags))];
   styleSummary.push([
     `| ${style}`,
-    fmt(cal.targetPlaybackIntegratedLufs, 1),
-    `${fmt(cal.acceptablePlaybackLufs[0], 1)}..${fmt(cal.acceptablePlaybackLufs[1], 1)}`,
-    fmt(cal.lift, 2),
-    fmt(avg(rec), 2),
+    fmt(first.targetPlaybackIntegratedLufs, 1),
+    `${fmt(first.standard.acceptableEstimatedLufs[0], 1)}..${fmt(first.standard.acceptableEstimatedLufs[1], 1)}`,
+    fmt(avg(volumes), 0),
+    range(volumes, 0),
+    fmt(avg(gains), 2),
     fmt(avg(play), 1),
     range(play, 1),
     fmt(avg(delta), 1),

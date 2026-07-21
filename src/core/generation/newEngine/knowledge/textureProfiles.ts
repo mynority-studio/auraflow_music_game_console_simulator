@@ -234,7 +234,7 @@ export const TEXTURE_BEHAVIOR: Record<string, TextureBehaviorProfile> = {
   Piano_Ambient_Sustain_Wash: { textureCase: 'Piano_Ambient_Sustain_Wash', family: 'wash', continuity: 'continuous', firstOnsetBeat: 0.02 },
   Piano_HalfTime_Soft_Pulse: { textureCase: 'Piano_HalfTime_Soft_Pulse', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.025 },
   Piano_Lofi_Dusty_Chops: { textureCase: 'Piano_Lofi_Dusty_Chops', family: 'chop', continuity: 'sparse', firstOnsetBeat: 0.58 },
-  Piano_Lofi_Tape_Wobble_Arp: { textureCase: 'Piano_Lofi_Tape_Wobble_Arp', family: 'arp', continuity: 'semiContinuous', firstOnsetBeat: 0.02 },
+  Piano_Lofi_Tape_Wobble_Arp: { textureCase: 'Piano_Lofi_Tape_Wobble_Arp', family: 'arp', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
   Piano_Wide_Color_Motion: { textureCase: 'Piano_Wide_Color_Motion', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
   Piano_CommonTone_Soft_Roll: { textureCase: 'Piano_CommonTone_Soft_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
   // —— legacy(Loop 6,2026-06-09):family/firstOnset 量化自 textureRenderer 的 family interpreter;

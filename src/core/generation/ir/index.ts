@@ -22,10 +22,8 @@
 //   - NoteData         : 所有音符渲染的通用容器（8+ 模块消费）
 //   - GeneratedChord   : 和弦元数据（6+ 模块消费）
 //   - SectionMetadata  : 段落结构（5+ 模块消费）
-//   (旧 MusicContext 已随旧引擎删除。)
-//
 // 不在本文件的"近 IR"类型（仍在 types.ts，未来视需要再升格）：
-//   GeneratedTrack / ArrangedTrack / TerminalSymbol / ContourSpec / Tonality 枚举等
+//   TerminalSymbol / ContourSpec / Tonality 枚举等
 //
 // 2026-05-24:删 ./harmonic-skeleton.ts(HarmonicChord/HarmonicSkeleton/CadencePoint/
 //   TensionTone 0 外部消费方;af2-engine/Arranger.ts 有自己的同名 HarmonicSkeleton 接口)
@@ -138,7 +136,7 @@ export interface GeneratedChord { numeral: string; root: number; quality: ChordQ
      * - role 来自 VoicingProcessor 构造时的语义知识(buildShellLH 知道哪个是 root / 哪个是 7th)
      * - Phase 1b VoicingMask 消费本字段做 bitmask 过滤,voicing(number[])保留作 fallback
      *
-     * 可选(向后兼容):未升级的旧路径仍可只读 voicing。Phase 1b 起 Idiom 优先读 voicingTagged。
+     * 可选(向后兼容):未升级调用仍可只读 voicing。Phase 1b 起 Idiom 优先读 voicingTagged。
      */
     voicingTagged?: VoicedPitch[];
     /**
@@ -188,4 +186,4 @@ export interface SectionMetadata {
     contour?: ContourSpec;
 }
 
-// ★ 旧 MusicContext(旧引擎运行时上下文,MidiConverter/AbsoluteTransposer 消费)已删除 —— Q+N 用 MusicGenerationRequest/Result。
+// Q+N 产品链路运行时上下文由 MusicGenerationRequest/Result 承载。

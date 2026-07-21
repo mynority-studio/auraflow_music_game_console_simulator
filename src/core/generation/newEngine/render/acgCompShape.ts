@@ -57,6 +57,66 @@ interface Ctx { lead: TrackIR; timeline: readonly ChordSpan[]; barTicks: number;
 const B = (ctx: Ctx, beat: number) => beat * ctx.ppq;
 const MS = (ctx: Ctx, ms: number) => (ms * ctx.bpm / 60000) * ctx.ppq;
 
+// 一架钢琴的声部所有权：bass 拿低根，comp 只在中部活动，lead 是有旋律 bar 的最高语义声部。
+// 这些不是 renderer 的硬裁音高（那会破坏和弦合法性），而是按八度把既有和弦音搬回正确手区。
+const ACG_COMP_MIDDLE_FLOOR = 48;
+const ACG_COMP_WITH_LEAD_CEILING = 67;
+const ACG_COMP_LEAD_REST_CEILING = 72;
+
+function leadNotesTouchingBar(ctx: Ctx, bar: number): NoteIR[] {
+  const lo = bar * ctx.barTicks;
+  const hi = lo + ctx.barTicks;
+  // Keep this overlap rule identical to the final piano-score contract.  A lead
+  // tail that enters a bar by even one tick still owns that bar's top voice;
+  // otherwise the comp planner may approve a high arpeggio that the contract
+  // (and the listener at the boundary) correctly treats as a second topline.
+  return ctx.lead.notes.filter((n) => st(n) < hi && st(n) + du(n) > lo);
+}
+
+/**
+ * lead 在本 bar 出现时，comp 的整个手型都保持在旋律下方；lead 留白 bar 才允许轻微上探，
+ * 让琶音能呼吸/回应，但仍不占顶声部。取该 bar 最低 lead 是为了长跳旋律落回低点时，
+ * 之前的高 air 不会反过来成为“另一条旋律”。
+ */
+function compCeilingForBar(ctx: Ctx, bar: number): number {
+  const leadInBar = leadNotesTouchingBar(ctx, bar);
+  if (leadInBar.length === 0) return ACG_COMP_LEAD_REST_CEILING;
+  const lowestLead = Math.min(...leadInBar.map(pit));
+  return Math.max(
+    ACG_COMP_MIDDLE_FLOOR,
+    Math.min(ACG_COMP_WITH_LEAD_CEILING, lowestLead - 3),
+  );
+}
+
+/** 保留原 pitch class，只通过八度换位放进中部；没有合法八度就删该冗余声部，绝不半音硬钳。 */
+function revoiceIntoRange(pitch: number, floor: number, ceiling: number): number | null {
+  let best: number | null = null;
+  for (let octave = -4; octave <= 4; octave++) {
+    const candidate = pitch + octave * 12;
+    if (candidate < floor || candidate > ceiling) continue;
+    if (best === null || Math.abs(candidate - pitch) < Math.abs(best - pitch)) best = candidate;
+  }
+  return best;
+}
+
+/**
+ * 把 comp 维持为中部琶音，而不是在 lead 已入场时再添一条高音线。
+ * 优先 octave revoice，因而保留已有的上/下行节奏与和弦色彩；仅在该音级无法落入手区时才让它留白。
+ */
+function keepCompInMiddleRegister(compNotes: NoteIR[], ctx: Ctx): NoteIR[] {
+  const out: NoteIR[] = [];
+  for (const event of compNotes) {
+    const bar = Math.max(0, Math.floor(st(event) / ctx.barTicks));
+    const ceiling = compCeilingForBar(ctx, bar);
+    const revoiced = revoiceIntoRange(pit(event), ACG_COMP_MIDDLE_FLOOR, ceiling);
+    if (revoiced === null) continue;
+    out.push(revoiced === pit(event)
+      ? event
+      : { ...event, pitch: midi(revoiced) });
+  }
+  return out;
+}
+
 // ① inner voice:旋律落点下方加软歌唱内声部(+ breath 高时补 answer 声部)。
 function addInnerVoice(compNotes: NoteIR[], ctx: Ctx): NoteIR[] {
   const out = [...compNotes];
@@ -216,17 +276,20 @@ function deCollideOnsets(notes: readonly NoteIR[], ctx: Ctx): NoteIR[] {
   return out;
 }
 
-/** ACG comp melody-first cantabile 塑形:inner voice → carve → floor → chord-roll(承重:单音滚动)→ de-collide。只 ACG。 */
+/** ACG comp melody-first cantabile 塑形:inner voice → carve → 中部换位 → floor → chord-roll(承重:单音滚动)→ de-collide。只 ACG。 */
 export function shapeAcgComp(comp: TrackIR, lead: TrackIR, timeline: readonly ChordSpan[], barTicks: number, ppq: number, bpm: number, seed: number): TrackIR {
   if (lead.notes.length === 0) {
     const ctx0: Ctx = { lead, timeline, barTicks, ppq, bpm, seed, nBars: 1 };
-    return { ...comp, notes: deCollideOnsets(chordRoll(comp.notes, ctx0), ctx0) };
+    const notes = keepCompInMiddleRegister(comp.notes, ctx0);
+    return { ...comp, notes: deCollideOnsets(chordRoll(notes, ctx0), ctx0) };
   }
   const nBars = Math.max(1, Math.ceil(Math.max(0, ...comp.notes.map(st), ...lead.notes.map(st)) / barTicks) + 1);
   const ctx: Ctx = { lead, timeline, barTicks, ppq, bpm, seed, nBars };
   let notes = addInnerVoice(comp.notes, ctx);
   notes = carve(notes, ctx);
   notes = harmonyFloor(notes, ctx);
+  // floor/inner voice 都可能带入高色音；统一在 roll 前收回中部，保住实际琶音而非靠删除变空。
+  notes = keepCompInMiddleRegister(notes, ctx);
   notes = notes.filter((n) => du(n) > B(ctx, 0.03));
   notes = chordRoll(notes, ctx); // ★ 承重:最后把所有同起点块状 → 单音滚动琶音
   notes = deCollideOnsets(notes, ctx); // ★ T2.1:清跨组滚开碰撞(残余同起点)

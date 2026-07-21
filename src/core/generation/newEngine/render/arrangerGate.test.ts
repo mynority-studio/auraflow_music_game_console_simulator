@@ -86,6 +86,20 @@ describe('render/arrangerGate · presence, entry timing and density contracts', 
     expect(authoritative.notes).toEqual(lead.notes);
   });
 
+  it('可为风格合同强制首段角色即时进入，覆盖 opening gesture 与 delayed entry', () => {
+    const plan = planFor([{ id: 'intro', startBeat: 0, durationBeats: 8 }]);
+    const bass: TrackIR = { role: 'bass', notes: [note(36, 0), note(38, 4)] };
+    const active = { intro: ['bass'] };
+    const options = {
+      rolePerformanceBySection: performance({ bass: { intro: { entryMode: 'delayed', densityBudget: 1 } } }),
+      openingGesture: { sectionId: 'intro', roleDelayBars: { bass: 1 } } as unknown as ArrangementPlan['openingGesture'],
+      forceImmediateOpeningRoles: new Set<TrackIR['role']>(['bass']),
+    };
+
+    const [gated] = gateByDensity([bass], plan, timebase, active, options);
+    expect(gated.notes.map((event) => event.startTick as number)).toEqual([0, 4 * PPQ]);
+  });
+
   it('comp densityBudget 以 onset chord group 为单位温和限流，优先保留强拍且不拆和弦', () => {
     const plan = planFor([{ id: 'verse', startBeat: 0, durationBeats: 4 }]);
     const comp: TrackIR = {

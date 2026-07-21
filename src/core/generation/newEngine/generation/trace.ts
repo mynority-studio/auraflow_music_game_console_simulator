@@ -7,14 +7,12 @@
 //   面板试听 = 真实产品路径(generateSong 同款),日志显示真实 attempts/status。
 // ============================================================
 
-import { beats, createRandomContext, createTimebase } from '../foundation';
-import { buildBandSpec, type GenerationRequest } from '../band/bandEngine';
-import { buildArrangementPlan } from '../arranger/arranger';
+import { beats } from '../foundation';
+import type { GenerationRequest } from '../band/bandEngine';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
-import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
+import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import { compPattern } from '../knowledge/grooves';
 import { dream5504VoiceName, type GM128Role } from '../../../sound/GMBK5X128Voices';
-import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { renderSongFull } from '../render/renderCoordinator';
 import { leadGrammarLabelForStyle, renderMgMelody } from '../render/mgLeadRenderer';
@@ -22,7 +20,7 @@ import { planRepeatGroupReplays } from '../render/repeatGroupReplay';
 import { planLeadGapFills } from '../render/leadGapFill';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
-import { runGenerationControl, type GenerationStatus, type RenderFn } from './GenerationController';
+import { buildSongBundle, runGenerationControl, type GenerationStatus, type RenderFn } from './GenerationController';
 import { DEFAULT_BUDGET } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
 
@@ -69,28 +67,25 @@ export interface GenerationTrace {
 export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const lines: string[] = [];
   const log = (s: string) => lines.push(s);
-  const seedRng = createRandomContext(request.seed);
+  // Trace must observe the same immutable ACG phrase score as production.  In
+  // particular, the score carries the factual functional RoadMap that a
+  // direct render fallback cannot reconstruct at this layer.
+  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = buildSongBundle(request);
 
   log(`■ REQUEST    seed=${request.seed}  style=${request.styleHint}  mood=${request.mood}  dur=${request.targetDuration}s`);
 
   // —— BAND ——
-  const band = buildBandSpec(request);
   log(`■ BAND       ${band.tonalityKind}${band.modalModeName ? `(${band.modalModeName})` : ''} · key=${band.key} ${band.mode} · style=${band.style}  (accompDensity=${band.styleProfile.accompDensity} melodyFreedom=${band.styleProfile.melodyFreedom})`);
   log(`   编制(${band.instrumentPool.length}件): ${band.instrumentPool.map((r) => `${r}=PC${band.roleProgram[r]}(候选)`).join(' · ')}`);
 
   // —— ARRANGER ——
-  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood, targetDuration: request.targetDuration });
   const formShape = arrangement.sections.map((s) => s.role).join('-'); // seed 选型曲式骨架
   const totalBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
   log(`■ ARRANGER   ${arrangement.tempoBpm}bpm ${arrangement.meter.numerator}/${arrangement.meter.denominator} ${arrangement.feel.kind} · 曲式=${formShape}(${arrangement.sections.length}段/${totalBars}小节,seed 选) · 高潮=${arrangement.climaxMap.map((c) => c.sectionId).join(',') || '-'}`);
   log(`   段落: ${arrangement.sections.map((s) => `${s.id}[${s.bars}b${s.repeatGroup ? '·' + s.repeatGroup : ''}·${s.hookPolicy}${s.functionTag ? '·' + s.functionTag : ''}${s.harmonyRole ? '·H:' + s.harmonyRole : ''}${s.linkOut && s.linkOut !== 'none' ? '·→' + s.linkOut : ''}]`).join('  ')}`);
   log(`   乐句 ${arrangement.phrases.length} · 动机绑定 ${arrangement.motifBindings.length}(同 motifId 跨段=排比)`);
 
-  // —— HARMONY(★ #6:先于 instrumental 构建,与 generateSong 同序;instrumental 吃 harmonic 做 dominant-chain texture)——
-  const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
-
   // —— INSTRUMENTAL ——
-  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(PC${p.program})`).join(' ');
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
   // ★ 链式协同(gm128_chain_orchestration):器配层拥有 GM 选择 —— 链世界/profile + 生效 roleProgram + 决策轨迹
@@ -156,7 +151,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }).join('  ')}`);
   log(`   鼓手合同: ${arrangement.sections.map((s) => {
     const d = arrangement.drumPerformanceBySection[s.id];
-    return `${s.id}=kit${d.kitProgram}:${d.patternFamily}/${d.timingProfile}/fill:${d.fillPolicy}.${d.fillAmount}.${d.fillComplexity}/var${d.phraseVariation}`;
+    return `${s.id}=kit${d.kitProgram}:${d.patternFamily}/${d.feelProfileId}/${d.timingProfile}/fill:${d.fillPolicy}.${d.fillAmount}.${d.fillComplexity}/var${d.phraseVariation}`;
   }).join('  ')}`);
   // ★ 段落边界(Arranger 下发):进入方式(lead-in=末小节铺垫推进)+ 收尾方式(cold/fade/tag)+ 器配退出排布
   const leadIns = arrangement.sections.filter((s) => arrangement.entryBySection[s.id] === 'lead-in').map((s) => s.id);
@@ -213,10 +208,6 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— RENDER + AUDIT(走真实控制环:retry/budget/fallback,与 generateSong 同路径)——
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律=MG 链,不再跑 Prepass/MotifStore。
-  const timebase = createTimebase({
-    meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
-    tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
-  });
   // 段落骨架 → tick 区间(piano-roll DAW 段落标尺消费)
   const bpbSec = beatsPerBarOf(arrangement.meter);
   const sections: TraceSection[] = [];
@@ -226,9 +217,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     secBeatCursor += s.bars * bpbSec;
     sections.push({ id: s.id, role: s.role, startTick, endTick: timebase.beatToTick(beats(secBeatCursor)) as number, bars: s.bars });
   }
+  const intentPlan = deriveMusicIntentPlan(band.style, arrangement);
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer });
+      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan, undefined, acgPianoScorePlan, jazzFiveFourScorePlan);
   const locator = buildRetryLocator(harmonic, timebase);
   const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, locator);
   const audit = result.report;
@@ -243,15 +235,29 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }
   // ★ lead 空拍补全(2026-06-11):末音后大空拍 → 延长末音到 bar 末(钳位和弦),不和弦未完成戛然而止
   //   (在【原始 MG lead】上算补全计划展示,production lead 已补全)
-  const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract);
+  const rawLeadForGaps = renderMgMelody(
+    harmonic,
+    band,
+    timebase,
+    request.seed,
+    instrumentation.roleProgram.lead,
+    arrangement.songGrooveContract,
+    acgPianoScorePlan?.leadPresencePlan,
+    acgPianoScorePlan,
+  );
   const gapFills = planLeadGapFills(rawLeadForGaps.notes, harmonic.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
   if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末;${gapFills.filter((f) => f.chordClamped).length} 处钳到起音和弦末,不跨和弦)`);
-  // ★ 手势表情层:器配下发 sax/pipe-wind gesture plan,render 只投影 CC/连吹。
+  // ★ 手势表情层:器配下发 sax/pipe-wind timing/legato plan。当前硬件输出
+  // 保持非钢琴通道的 5504 默认控制器状态，不把未审定的 wind CC 写到板端。
   const leadTrack = ir.tracks.find((t) => t.role === 'lead');
   const leadGesture = instrumentation.gestureExpressionByRole.lead;
-  if (leadTrack?.ccEvents?.length && leadGesture?.kind !== 'none') log(`   吹奏手势(${leadGesture.kind},GM${leadTrack.program}):CC ×${leadTrack.ccEvents.length}(气息/表情由器配计划驱动)`);
+  if (leadGesture?.kind !== 'none') log(`   吹奏手势(${leadGesture.kind},GM${leadTrack?.program ?? '—'}):时值/连奏由器配计划驱动；板端 CC 保持默认`);
+  const pianoCc11 = ir.tracks.flatMap((track) => (track.ccEvents ?? [])
+    .filter((event) => event.controller === 11)
+    .map((event) => ({ role: track.role, value: event.value })));
+  if (pianoCc11.length) log(`   原声钢琴 CC11 乐句表情 ×${pianoCc11.length}(器配层按 keyboardMotion 的段落/小节下发,${Math.min(...pianoCc11.map((event) => event.value))}..${Math.max(...pianoCc11.map((event) => event.value))})`);
   log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(单轨优化,不碰伴奏/旋律/和声合同)`);
-  log(`     pad mode: guide-tone(POP 3/7)· drone(LOFI/verse 留白)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 段+上层结构张力)· 全在正交音阶内·避同绝对音高`);
+  log(`     pad mode: chord-bed(当前和弦开放排列+共同音连接)· drone(严格共同音,无则休息)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 3-4 声部)· 全在正交音阶内·避同绝对音高`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);
   log(`   resolver: voicing-around-melody(comp 与旋律撞小二度/小九度→丢该 comp 声部)+ lead 音域碰撞上移`);
   log(`   bass 行进: ${band.style}(jazz=walking / pop=根-五 / lofi=根音持续)`);

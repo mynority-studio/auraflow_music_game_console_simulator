@@ -6,6 +6,10 @@ import type { Section } from './ArrangementPlan';
 import { buildBandSpec } from '../band/bandEngine';
 import { generateSong } from '../generation/GenerationController';
 import { createRandomContext, pc } from '../foundation';
+import {
+  JAZZ_4_4_ARCHETYPE_ID,
+} from './jazzArchetypePlanner';
+import { ACG_PIANO_ARRANGEMENT_PROFILES } from './acgPianoArrangementProfiles';
 
 describe('arranger · 曲式多样 (3.5)', () => {
   const formShape = (seed: number) => {
@@ -55,41 +59,49 @@ describe('arranger · 曲式多样 (3.5)', () => {
     return buildArrangementPlan(band, { rng: createRandomContext(seed) });
   };
 
-  it('★ 程序化曲式【≤6 段 + 记忆点 + 必有收尾】:每首 ≤6 段;有 ×2 连续记忆点;★ 每首末段=收尾(harmonyRole ending,修戛然而止);lofi 无 chorus;jazz head×2+headOut', () => {
+  it('★ 程序化曲式【≤6 段 + 记忆点 + 必有收尾】', () => {
     const cnt = (secs: readonly { functionTag?: string }[], t: string) => secs.filter((s) => s.functionTag === t).length;
+    let sawJazzFourFour = false;
     for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
       for (let seed = 0; seed < 12; seed++) {
-        const secs = styleForm(style, seed).sections;
+        const planned = styleForm(style, seed);
+        const secs = planned.sections;
         expect(secs.length).toBeLessThanOrEqual(6);          // ★ 放宽到 6(intro+verse×2+chorus×2+outro 标准曲式)
         expect(secs.length).toBeGreaterThanOrEqual(2);
-        // 记忆点:story/hook/loop/head 之一 ≥2(连续重复)
-        expect(cnt(secs, 'story') >= 2 || cnt(secs, 'hook') >= 2 || cnt(secs, 'loop') >= 2 || cnt(secs, 'head') >= 2).toBe(true);
+        if (style === 'jazz') {
+          sawJazzFourFour = true;
+          expect(planned.arrangementArchetypeId).toBe(JAZZ_4_4_ARCHETYPE_ID);
+          expect(secs.some((section) => section.id === 'headA')).toBe(true);
+          expect(secs.some((section) => section.id === 'headOut')).toBe(true);
+          expect(secs.some((section) => section.id === 'vamp' || section.id === 'reharm')).toBe(false);
+        } else {
+          // 记忆点:story/hook/loop 之一 ≥2(连续重复)
+          expect(cnt(secs, 'story') >= 2 || cnt(secs, 'hook') >= 2 || cnt(secs, 'loop') >= 2).toBe(true);
+        }
         // ★ 必有收尾段(修戛然而止):末段 harmonyRole='ending'(→ 终止式回归 + 能量回落)
         expect(secs[secs.length - 1].harmonyRole).toBe('ending');
       }
     }
+    expect(sawJazzFourFour).toBe(true);
     for (let seed = 0; seed < 8; seed++) {
       expect(styleForm('lofi', seed).sections.some((s) => s.role === 'chorus')).toBe(false); // lofi 不套 chorus
       const jazz = styleForm('jazz', seed).sections;
-      expect(cnt(jazz, 'head')).toBe(2);                     // jazz head×2(记忆点)
       expect(jazz.some((s) => s.functionTag === 'headOut')).toBe(true);
     }
   });
 
-  it('★ 连续×2 记忆点:同功能相邻段共享 repeatGroup(loop/head ×2 时)', () => {
-    for (const [style, tag] of [['lofi', 'loop'], ['jazz', 'head']] as const) {
-      let sawPair = false;
-      for (let seed = 0; seed < 12; seed++) {
-        const secs = styleForm(style, seed).sections;
-        for (let i = 0; i < secs.length - 1; i++) {
-          if (secs[i].functionTag === tag && secs[i + 1].functionTag === tag) {
-            sawPair = true;
-            expect(secs[i + 1].repeatGroup).toBe(secs[i].repeatGroup); // 连续同功能 → 同 group = 记忆点
-          }
+  it('★ 记忆点：LOFI 用相邻 loop', () => {
+    let sawLofiPair = false;
+    for (let seed = 0; seed < 12; seed++) {
+      const secs = styleForm('lofi', seed).sections;
+      for (let i = 0; i < secs.length - 1; i++) {
+        if (secs[i].functionTag === 'loop' && secs[i + 1].functionTag === 'loop') {
+          sawLofiPair = true;
+          expect(secs[i + 1].repeatGroup).toBe(secs[i].repeatGroup);
         }
       }
-      expect(sawPair).toBe(true); // 该风格跨 seed 至少出现一次连续×2
     }
+    expect(sawLofiPair).toBe(true);
   });
 
   it('★ POP/RNB 双副歌采用 V1-C1-V2-C2；重排不改 bars/repeatGroup，且每个入副歌 verse 都 dominantLift', () => {
@@ -162,20 +174,65 @@ describe('arranger · 曲式多样 (3.5)', () => {
     }
   });
 
-  it('★ ACG PIANOSONG 使用短篇主题曲式：A → A′ → lift → return → coda', () => {
-    for (const seed of [0, 7, 42, 99]) {
-      const acg = styleForm('acg', seed);
-      const ids = acg.sections.map((section) => section.id);
-      expect(ids).toEqual(['pianoIntro', 'themeA', 'themeA2', 'pianoLift', 'themeReturn', 'pianoCoda']);
-      expect(acg.sections.reduce((sum, section) => sum + section.bars, 0)).toBe(36);
-      expect(acg.tempoBpm).toBeGreaterThanOrEqual(74);
-      expect(acg.tempoBpm).toBeLessThanOrEqual(86);
+  it('★ ACG PIANOSONG 用隐藏总谱 profile 变换开场/中段/coda，同时保留 A → A′ → return', () => {
+    const acgForm = (seed: number, profileId?: typeof ACG_PIANO_ARRANGEMENT_PROFILES[number]['id']) => {
+      const band = buildBandSpec({ seed, styleHint: 'acg', mood: 'x', targetDuration: 120, key: pc(0) });
+      return buildArrangementPlan(band, {
+        rng: createRandomContext(seed),
+        acgPianoArrangementProfileId: profileId,
+      });
+    };
+
+    // Preserve the old familiar baseline for the historical seed while every
+    // other seed can select a different internal blueprint.
+    const baseline = acgForm(7);
+    expect(baseline.acgPianoArrangementProfileId).toBe('ripple-journey');
+    expect(baseline.sections.map((section) => section.id)).toEqual([
+      'pianoIntro', 'themeA', 'themeA2', 'pianoLift', 'themeReturn', 'pianoCoda',
+    ]);
+    expect(baseline.sections.reduce((sum, section) => sum + section.bars, 0)).toBe(36);
+
+    const seenProfiles = new Set<string>();
+    const openingSignatures = new Set<string>();
+    const codaSignatures = new Set<string>();
+    for (let seed = 0; seed < 64; seed++) {
+      const acg = acgForm(seed);
+      const profileId = acg.acgPianoArrangementProfileId;
+      expect(profileId, `seed ${seed}`).toBeDefined();
+      seenProfiles.add(profileId!);
+      openingSignatures.add(`${acg.sections[0].id}:${acg.sections[0].bars}`);
+      const last = acg.sections.at(-1)!;
+      codaSignatures.add(`${last.id}:${last.bars}`);
+
       const theme = acg.sections.filter((section) => section.repeatGroup === 'A');
-      expect(theme.map((section) => section.bars)).toEqual([8, 8, 8]);
-      expect(acg.sections.find((section) => section.id === 'themeA2')?.linkOut).toBe('dominantLift');
-      expect(acg.sections.find((section) => section.id === 'themeReturn')?.functionTag).toBe('headOut');
-      expect(acg.sections.at(-1)?.harmonyRole).toBe('ending');
+      expect(theme.map((section) => section.id)).toEqual(['themeA', 'themeA2', 'themeReturn']);
+      expect(new Set(theme.map((section) => section.bars)).size).toBe(1);
+      expect(acg.sections.findIndex((section) => section.id === 'themeA')).toBeLessThan(
+        acg.sections.findIndex((section) => section.id === 'themeA2'),
+      );
+      expect(acg.sections.findIndex((section) => section.id === 'themeA2')).toBeLessThan(
+        acg.sections.findIndex((section) => section.id === 'themeReturn'),
+      );
+      expect(last.harmonyRole).toBe('ending');
     }
+    expect(seenProfiles).toEqual(new Set(ACG_PIANO_ARRANGEMENT_PROFILES.map((profile) => profile.id)));
+    expect(openingSignatures.size).toBeGreaterThanOrEqual(4);
+    expect(codaSignatures.size).toBeGreaterThanOrEqual(4);
+
+    const explicitShapes = new Set<string>();
+    for (const profile of ACG_PIANO_ARRANGEMENT_PROFILES) {
+      const acg = acgForm(7, profile.id);
+      expect(acg.acgPianoArrangementProfileId).toBe(profile.id);
+      explicitShapes.add(acg.sections.map((section) => section.id).join('>'));
+    }
+    expect(explicitShapes.size).toBe(ACG_PIANO_ARRANGEMENT_PROFILES.length);
+
+    // No RNG keeps the original generic fallback, so fixture callers that do
+    // not opt into seeded arrangement planning remain backward-compatible.
+    const legacyBand = buildBandSpec({ seed: 7, styleHint: 'acg', mood: 'x', targetDuration: 120, key: pc(0) });
+    const legacy = buildArrangementPlan(legacyBand);
+    expect(legacy.acgPianoArrangementProfileId).toBeUndefined();
+    expect(legacy.sections.map((section) => section.id)).toEqual(['intro', 'verse1', 'chorus1', 'verse2', 'chorus2', 'outro']);
   });
 
   it('★ T4 dynamics:lofi 峰值<0.6 且 < pop hook;jazz 不吃 0.9;breakdown 显著低于邻段;统一 1 chord/bar', () => {

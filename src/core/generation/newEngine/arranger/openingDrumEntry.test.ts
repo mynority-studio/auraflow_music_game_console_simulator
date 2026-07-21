@@ -35,9 +35,9 @@ describe('arranger/opening drum entry projection', () => {
   it.each([
     ['none', 'none'],
     ['hatsOnly', 'hat-only'],
-    ['brushLoop', 'hat-only'],
+    ['brushLoop', 'full'],
     ['backbeatDelayed', 'hat-only'],
-    ['halftimePocket', 'hat-only'],
+    ['halftimePocket', 'full'],
     ['kickOnly', 'kick-only'],
     ['rideOnly', 'ride-only'],
     ['fourOnFloorRamp', 'kick-hat'],
@@ -48,8 +48,8 @@ describe('arranger/opening drum entry projection', () => {
 
   it('buildArrangementPlan 把实际 openingGesture 接进首段鼓手合同', () => {
     const expected = new Map<OpeningDrumEntry, string>([
-      ['none', 'none'], ['hatsOnly', 'hat-only'], ['brushLoop', 'hat-only'],
-      ['backbeatDelayed', 'hat-only'], ['halftimePocket', 'hat-only'],
+      ['none', 'none'], ['hatsOnly', 'hat-only'], ['brushLoop', 'full'],
+      ['backbeatDelayed', 'hat-only'], ['halftimePocket', 'full'],
       ['kickOnly', 'kick-only'], ['rideOnly', 'ride-only'],
       ['fourOnFloorRamp', 'kick-hat'], ['tomPickup', 'full'],
     ]);

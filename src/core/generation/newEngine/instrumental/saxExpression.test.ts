@@ -23,11 +23,11 @@ describe('instrumental/saxExpression', () => {
     for (const p of [0, 4, 11, 72, 75, 77, 80]) expect(isSaxProgram(p), `GM${p}`).toBe(false);
   });
 
-  it('每音生成 CC11+CC2 气压包络,不发 CC1 避免小 SF2 音准摆动', () => {
+  it('每音只生成经 Dream 文档支持的 CC11 表情包络，不把 CC2 假定成气息', () => {
     const cc = buildSaxBreathCcEvents([note(0, 960, 57, 96)], { ppq: 480 });
     const controllers = new Set(cc.map((e) => e.controller));
     expect(controllers.has(SAX_CC.expression)).toBe(true);
-    expect(controllers.has(SAX_CC.breath)).toBe(true);
+    expect(controllers.has(SAX_CC.breath)).toBe(false);
     expect(controllers.has(SAX_CC.modulation)).toBe(false);
     expect(cc.some((e) => e.controller === SAX_CC.expression && e.atTick === ticks(0))).toBe(true);
     expect(cc.some((e) => e.controller === SAX_CC.expression && (e.atTick as number) > 0 && (e.atTick as number) < 960)).toBe(true);

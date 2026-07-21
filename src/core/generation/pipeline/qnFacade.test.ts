@@ -15,11 +15,11 @@ afterEach(() => {
 // ============================================================
 // qn_main_engine_takeover §6/§14 — 生产主链路端到端(runPipeline 外观 → Q+N → MusicalIR → MIDI)
 // ------------------------------------------------------------
-// 锁:runPipeline 现是 Q+N 服务外观(不调 mgEngine);返回完整 result(含 IR);IR 经正式 adapter 出可播 MIDI。
+// 锁:runPipeline 现是 Q+N 服务外观;返回完整 result(含 IR);IR 经正式 adapter 出可播 MIDI。
 // ============================================================
 
 describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
-  it('★ runPipeline 返回 Q+N result(ok + 非空 IR + uiSnapshot),不再 mg track', () => {
+  it('★ runPipeline 返回 Q+N result(ok + 非空 IR + uiSnapshot)', () => {
     MusicGenerationStyleStore.setStyle('POP');
     MusicGenerationSeedStore.setSuffix('42');
     const { result } = runPipeline({});
@@ -28,7 +28,7 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     expect(result.ir!.tracks.length).toBeGreaterThan(0);
     expect(result.uiSnapshot.sections.length).toBeGreaterThan(0);
     expect(result.uiSnapshot.chords.length).toBeGreaterThan(0);
-    // ★ runPipeline 只返回 { result }(已删旧 {track, context} 兼容投影);UI 读 result.uiSnapshot。
+    // ★ runPipeline 只返回 { result };UI 读 result.uiSnapshot。
     expect((runPipeline({}) as unknown as Record<string, unknown>).track).toBeUndefined();
   });
 
@@ -55,12 +55,15 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
       .toEqual(direct.ir?.tracks.map((t) => `${t.role}:${t.program}:${t.notes.length}`));
   });
 
-  it('★ result.ir → musicalIRToMidiEvents 产可播 MIDI(noteOn/programChange/CC 齐全)', () => {
+  it('★ result.ir → musicalIRToMidiEvents 只产 Note、Program Change、CC121、选音 CC0 与原声钢琴 CC11/CC64', () => {
     const { result } = runPipeline({});
     const ev = musicalIRToMidiEvents(result.ir!, 50);
     expect(ev.filter((e) => e.type === 'noteOn').length).toBeGreaterThan(0);
     expect(ev.filter((e) => e.type === 'programChange').length).toBeGreaterThan(0);
-    expect(ev.filter((e) => e.type === 'cc' && e.data1 === 7).length).toBeGreaterThan(0); // CC7 volume
+    const controllers = new Set(ev.filter((e) => e.type === 'cc').map((e) => e.data1));
+    expect([...controllers].every((controller) => [0, 11, 64, 121].includes(controller))).toBe(true);
+    expect(ev.filter((e) => e.type === 'cc' && e.data1 === 121).every((e) => e.ticks === 0 && e.data2 === 0)).toBe(true);
+    expect(ev.some((e) => e.type === 'cc' && [1, 7, 10, 72, 74, 91, 93].includes(e.data1))).toBe(false);
   });
 
   it('★ Band Selection 参与乐手 → 限制 lineup(选 键盘手+贝斯手+鼓手 → 仅这些职责出轨,无 GM 音色 override)', () => {
@@ -94,5 +97,15 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     const b = runPipeline({});
     expect(JSON.stringify(a.result.uiSnapshot)).toBe(JSON.stringify(b.result.uiSnapshot)); // 同输入确定
     expect(a.result.uiSnapshot.styleHint).toBe('jazz');
+  });
+
+  it('★ Q+H Jazz 走与其它风格相同的 facade；产品层不再注入专用拍号提示', () => {
+    MusicGenerationStyleStore.setStyle('JAZZ');
+    MusicGenerationSeedStore.setSuffix('42');
+
+    const result = runPipeline({}).result;
+    expect(result.status).toBe('ok');
+    expect(result.uiSnapshot.styleHint).toBe('jazz');
+    expect(result.ir!.tracks.length).toBeGreaterThan(0);
   });
 });

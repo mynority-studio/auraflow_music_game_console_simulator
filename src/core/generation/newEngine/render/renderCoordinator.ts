@@ -19,35 +19,52 @@ import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
 import { applyBassPatternSchedule } from './bassPatternSchedule';
 import { deriveMusicIntentPlan, summarizeMusicIntent } from '../arranger/deriveMusicIntentPlan';
+import {
+  activeAcgPianoSectionIds,
+  buildAcgPianoScorePlan,
+  type AcgPianoPedalHold,
+  type AcgPianoScorePlan,
+} from '../arranger/acgPianoScorePlan';
+import type { JazzFiveFourScorePlan } from '../arranger/jazzFiveFourScorePlan';
 import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
 import { buildTextureSchedule, deriveAcgBarFamilies } from './textureSchedule';
 import { auditHarmony, type AuditKeyContext } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
 import { applyMgLofiDenseMelodyComping, denseMelodySpanRanges } from './mgPostMixShaper';
-import { renderMgMelody } from './mgLeadRenderer';
-import { applyUserMotifBrickToLead, type UserMotifBrick } from './userMotifBrick';
+import { buildMgLeadRoadMap, renderMgMelody } from './mgLeadRenderer';
+import { planAcgLeadPresence } from './acgLeadPresencePlan';
+import {
+  assembleAuthoredUserMotifLead,
+  materializeAuthoredUserMotifBrick,
+  planAuthoredUserMotifBrick,
+  type AuthoredUserMotifBrickPlan,
+  type UserMotifBrick,
+} from './userMotifBrick';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
-import { renderDrums } from './drumRenderer';
+import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
+import { realizeDrumPerformanceTrack } from './drumPerformanceRealizer';
 import { renderPad } from './padRenderer';
 import { decidePadComp, type PadCompDecision } from './padCompPolicy';
-import { applySwing } from './swing';
+import { applySwingBySection } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
-import { applyGroovePocket, pocketedRoles } from './groovePocket';
+import { applyGroovePocketBySection, pocketedRolesForContracts } from './groovePocket';
 import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
-import { tuckAcgLead, resolveAcgTailExpectations, acgLeadContext, repairAcgLeadGaps } from './acgLeadShape';
-import { shapeAcgComp, spaceAcgBass } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 import { fitMidiToProgramRange } from '../knowledge/instruments';
 import { evaluateNoteInChordContext } from '../knowledge/melodyChordSemantics';
+import { MOTIF_POLICY_REPEAT_GROUP } from '../arranger/arrangementArchetypeContract';
+import { applyGrooveScoreProjection } from './grooveScoreProjection';
+import { assertJazzFiveFourProjectionIdentity, projectJazzFiveFourScoreTracks } from './jazzFiveFourScoreProjector';
+import { assertJazzFiveFourGrooveMatch } from './jazzFiveFourGrooveMatcher';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -69,11 +86,79 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
   return maxEnd;
 }
 
-// CC64 踏板由器配层 gestureExpressionByRole.comp.pedalPolicy 下发。
-//   ★ ACG 必须踩(P0,mg_bass_comp_lead 审计):MG ACG 每和弦踩踏板→钢琴"空旷/尾音托住和弦"的融合感。
-//   render 只按 plan 执行,不再自己用 style 猜哪些键盘要 pedal。
+/**
+ * The ACG phrase score owns its written rests.  Feed those exact beat ranges
+ * to the read-only continuity auditor so it diagnoses unplanned dropouts, not
+ * the arranger's intentional piano air.
+ */
+function scoreOwnedAcgCompSilenceRanges(
+  score: AcgPianoScorePlan | undefined,
+  plan: HarmonicPlan,
+  timebase: Timebase,
+): { lo: number; hi: number }[] {
+  if (!score) return [];
+  const spanById = new Map(plan.chordTimeline.map((span) => [span.id, span]));
+  return Object.entries(score.spanById).flatMap(([spanId, directive]) => {
+    const harmonic = spanById.get(spanId);
+    if (!harmonic) return [];
+    const spanStartBeat = harmonic.startBeat as number;
+    return directive.comp.silenceWindows.map((window) => ({
+      lo: timebase.beatToTick(beats(spanStartBeat + window.startBeat)) as number,
+      hi: timebase.beatToTick(beats(spanStartBeat + window.endBeat)) as number,
+    })).filter((range) => range.hi > range.lo);
+  });
+}
+
+// CC64 踏板由器配层的 pedalPlanByRole 下发。render 只把总谱拍位投影为
+// TrackIR tick，绝不根据 style、program 或音符密度重新猜一套踏板策略。
 // pad 铺法二选一:~40% 歌走 pedal anchor(整段长 pedal + 动声部),其余逐和弦选音。
 const PAD_PEDAL_ANCHOR_PROB = 0.4;
+
+export interface PedalBeatState {
+  atBeat: number;
+  down: boolean;
+}
+
+const SCORE_PEDAL_HOLD_EPSILON = 1e-4;
+
+/**
+ * ACG's phrase score can keep an already-authorized piano pedal through a
+ * written multi-span breath.  It never manufactures CC64: a hold is accepted
+ * only when the instrumental plan already contains its down/up endpoints.
+ * Keeping those endpoints preserves the normal off → on re-pedal at the next
+ * harmony after the breath; only internal boundary churn is removed.
+ */
+export function applyAcgScorePedalHolds(
+  baseEvents: readonly PedalBeatState[],
+  holds: readonly AcgPianoPedalHold[] | undefined,
+): PedalBeatState[] {
+  if (baseEvents.length === 0 || !holds?.length) return [...baseEvents];
+
+  const hasStateAt = (atBeat: number, down: boolean): boolean => baseEvents.some((event) =>
+    event.down === down && Math.abs(event.atBeat - atBeat) <= SCORE_PEDAL_HOLD_EPSILON,
+  );
+  const ordered = [...holds]
+    .filter((hold) => hold.endBeat > hold.startBeat + SCORE_PEDAL_HOLD_EPSILON)
+    .sort((left, right) => left.startBeat - right.startBeat || left.endBeat - right.endBeat);
+  const coalesced: AcgPianoPedalHold[] = [];
+  for (const hold of ordered) {
+    const previous = coalesced.at(-1);
+    if (previous && hold.startBeat <= previous.endBeat + SCORE_PEDAL_HOLD_EPSILON) {
+      previous.endBeat = Math.max(previous.endBeat, hold.endBeat);
+    } else {
+      coalesced.push({ ...hold });
+    }
+  }
+  const authorized = coalesced.filter((hold) =>
+    hasStateAt(hold.startBeat, true) && hasStateAt(hold.endBeat, false),
+  );
+  if (authorized.length === 0) return [...baseEvents];
+
+  return baseEvents.filter((event) => !authorized.some((hold) =>
+    event.atBeat > hold.startBeat + SCORE_PEDAL_HOLD_EPSILON
+      && event.atBeat < hold.endBeat - SCORE_PEDAL_HOLD_EPSILON,
+  ));
+}
 
 /** 伴奏 ducking:comp 撞旋律(lead)时 ×factor(让旋律清晰;旋律留白处 comp 不动=满响)。 */
 export function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
@@ -95,30 +180,12 @@ export function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
   });
 }
 
-/** CC64 踏板序列(忠实 MG generatePedalEvents):每和弦踩下、下一和弦前抬起(音尾 ring 但不糊下一和弦);
- *  ★ 末和弦踏板 hold 到曲末(MG:isLast → 不抬)。抬起提前量 = ACG 用 MG 30ms 换踏板;其它风格 0.06 beat。 */
-function buildCompPedal(plan: HarmonicPlan, timebase: Timebase, style: string, bpm: number): { atTick: Ticks; down: boolean }[] {
-  // ACG:30ms → beat(= 30 * bpm / 60000,忠实 MG RELEASE_LEAD);其它钢琴风格保留 0.06 beat。
-  const liftBeats = style.toLowerCase() === 'acg' ? (30 * bpm / 60000) : 0.06;
-  const lift = timebase.beatToTick(beats(liftBeats)) as number;
-  const out: { atTick: Ticks; down: boolean }[] = [];
-  const spans = plan.chordTimeline;
-  spans.forEach((span, i) => {
-    const startT = timebase.beatToTick(span.startBeat) as number;
-    const endT = startT + (timebase.beatToTick(span.durationBeats) as number);
-    out.push({ atTick: ticks(startT), down: true });
-    const off = i === spans.length - 1 ? endT : Math.max(startT + 1, endT - lift); // ★ 末和弦 hold 到曲末
-    out.push({ atTick: ticks(off), down: false });
-  });
-  return out;
-}
-
 export function leadAvoidExposureResolver(
   notes: TrackIR['notes'],
   plan: HarmonicPlan,
   timebase: Timebase,
   programForSection: (sectionId: string) => number | undefined,
-  compNotes: TrackIR['notes'] = [],
+  compNotes: readonly TrackIR['notes'][number][] = [],
   keyCtx?: AuditKeyContext,
 ): TrackIR['notes'] {
   const oneBeatTicks = timebase.beatToTick(beats(1)) as number;
@@ -180,8 +247,13 @@ export function leadAvoidExposureResolver(
     targetHintPcs?: readonly number[];
   }): number | null => {
     const hints = new Set((args.targetHintPcs ?? []).map((pc) => ((pc % 12) + 12) % 12));
-    const candidates = args.legalPcs
-      .map((targetPc) => nearestProgramPitch(targetPc, args.referencePitch, args.program))
+    const referencePitches = [
+      args.referencePitch,
+      ...(args.prevPitch === undefined ? [] : [args.prevPitch]),
+      ...(args.nextPitch === undefined ? [] : [args.nextPitch]),
+    ];
+    const candidates = [...new Set(args.legalPcs
+      .flatMap((targetPc) => referencePitches.map((reference) => nearestProgramPitch(targetPc, reference, args.program))))]
       .sort((a, b) => {
         const score = (candidate: number) => Math.abs(candidate - args.referencePitch) * 2
           + intervalPenalty(args.prevPitch, candidate)
@@ -190,6 +262,27 @@ export function leadAvoidExposureResolver(
         return score(a) - score(b) || Math.abs(a - args.referencePitch) - Math.abs(b - args.referencePitch);
       });
     return candidates.find((candidate) => !clashesComp(candidate, args.note)) ?? candidates[0] ?? null;
+  };
+  const foldUnexpectedOctaveLeaps = (input: TrackIR['notes']): TrackIR['notes'] => {
+    const ordered = [...input].sort((a, b) => (a.startTick as number) - (b.startTick as number));
+    let previousPitch: number | null = null;
+    return ordered.map((note) => {
+      const original = note.pitch as number;
+      let pitch = original;
+      if (previousPitch !== null && Math.abs(original - previousPitch) > 12) {
+        const sectionId = spanAt(note.startTick as number)?.span.sectionId;
+        const program = sectionId === undefined ? undefined : programForSection(sectionId);
+        const candidates = [-24, -12, 0, 12, 24]
+          .map((offset) => original + offset)
+          .filter((candidate) => candidate >= 0 && candidate <= 127)
+          .filter((candidate) => program === undefined || fitMidiToProgramRange(candidate, 'lead', program) === candidate)
+          .sort((a, b) => Math.abs(a - previousPitch!) - Math.abs(b - previousPitch!)
+            || Math.abs(a - original) - Math.abs(b - original));
+        if (candidates[0] !== undefined && Math.abs(candidates[0] - previousPitch) <= 12) pitch = candidates[0];
+      }
+      previousPitch = pitch;
+      return pitch === original ? note : { ...note, pitch: midi(pitch) };
+    });
   };
   let changed = false;
   const fixed = notes.map((note, noteIndex) => {
@@ -300,8 +393,8 @@ export function leadAvoidExposureResolver(
     }
     splitNotes.push({ ...note, pitch: midi(segmentPitch), startTick: ticks(segmentStart), durationTicks: ticks(originalEnd - segmentStart) });
   }
-  if (!splitChanged) return changed ? fixed : notes;
-  return splitNotes.sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
+  if (!splitChanged) return foldUnexpectedOctaveLeaps(changed ? fixed : notes);
+  return foldUnexpectedOctaveLeaps(splitNotes);
 }
 
 function fitLeadTrackToInstrumentSections(
@@ -336,6 +429,17 @@ function fitLeadTrackToInstrumentSections(
   return changed ? { ...track, notes } : track;
 }
 
+/** 按八度折入 Arranger/Instrumentation 明确写死的职责音区，尽量保持 pitch class。 */
+function fitMidiToStrictRegister(value: number, range: { lowMidi: number; highMidi: number }): number {
+  const lo = Math.max(0, Math.min(127, Math.round(range.lowMidi)));
+  const hi = Math.max(lo, Math.min(127, Math.round(range.highMidi)));
+  let fitted = Math.max(0, Math.min(127, Math.round(value)));
+  while (fitted > hi) fitted -= 12;
+  while (fitted < lo) fitted += 12;
+  if (fitted >= lo && fitted <= hi) return fitted;
+  return Math.abs(fitted - lo) <= Math.abs(fitted - hi) ? lo : hi;
+}
+
 /** ★ comp 去拖拍(2026-06-23,用户):把 comp 落在【拍内弱 16 分 .25/.75(拖在八分 groove 后)】的 onset 吸回
  *  【前一个八分】(去拖拍,锁鼓/bass);.0(beat)/.5(and)等有意切分位不动。同 onset 的和弦音一起移(保 voicing),
  *  时值补回 delta 保末点。只对 comp 调用;swung 风格不调(loose 是 feel)。 */
@@ -361,8 +465,18 @@ export interface DensityGateOptions {
   pickupWindows?: { lo: number; hi: number; roles: ReadonlySet<string> }[];
   rolePerformanceBySection?: ArrangementPlan['rolePerformanceBySection'];
   openingGesture?: ArrangementPlan['openingGesture'];
+  /** Roles whose first-section entry must start on bar 1 even when the generic opening gesture delays them. */
+  forceImmediateOpeningRoles?: ReadonlySet<TrackIR['role']>;
   /** User-authored override lead keeps its own timing, while still obeying presence/silence gates. */
   preserveLeadTiming?: boolean;
+  /**
+   * ACG's generated top line has already consumed its arrangement presence
+   * plan in the token scheduler. Do not re-decide its rests after NoteIR
+   * exists; this remains deliberately unavailable to override/user-motif lead.
+   */
+  preserveLeadPresence?: boolean;
+  /** Timed role cells own their section entrance; generic delayed entry cannot shift their phase. */
+  patternOwnedRoleSections?: ReadonlySet<string>;
 }
 
 /**
@@ -380,6 +494,8 @@ export function gateByDensity(
   const pickupWindows = options.pickupWindows ?? [];
   const rolePerformanceBySection = options.rolePerformanceBySection;
   const openingGesture = options.openingGesture;
+  const forceImmediateOpeningRoles = options.forceImmediateOpeningRoles ?? new Set<TrackIR['role']>();
+  const patternOwnedRoleSections = options.patternOwnedRoleSections ?? new Set<string>();
   const beatsPerBar = timebase.meter.numerator * (4 / timebase.meter.denominator);
   const barTicks = beatsPerBar * timebase.ppq;
   const byId = new Map<string, { start: number; end: number }>();
@@ -396,6 +512,10 @@ export function gateByDensity(
   const isPickup = (tick: number, role: string) => pickupWindows.some((w) => tick >= w.lo && tick < w.hi && w.roles.has(role));
 
   const entryThreshold = (section: { id: string; start: number }, role: TrackIR['role']): number => {
+    if (patternOwnedRoleSections.has(`${section.id}:${role}`)) return section.start;
+    // ACG PIANOSONG treats the low piano/root voice as the harmonic ground. It may be sparse,
+    // but it must not disappear merely because a generic opening gesture delays the bass.
+    if (section.id === firstSectionId && forceImmediateOpeningRoles.has(role)) return section.start;
     const performance = rolePerformanceBySection?.[role]?.[section.id];
     const hasOpeningDelay = section.id === firstSectionId
       && openingGesture?.sectionId === section.id
@@ -474,6 +594,10 @@ export function gateByDensity(
     const admitted: TrackIR['notes'] = [];
     for (const [tick, group] of onsetGroups) {
       if (isPickup(tick, t.role)) { admitted.push(...group); continue; }
+      if (t.role === 'lead' && options.preserveLeadPresence) {
+        admitted.push(...group);
+        continue;
+      }
       const section = sectionAt(tick);
       if (!section) { admitted.push(...group); continue; }
       if (!(activeRolesBySection[section.id] ?? []).includes(t.role)) continue;
@@ -542,8 +666,44 @@ export function renderSongFull(
   overrideLeadTrack?: TrackIR, // ★ 走 A:Q+R sandbox 权威 lead 注入 → 跳过 renderMgMelody(默认 undefined = 不变)
   intentPlan?: MusicIntentPlan, // ★ Phase 2:上游(controller)派生的 intent(bass enforce);缺省(测试)→ 内联纯派生(不抽 RNG)
   userMotifBrick?: UserMotifBrick, // ★ Q+R 收口:用户 motif 作为 Q+N lead 内的 brick quote,其余续写仍由 MG/Q+N 生成
+  /** Production supplies this immutable arranger score from SongBundle. Direct renderer tests may omit it. */
+  suppliedAcgPianoScorePlan?: AcgPianoScorePlan,
+  /** Explicit MIDI-reference quartet score; absent keeps every legacy path unchanged. */
+  suppliedJazzFiveFourScorePlan?: JazzFiveFourScorePlan,
 ): RenderResult {
   const isAcg = band.style.toLowerCase() === 'acg';
+  // ACG PIANOSONG is one scored piano trio.  Once its scheduler/score-plan
+  // has authored a note, late generic piano transforms must not reinterpret
+  // that note as an interchangeable comp or bass event.
+  const acgPianoRoles = new Set<TrackIR['role']>(['lead', 'comp', 'bass']);
+  const isAcgPianoRole = (role: TrackIR['role']): boolean => isAcg && acgPianoRoles.has(role);
+  // An injected lead is deliberately outside the generated PianoScorePlan.
+    // It must keep the legacy arrangement gate (and its own authored velocity),
+    // while the rendered piano hands remain protected from generic NoteIR
+    // rewrites. A planned motif no longer makes the generated ACG lead external:
+    // its owned span is reserved before realization and assembled only at the end.
+  const isScoreOwnedAcgPianoRole = (role: TrackIR['role']): boolean => {
+    if (!isAcgPianoRole(role)) return false;
+      return role !== 'lead' || !overrideLeadTrack;
+  };
+  const scoreOwnedAcgPianoRoles = new Set<TrackIR['role']>(
+    [...acgPianoRoles].filter((role) => isScoreOwnedAcgPianoRole(role)),
+  );
+  /**
+   * Score-owned ACG hands are arranger-authored, not generic tracks waiting
+   * for density or edge correction. Keep structural NoteIR transforms away
+   * from those hands only; explicit external lead overrides still use the
+   * ordinary arrangement contract.
+   */
+  const transformScoreUnownedTracks = (
+    source: TrackIR[],
+    transform: (tracks: TrackIR[]) => TrackIR[],
+  ): TrackIR[] => {
+    if (!isAcg) return transform(source);
+    return source.map((track) => isScoreOwnedAcgPianoRole(track.role)
+      ? track
+      : (transform([track])[0] ?? track));
+  };
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
   //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
   const voicingSaferSpans = overlay?.voicingSafer ? new Set(Object.keys(overlay.voicingSafer)) : undefined;
@@ -551,11 +711,44 @@ export function renderSongFull(
   // 让位上下文:active 织体段 + 主 hook 锚点拍(melody-aware accompaniment-first)
   // ★ comp 渲染段 = active 织体段 ∪【器配授权 comp 托底的 floating 段】(Loop D 已把 comp 写进 activeRolesBySection)。
   //   即:floating 段(pad/sustained-block)里若 comp active 且 pad 不在场 → comp 在此渲染和声(authority 来自器配,非 render 偷渲染)。
-  const activeSectionIds = new Set<string>();
-  for (const [sid, tex] of Object.entries(instrumentation.textureBySection)) {
-    const rolesHere = ((instrumentation.activeRolesBySection[sid] as readonly string[] | undefined) ?? []);
-    const compFallback = rolesHere.includes('comp') && !rolesHere.includes('pad'); // Loop D 授权的 floating 托底
-    if (instrumentation.textureYieldPolicy[tex] === 'active' || compFallback) activeSectionIds.add(sid);
+  const resolvedArchetype = arrangement.resolvedArchetype;
+  const hasResolvedRoleLayout = resolvedArchetype !== undefined;
+  const bassPatternIdBySection: Record<string, string> = Object.fromEntries(
+    Object.values(arrangement.grooveScorePlan?.bySection ?? {}).flatMap((sectionScore) =>
+      sectionScore.bassPatternId
+        ? [[sectionScore.sectionId, sectionScore.bassPatternId] as const]
+        : []),
+  );
+  const foundationRoleBySection = Object.fromEntries(
+    Object.entries(resolvedArchetype?.sectionPolicyById ?? {})
+      .map(([sectionId, policy]) => [sectionId, policy.foundationOwner]),
+  );
+  const activeSectionsForRole = (role: TrackIR['role']): Set<string> => new Set(
+    arrangement.sections
+      .filter((section) => (instrumentation.activeRolesBySection[section.id] ?? []).includes(role))
+      .map((section) => section.id),
+  );
+  const bassActiveSectionIds = activeSectionsForRole('bass');
+  const compActiveSectionIds = activeSectionsForRole('comp');
+  const padActiveSectionIds = activeSectionsForRole('pad');
+  const drumActiveSectionIds = activeSectionsForRole('drum');
+  const leadActiveSectionIds = activeSectionsForRole('lead');
+  const activeSectionIds = hasResolvedRoleLayout
+    ? compActiveSectionIds
+    : activeAcgPianoSectionIds(instrumentation);
+  const timedRoleSections = new Set<string>();
+  const timedRoleNames = new Set<string>();
+  let preserveArrangerLeadRests = false;
+  for (const sectionScore of Object.values(arrangement.grooveScorePlan.bySection)) {
+    for (const role of ['bass', 'comp'] as const) {
+      const pattern = sectionScore.roleRhythmByRole?.[role];
+      if (!pattern || pattern.realization !== 'timed-cells') continue;
+      timedRoleSections.add(`${sectionScore.sectionId}:${role}`);
+      timedRoleNames.add(role);
+    }
+    if (sectionScore.roleRhythmByRole?.lead?.preserveIntentionalRests) {
+      preserveArrangerLeadRests = true;
+    }
   }
   const anchorBeats = new Set<number>();
   for (const slot of instrumentation.melodyReservationPlan.hookAnchorSlots) {
@@ -591,13 +784,58 @@ export function renderSongFull(
   // ★ Phase 3A(intent enforce):ACG 逐-bar family intent(drive/sparse)在此派生(有 active sections),下发给 texture 选择消费。
   //   byte-identical:deriveAcgBarFamilies = 原 ACG 分支内联逻辑的抽取;texture 分支读它不再内联算。非 ACG=undefined(不影响)。
   const acgBarFamilyBySpan = band.style.toLowerCase() === 'acg' ? deriveAcgBarFamilies(plan, activeSectionIds, sectionRoleById) : undefined;
-  const textureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract, acgBarFamilyBySpan });
+  // ACG 先写内部 PianoScorePlan，再把它投影为共享 texture schedule。它只在系统内部
+  // 识别 arrangement subset；UI 仍只有 ACG PIANOSONG 一个风格入口。
+  const directAcgLeadPresencePlan = isAcg ? planAcgLeadPresence(arrangement, instrumentation) : undefined;
+  const acgPianoScorePlan = isAcg
+    ? suppliedAcgPianoScorePlan ?? buildAcgPianoScorePlan({
+      seed: rng.seed,
+      arrangement,
+      harmonic: plan,
+      activeSectionIds,
+      grooveContract: arrangement.songGrooveContract,
+      leadPresencePlan: directAcgLeadPresencePlan,
+      })
+    : undefined;
+  const totalBeatsForLead = arrangement.sections.reduce(
+    (total, section) => total + section.bars * beatsPerBarOf(arrangement.meter),
+    0,
+  );
+  const motifRoadMap = userMotifBrick && !overrideLeadTrack
+    ? buildMgLeadRoadMap(plan, band, timebase, acgPianoScorePlan)
+    : undefined;
+  const authoredUserMotifPlan: AuthoredUserMotifBrickPlan | undefined = userMotifBrick && motifRoadMap
+    ? planAuthoredUserMotifBrick({
+      brick: userMotifBrick,
+      roadMap: motifRoadMap,
+      harmonicPlan: plan,
+      totalBeats: totalBeatsForLead,
+    })
+    : undefined;
+  const authoredUserMotifNotes = materializeAuthoredUserMotifBrick(authoredUserMotifPlan, timebase, {
+    swingRatio: arrangement.songGrooveContract.melodySwingRatio,
+    beatsPerBar: beatsPerBarOf(arrangement.meter),
+    grooveContract: arrangement.songGrooveContract,
+    tempoBpm: arrangement.tempoBpm,
+  });
+  const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
+    track.role === 'lead'
+      ? assembleAuthoredUserMotifLead(track, authoredUserMotifPlan, authoredUserMotifNotes, timebase)
+      : track);
+  const restoreGeneratedLead = (context: TrackIR[], generated: TrackIR[]): TrackIR[] => {
+    const generatedLead = generated.find((track) => track.role === 'lead');
+    return context.map((track) => track.role === 'lead' && generatedLead ? generatedLead : track);
+  };
+  const baseTextureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract, grooveContractBySection: arrangement.grooveContractBySection, acgBarFamilyBySpan });
+  const textureSchedule = acgPianoScorePlan
+    ? { ...baseTextureSchedule, ...acgPianoScorePlan.textureBySpan }
+    : baseTextureSchedule;
 
   // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
 
   // ★ pad-comp 分工(docs/pad_comp_interaction_directive.md):每段算 PadCompDecision。
-  //   pad 不再复制完整和弦 → comp active 段退成 guide-tone/drone(thin),pad-only 段才 full-support。
+  //   默认 Pad 写当前和弦并做平滑声部连接；comp active 段用薄 chord-bed，pad-only 才 full-support。
   //   render 顺序:bass → pad → comp(comp 拿 pad 占用音高避同绝对音)→ drum → lead。lead > bass > comp > pad。
   const reservedReg = instrumentation.melodyReservationPlan.reservedRegister;
   const baseCompCeilingMidi = instrumentation.registerByRole.comp
@@ -619,7 +857,7 @@ export function renderSongFull(
       padActive: inLineup('pad') && roleInArr(s.id, 'pad'),
       compActive: inLineup('comp') && activeSectionIds.has(s.id) && roleInArr(s.id, 'comp'),
       bassActive: inLineup('bass') && roleInArr(s.id, 'bass'),
-      leadReservedLow: compCeilingMidi,
+      leadReservedLow: reservedReg.lowMidi as number,
       leadReservedHigh: reservedReg.highMidi,
     });
   }
@@ -628,11 +866,21 @@ export function renderSongFull(
   //   但【输出轨序】仍为 bass/comp/pad/drum/lead(顺序仅装饰,通道按 role 分配)。
   const padOccupiedPitchesBySpan: Record<string, number[]> = {};
   let padTrack: TrackIR | undefined;
-  if (inLineup('pad')) {
+  if (inLineup('pad') && (!hasResolvedRoleLayout || padActiveSectionIds.size > 0)) {
     // ★ pad 铺法二选一(一首一掷,确定性):~40% 走 pedal anchor(整段共同音/主音长 pedal + 动声部),
     //   ~60% 现有逐和弦选音。padStyle 子流独立 → 不扰其它决策。
     const pedalAnchor = rng.substream('padStyle').next() < PAD_PEDAL_ANCHOR_PROB;
-    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: compCeilingMidi, pedalAnchor, tonicPc: band.key as number });
+    padTrack = renderPad(plan, timebase, {
+      padDensity: band.styleProfile.padDensity,
+      decisionBySection: padDecisionBySection,
+      leadReservedLow: reservedReg.lowMidi as number,
+      padRegister: {
+        lowMidi: instrumentation.registerByRole.pad.lowMidi as number,
+        highMidi: instrumentation.registerByRole.pad.highMidi as number,
+      },
+      pedalAnchor,
+      tonicPc: band.key as number,
+    });
     // ★ comp 避同绝对音高:只针对 pad 的【逐和弦音】(覆盖正好 1 span,会随和弦重新起音 → 可能与 comp hit 撞 unison)。
     //   一切【持续音】(tie 共同音 / pedal anchor,覆盖 ≥2 span)不让 comp 避——软持续 pad 上叠 comp 是加厚不是
     //   mud,且强行避会让 comp 整段/稀疏段丢掉该音高 = 过稀(实测 intro pedal 掏空 comp)。
@@ -653,40 +901,79 @@ export function renderSongFull(
   //   applyBassPatternSchedule 与旧 enforceBassDensityFloor 逐字节等价(bassPatternScheduleEquivalence.test 锁)→ 输出不变。
   const intent = { ...(intentPlan ?? deriveMusicIntentPlan(band.style, arrangement)), ...(acgBarFamilyBySpan ? { acgBarFamilyBySpan } : {}) };
   const tracks: TrackIR[] = [];
-  if (inLineup('bass')) {
-    // 非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor(intent BassPatternSchedule 驱动;ACG=minimal,不补,有 spaceAcgBass)。
-    const rawBass = renderBass(plan, timebase, band.style, textureSchedule);
-    tracks.push(applyBassPatternSchedule(rawBass, plan, arrangement.sections, intent, beatsPerBarOf(arrangement.meter), timebase.ppq));
+  if (inLineup('bass') && (!hasResolvedRoleLayout || bassActiveSectionIds.size > 0)) {
+    // 非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor(intent BassPatternSchedule 驱动);
+    // ACG 的根音/支撑预算已由 PianoScorePlan 在 renderBass 内直接实化。通用
+    // intent floor 若在此再加 NoteIR，会突破 score 的 maxNotesPerSpan / 留白合同。
+    const rawBass = renderBass(
+      plan,
+      timebase,
+      band.style,
+      textureSchedule,
+      acgPianoScorePlan,
+      bassPatternIdBySection,
+      instrumentation.strictRegisterByRole?.bass,
+    );
+    const patternOwnedSectionIndexes = new Set(arrangement.sections
+      .map((section, index) => bassPatternIdBySection[section.id] ? index : -1)
+      .filter((index) => index >= 0));
+    tracks.push(acgPianoScorePlan
+      ? rawBass
+      : applyBassPatternSchedule(rawBass, plan, arrangement.sections, intent, beatsPerBarOf(arrangement.meter), timebase.ppq, patternOwnedSectionIndexes));
   }
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
+  if (inLineup('comp') && (!hasResolvedRoleLayout || compActiveSectionIds.size > 0)) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, foundationRoleBySection, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, compRegister: instrumentation.strictRegisterByRole?.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection, pianoScorePlan: acgPianoScorePlan, grooveScorePlan: arrangement.grooveScorePlan }));
   if (padTrack) tracks.push(padTrack);
-  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), {
-    style: band.style,
-    tempoBpm: arrangement.tempoBpm,
-    fillBars: drumFillBars,
-    bigFillBars: drumBigFillBars,
-    textureSchedule,
-    patternBySection: instrumentation.drumPatternBySection,
-    performanceBySection: arrangement.drumPerformanceBySection,
-  }));
+  // Drum realization waits until the lead exists so every declared follow
+  // source can be consumed. It is inserted at this index to preserve the
+  // canonical bass/comp/pad/drum/lead track order.
+  const drumTrackInsertIndex = tracks.length;
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
-  // lead 必有:默认走 MG 链;legacy lead override 才跳过 MG。userMotifBrick 不跳过 MG,而是在 MG lead 上
-  //   注入用户 motif quote,其余旋律继续由 Q+N/MG 生成(program 仍取器配生效值,保混音一致)。
-  //   ★ ACG lead 落点塑形(tuckAcgLead)在 late 阶段做(需 comp apex),不在此处。
+  // lead 必有:默认走 MG 链;legacy lead override 才跳过 MG。用户 motif 已在生产 RoadMap
+  //   声明 authored ownership，scheduler 不会在其区间生成另一条 lead。
+  //   ★ ACG 的落点/趋近/呼吸已由 RoadMap → scheduler → realizer 一次生成；这里不再
+  //   对成品 lead 做 tuck 或补音，避免跨和弦后的末端改写。
+  // ACG owns lead presence at the score/token level. The same arrangement
+  // information that formerly drove the final density gate is translated
+  // before melody realization, so a breathing window is a real R token rather
+  // than a deleted NoteIR event. A user motif only reserves one authored span;
+  // the remaining ACG lead stays score-owned and consumes the same presence plan.
+  const acgLeadPresencePlan = isAcg && !overrideLeadTrack
+    ? acgPianoScorePlan?.leadPresencePlan ?? directAcgLeadPresencePlan
+    : undefined;
   const generatedLeadTrack = overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
-  const totalBeatsForLead = arrangement.sections.reduce((n, s) => n + s.bars * beatsPerBarOf(arrangement.meter), 0);
-  const leadTrack = !overrideLeadTrack && userMotifBrick
-    ? applyUserMotifBrickToLead(generatedLeadTrack, userMotifBrick, timebase, totalBeatsForLead, {
-      leadProgram: instrumentation.roleProgram.lead,
-      // 用户 quote 的结构重音/长音要进入本歌 melody grid;ms pocket 在后面的全局 GroovePocket 统一落地。
-      swingRatio: arrangement.songGrooveContract.melodySwingRatio,
-      beatsPerBar: beatsPerBarOf(arrangement.meter),
-    })
-    : generatedLeadTrack;
-  tracks.push(fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase));
+    : renderMgMelody(
+      plan,
+      band,
+      timebase,
+      rng.seed,
+      instrumentation.roleProgram.lead,
+      arrangement.songGrooveContract,
+      acgLeadPresencePlan,
+        acgPianoScorePlan,
+        arrangement.grooveContractBySection,
+        instrumentation.strictRegisterByRole?.lead,
+        motifRoadMap,
+        authoredUserMotifPlan,
+      ); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+  const leadTrack = generatedLeadTrack;
+  const fittedLeadTrack = fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase);
+  tracks.push(fittedLeadTrack);
+  if (inLineup('drum') && (!hasResolvedRoleLayout || drumActiveSectionIds.size > 0)) {
+    tracks.splice(drumTrackInsertIndex, 0, renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), {
+      style: band.style,
+      tempoBpm: arrangement.tempoBpm,
+      fillBars: drumFillBars,
+      bigFillBars: drumBigFillBars,
+      textureSchedule,
+      patternBySection: instrumentation.drumPatternBySection,
+      patternBySectionBar: instrumentation.drumPatternBySectionBar,
+      performanceBySection: arrangement.drumPerformanceBySection,
+      grooveScorePlan: arrangement.grooveScorePlan,
+      deferPerformanceRealization: true,
+    }));
+  }
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
@@ -694,12 +981,19 @@ export function renderSongFull(
 
   // 先修复源段 lead 空拍、再复用 repeat body；此时尚未施加首段 opening gate，避免
   // “开场延迟/缺席”被当作 motif body 复制到后续 verse/chorus。replay 仍在 dynamics 之前。
-  const gapFilledTracks = isAcg
+  const gapFilledTracks = isAcg || preserveArrangerLeadRests
     ? postMixTracks
     : fillLeadBarGaps(postMixTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
-  const replayedTracks = isAcg
+  const motifReplayedTracks = resolvedArchetype?.motifPolicyId === MOTIF_POLICY_REPEAT_GROUP
     ? applyMotifBindingReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase)
-    : applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
+    : gapFilledTracks;
+  // ACG 的主旋律已按整曲 RoadMap + 当下和声一次实化；把旧 phrase NoteIR 复制到
+  // 新和弦上会绕过 stable/scale contract，随后只能依赖末端修音。ACG 因此不再 replay
+  // 成品 lead，重复感由上游 RoadMap / grammar 的同一结构而非 NoteIR 后拷贝承担。
+  const replayedBaseTracks = isAcg
+    ? motifReplayedTracks
+    : applyRepeatGroupReplay(motifReplayedTracks, arrangement, plan.chordTimeline, timebase);
+  const replayedTracks = replayedBaseTracks;
 
   // ★ A2 编曲密度弧:activeRolesBySection 是所有角色(含 lead)的真实在场真源，
   //   replay 后只 gate 一次，让每个目标段按自己的 active/opening/performance 合同重投影。
@@ -708,25 +1002,76 @@ export function renderSongFull(
   const pickupWindows = instrumentation.transitionPlan.boundaries
     .filter((b) => b.protectPickupFromGate && b.pickupRoles.length > 0)
     .map((b) => ({ lo: b.prepBar * barTicksGate, hi: (b.prepBar + 1) * barTicksGate, roles: new Set<string>(b.pickupRoles as readonly string[]) }));
-  const gatedTracks = gateByDensity(replayedTracks, plan, timebase, instrumentation.activeRolesBySection, {
+  const gatedTracks = transformScoreUnownedTracks(replayedTracks, (tracks) => gateByDensity(tracks, plan, timebase, instrumentation.activeRolesBySection, {
     pickupWindows,
     rolePerformanceBySection: arrangement.rolePerformanceBySection,
     openingGesture: arrangement.openingGesture,
+    forceImmediateOpeningRoles: isAcg ? new Set<TrackIR['role']>(['bass']) : undefined,
     preserveLeadTiming: !!overrideLeadTrack,
-  });
+    preserveLeadPresence: !!acgLeadPresencePlan,
+    patternOwnedRoleSections: timedRoleSections,
+  }));
+  const grooveProjectedTracks = transformScoreUnownedTracks(
+    gatedTracks,
+    (tracks) => applyGrooveScoreProjection(
+      tracks,
+      arrangement.grooveScorePlan,
+      timebase.ppq,
+      beatsPerBarOf(arrangement.meter),
+      // MG owns final lead touch. Its section GrooveContract is consumed while
+      // melody events still exist; a second NoteIR velocity pass breaks replay parity.
+      // Timed role cells already carry their source accent hierarchy. The bar
+      // score still owns their placement, but must not reinterpret those
+      // authored velocities through a second generic metric curve.
+      new Set(['lead', ...timedRoleNames]),
+    ),
+  );
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
     lowMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi,
     highMidi: instrumentation.melodyReservationPlan.reservedRegister.highMidi,
   };
-  const occupation = buildOccupationMap(gatedTracks, reserved);
+  // Accompaniment collision/ducking sees the authored motif as occupancy, but
+  // the user notes themselves stay outside every generic lead transform.
+  const interactionContextTracks = authoredUserMotifPlan
+    ? withAuthoredLeadContext(grooveProjectedTracks)
+    : grooveProjectedTracks;
+  const occupation = buildOccupationMap(interactionContextTracks, reserved);
   const draft: MusicalIRData = {
-    tracks: gatedTracks,
+    tracks: interactionContextTracks,
     timebase,
     durationTicks: ticks(totalDurationTicks(plan, timebase)),
   };
-  const resolved = resolveInteractions(draft, occupation);
+  const protectedCompFoundationKeys = new Set(plan.chordTimeline
+    .filter((span) => foundationRoleBySection[span.sectionId] === 'comp')
+    .map((span) => {
+      const startTick = timebase.beatToTick(span.startBeat) as number;
+      const foundationPc = ((span.bassPc ?? span.rootPc) as number) % 12;
+      return `${startTick}:${(foundationPc + 12) % 12}`;
+    }));
+  const leadCompSameProgram = instrumentation.roleProgram.lead === instrumentation.roleProgram.comp
+    || !!instrumentation.sameInstrumentPairs?.some((pair) =>
+      ((pair.a === 'lead' && pair.b === 'comp') || (pair.a === 'comp' && pair.b === 'lead')));
+  const forbidLeadCompUnison = arrangement.leadCompCollisionPolicy === 'no-unison-when-same-program'
+    && leadCompSameProgram;
+  // ACG has already placed the lead above a pre-voiced middle register in
+  // PianoScorePlan, so it must not run generic m2/m9 comp thinning. Exact
+  // same-program unison is still a role-collision contract and remains active.
+  const contextResolved = resolveInteractions(draft, occupation, {
+    protectedCompFoundationKeys,
+    forbidLeadCompUnison,
+    thinCompMelodyClashes: !isAcg,
+  });
+  const resolved = authoredUserMotifPlan
+    ? {
+      ...contextResolved,
+      data: {
+        ...contextResolved.data,
+        tracks: restoreGeneratedLead(contextResolved.data.tracks, grooveProjectedTracks),
+      },
+    }
+    : contextResolved;
 
   // dynamics:力度随段落能量(chorus 强 / intro 弱 / 高潮峰)
   const energyRanges: EnergyRange[] = [];
@@ -746,28 +1091,93 @@ export function renderSongFull(
   }
   // ★ 伴奏 ducking:comp 撞旋律时【极轻压 ×0.9】(只给旋律一点空间,不把 comp 压下去)。
   //   用户要 lead/伴奏均衡 → ducking 放轻(重压会和'均衡'相反);均衡主要靠 CC7 推子压平。
-  const duckedTracks = duckUnderLead(resolved.data.tracks, 0.9);
-  const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
+  // ACG comp dynamics are authored at score time and normalized by the
+  // dedicated ACG dynamics pass below.  Do not add a second, lead-dependent
+  // velocity carve after the piano score has been written.
+  const duckingContextTracks = authoredUserMotifPlan
+    ? withAuthoredLeadContext(resolved.data.tracks)
+    : resolved.data.tracks;
+  const duckedContextTracks = isAcg
+    ? duckingContextTracks
+    : duckUnderLead(duckingContextTracks, 0.9);
+  const duckedTracks = authoredUserMotifPlan
+    ? restoreGeneratedLead(duckedContextTracks, resolved.data.tracks)
+    : duckedContextTracks;
+  // ACG phrase energy is an output-touch concern owned by its dedicated piano
+  // normalizer below.  Do not first apply the generic section-energy rewrite
+  // to its scored hands and then attempt to compensate afterwards.
+  const dynamicTracks = transformScoreUnownedTracks(
+    duckedTracks,
+    (tracks) => applyDynamics(tracks, energyRanges, timebase.ppq),
+  );
 
   // ★ 段落边界手势(Arranger 下发 → 器配 endingPlan / entryBySection 投影):
   //   收尾 cold button / fade 渐弱+错退 / tag 末和弦延留;lead-in 跃升段前末小节 crescendo 推进下拍。
   const bpbEdge = beatsPerBarOf(arrangement.meter);
-  const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
-  const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
+  const endedTracks = transformScoreUnownedTracks(
+    dynamicTracks,
+    (tracks) => applyEnding(tracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge),
+  );
+  const ledTracks = transformScoreUnownedTracks(
+    endedTracks,
+    (tracks) => applyLeadIns(tracks, leadInBars, timebase.ppq, bpbEdge),
+  );
 
   // ★ comp 去拖拍(2026-06-23,用户:632219 verse comp 比 bass/drum 八分 groove 滞后):直拍风格下,把 comp 落在
   //   【拍内弱 16 分 .25/.75(拖在八分后)】的 onset 吸回前一个八分(去拖拍,锁鼓/bass 强弱);.0(beat)/.5(and)
   //   等【有意切分】不动。只 comp;swung 风格(jazz/blues)整轨跳过(loose 是 feel)。
   const straightFeel = arrangement.feel.swingRatio <= 0.5 + 1e-6;
-  const grooveTracks = straightFeel ? ledTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t)) : ledTracks;
+  // ACG comp timing is already authored by PianoScorePlan → texture renderer
+  // (including rolls, answers and suspended arrivals).  The generic straight
+  // feel snap is a legacy correction for non-ACG laid-back comping; applying
+  // it here would rewrite those planned piano gestures after NoteIR exists.
+  const grooveTracks = straightFeel && !isAcg
+    ? ledTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t))
+    : ledTracks;
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
-  const accentedTracks = humanizeVelocity(grooveTracks, timebase.ppq, bpbHuman, humanRng);
+  const velocityHumanizeByBar = new Map<number, number>();
+  for (const sectionScore of Object.values(arrangement.grooveScorePlan.bySection)) {
+    const amount = arrangement.grooveContractBySection[sectionScore.sectionId]?.velocityHumanize
+      ?? arrangement.songGrooveContract.velocityHumanize;
+    for (const bar of sectionScore.bars) velocityHumanizeByBar.set(bar.absoluteBar, amount);
+  }
+  const velocityHumanizeForTick = (tick: number): number =>
+    velocityHumanizeByBar.get(Math.max(0, Math.floor(tick / (timebase.ppq * bpbHuman))))
+    ?? arrangement.songGrooveContract.velocityHumanize;
+  // ACG's three piano hands share score-authored touch.  Its dedicated
+  // normalizer below is the only allowed post-score velocity pass; generic
+  // humanize would otherwise perturb a planned dyad/roll independently.
+  const accentedTracks = isAcg
+    ? grooveTracks.map((track) => {
+      if (isScoreOwnedAcgPianoRole(track.role)) return track;
+      return humanizeVelocity([track], timebase.ppq, bpbHuman, humanRng, arrangement.songGrooveContract.beatGrouping, velocityHumanizeForTick)[0]!;
+    })
+    : timedRoleNames.size === 0
+      ? humanizeVelocity(grooveTracks, timebase.ppq, bpbHuman, humanRng, arrangement.songGrooveContract.beatGrouping, velocityHumanizeForTick)
+      : grooveTracks.map((track) => timedRoleNames.has(track.role)
+        ? track
+        : humanizeVelocity([track], timebase.ppq, bpbHuman, humanRng, arrangement.songGrooveContract.beatGrouping, velocityHumanizeForTick)[0]!);
 
-  // feel:swing 落地(全轨统一 onset warp;直则原样)
-  const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
+  // feel:swing 落地。GrooveContract 同时声明 rhythm source grid：
+  // straight-eighths / straight-sixteenths 才 warp；authored triplet 不二次摆动。
+  // ACG score onsets (including off-grid dyad replies and arpeggio steps) are
+  // absolute score positions.  Its scheduler/score owns any feel choice;
+  // never apply a second whole-track swing warp after realization.
+  const swungTracks = transformScoreUnownedTracks(
+    accentedTracks,
+    (tracks) => applySwingBySection(
+      tracks,
+      timebase.ppq,
+      bpbHuman,
+      arrangement.songGrooveContract,
+      arrangement.grooveContractBySection,
+      arrangement.grooveScorePlan,
+      arrangement.tempoBpm,
+    ),
+  );
   const auditKeyCtx: AuditKeyContext = {
     keyRootPc: band.key,
     globalMode: band.mode,
@@ -792,12 +1202,33 @@ export function renderSongFull(
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
   // ★ §7.4:GrooveContract 有 ms pocket → pocket-handled 角色(bass;lead 本就跳 humanizeTiming)改由
   //   applyGroovePocket 拥有时序(不双重)。Phase D 起全 MG-backed 风格 contract 有真 pocket;legacy(BLUES/无 rng)pocket=0 → pocketSkip 空 → 不变。
-  const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
-  const humanizedRaw = humanizeTiming(harmonySafeTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
+  const pocketContracts = [arrangement.songGrooveContract, ...Object.values(arrangement.grooveContractBySection)];
+  const pocketSkip = pocketedRolesForContracts(pocketContracts);
+  // PianoScorePlan owns all ACG comp/bass onset placement (including roll
+  // offsets and root anchors); lead timing is owned by the token scheduler.
+  // Skip the trio as a unit rather than letting generic micro-jitter move two
+  // hands after the score has already coordinated them.
+  const timingSkip = isAcg
+    ? new Set<string>([...pocketSkip, ...scoreOwnedAcgPianoRoles, ...timedRoleNames, 'drum'])
+    : new Set<string>([...pocketSkip, ...timedRoleNames, 'drum']);
+  const humanizedRaw = humanizeTiming(harmonySafeTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, timingSkip, arrangement.songGrooveContract.beatGrouping);
   // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带
   //   权威 hand-played timing(directive §2.1:无 micro-IOI),不被 band groove pocket 覆盖 → excludeRoles 含 'lead'。
-  const pocketExclude = overrideLeadTrack ? new Set(['lead']) : undefined;
-  const humanizedTracks = applyGroovePocket(humanizedRaw, arrangement.songGrooveContract, arrangement.tempoBpm, timebase.ppq, bpbHuman, pocketExclude);
+  // ACG 已在 scheduler 固定“休止结束 / arrival”的绝对拍位；不再把整条 lead
+  // 交给末端 pocket 平移，避免跨进相邻和弦后再靠 resolver 修音。
+  const pocketExclude = isAcg
+    ? new Set<string>(acgPianoRoles)
+    : overrideLeadTrack ? new Set(['lead']) : undefined;
+  const humanizedTracks = applyGroovePocketBySection(
+    humanizedRaw,
+    arrangement.songGrooveContract,
+    arrangement.grooveContractBySection,
+    arrangement.grooveScorePlan,
+    arrangement.tempoBpm,
+    timebase.ppq,
+    bpbHuman,
+    pocketExclude,
+  );
   // ★ Lead 最终安全闸(CODEX directive q_n_final_lead_sanitizer 2026-06-23):humanizeTiming/fillLeadBarGaps/swing/
   //   repeatReplay 这些末端变换会把上游已清洗的 lead 重新撞出【同 pitch overlap / 同 tick 重触发】→ 导出 MIDI 时
   //   旧 noteOff 提前关掉后一个同 pitch note(听感=motif/旋律突然断音或消失)。此前只有 jazz/blues 的 legato 分支顺带
@@ -808,45 +1239,45 @@ export function renderSongFull(
   const SANITIZE_OPTS = { gapTicks: 1, minDurTicks: 1 };
   const sanitizeLead = (tracks: TrackIR[]): TrackIR[] => tracks.map((t) => (t.role === 'lead' ? { ...t, notes: sanitizeLeadNoteIR(t.notes, SANITIZE_OPTS) } : t));
   const preSanitized = sanitizeLead(humanizedTracks);
-  const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
+  const legatoOpts = isAcg
+    ? { ...fastLeadLegatoOptionsForStyle(band.style, timebase.ppq), enabled: false }
+    : fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
   const legatoTracks = legatoOpts.enabled
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
-  // ★ ACG piano touch(late,忠实 MG shapeTopVoicePianoTouch 顺序:tuck → tailResolve → spaceBass → shape comp → normalize)。
-  //   ① tuckAcgLead:旋律落点重定位到 comp 琶音 apex 之后 + 音域上浮 + 瘦身。
-  //   ② resolveAcgTailExpectations:旋律尾音撞下一和弦 → 移除/把下个落点 snap 到解决音。
-  //   ③ spaceAcgBass:bass 瘦身到 anchor + 1-2 支撑(对齐旋律落点)→ 干净稀疏低音。
-  //   ④ shapeAcgComp:inner voice → carve → floor。⑤ normalizeAcgDynamics:三轨力度归一。
+  // ★ ACG PIANOSONG：lead 的“呼吸→回归”已在 RoadMap → scheduler → realizer 一次生成。
+  // comp/bass 的中部手区、roll、根音与支撑预算也已经由 PianoScorePlan 在 NoteIR
+  // 生成前下发；此处不再读取成品 lead 后 carve/删音/挪时值，避免形成第二条后处理链。
   const acgBarTicks = beatsPerBarOf(arrangement.meter) * timebase.ppq;
-  const acgLead0 = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
-  const acgComp0 = isAcg ? articulatedTracks.find((t) => t.role === 'comp') : undefined;
-  const acgBass0 = isAcg ? articulatedTracks.find((t) => t.role === 'bass') : undefined;
-  //   走 A override lead 自带权威 hand-played timing → 不 tuck / 不 tailResolve。
-  const acgLeadTucked = acgLead0 && acgComp0 && !overrideLeadTrack
-    ? tuckAcgLead(acgLead0, acgComp0, acgBarTicks, timebase.ppq, arrangement.tempoBpm)
-    : acgLead0;
-  const acgLeadTailed = acgLeadTucked && !overrideLeadTrack
-    ? resolveAcgTailExpectations(acgLeadTucked, plan.chordTimeline, plan.chordFunctionTimeline, acgBarTicks, timebase.ppq, acgLeadContext(band))
-    : acgLeadTucked;
-  // ★ P1(CODEX audit §P1):段内 lead 空太久(seed99 chorus gap13)→ 填 soprano 和弦音(保 MG 呼吸,只修远超阈值的空床)。
-  const acgLead = acgLeadTailed && !overrideLeadTrack
-    ? repairAcgLeadGaps(acgLeadTailed, plan.chordTimeline, timebase.ppq)
-    : acgLeadTailed;
-  const carvedTracks = isAcg && acgLead && acgComp0
-    ? articulatedTracks.map((t) => (
-        t.role === 'lead' ? acgLead
-        : t.role === 'comp' ? shapeAcgComp(acgComp0, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed)
-        : t.role === 'bass' && acgBass0 ? spaceAcgBass(acgBass0, acgLead, acgBarTicks, timebase.ppq, rng.seed)
-        : t))
-    : articulatedTracks;
+  // A user-supplied lead remains subject to the ordinary presence gate, but
+  // that late gate must not feed back into the score-owned comp's touch curve.
+  // Capture its original bar presence before gating; generated ACG lead keeps
+  // the normal score-owned NoteIR-derived path below.
+  const externalLeadPresenceBars = isAcg && !isScoreOwnedAcgPianoRole('lead')
+    ? new Set((replayedTracks.find((track) => track.role === 'lead')?.notes ?? [])
+      .map((note) => Math.floor((note.startTick as number) / acgBarTicks)))
+    : undefined;
+  const plannedTracks = articulatedTracks;
   const balancedTracksPreSanitize = isAcg
-    ? normalizeAcgDynamics(carvedTracks, acgBarTicks, arrangement.phraseBreathing.phraseBars)
-    : carvedTracks;
-  const balancedTracksLegato = balancedTracksPreSanitize.map((t) => (
-    t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
-  ));
-  const balancedTracks = sanitizeLead(balancedTracksLegato); // ACG tuck/shape 之后再补连音 + 同音安全闸
+    ? (() => {
+      const normalized = normalizeAcgDynamics(
+        plannedTracks,
+        acgBarTicks,
+        arrangement.phraseBreathing.phraseBars,
+        externalLeadPresenceBars,
+      );
+      return normalized.map((track, index) => isScoreOwnedAcgPianoRole(track.role) ? track : plannedTracks[index]!);
+    })()
+    : plannedTracks;
+  // ACG lead 的时值和起音由 RoadMap → scheduler → realizer 独占。即使未来 legato
+  // 配置被调整，也不能在这里把短趋近/稳定到达拖进下一和弦；只保留无创的同音碰撞安全闸。
+  const balancedTracksLegato = isAcg
+    ? balancedTracksPreSanitize
+    : balancedTracksPreSanitize.map((t) => (
+        t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
+      ));
+  const balancedTracks = sanitizeLead(balancedTracksLegato);
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
@@ -856,16 +1287,38 @@ export function renderSongFull(
     sectionTicks.push({ id: s.id, tick: timebase.beatToTick(beats(secBeatCursor)) as number });
     secBeatCursor += s.bars * bpbProg;
   }
-  // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
-  const compPedalPolicy = instrumentation.gestureExpressionByRole?.comp?.pedalPolicy ?? 'none';
-  const compPedal = compPedalPolicy !== 'none' ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
+  const pedalEventsForRole = (role: TrackIR['role']): { atTick: Ticks; down: boolean }[] | undefined => {
+    const plannedEvents = instrumentation.pedalPlanByRole?.[role]?.events ?? [];
+    if (plannedEvents.length === 0) return undefined;
+    // The ACG arranger may extend a written air sentence over several harmony
+    // spans.  This is still only a projection of the score: `plannedEvents`
+    // remains the pedal-capability contract, so unsupported/fast/inactive
+    // voices cannot receive a newly invented CC64 lane.
+    const scoreProjectedEvents = isAcgPianoRole(role)
+      ? applyAcgScorePedalHolds(plannedEvents, acgPianoScorePlan?.sharedPedalHolds)
+      : plannedEvents;
+    return scoreProjectedEvents.map((event) => ({
+      atTick: ticks(timebase.beatToTick(beats(event.atBeat)) as number),
+      down: event.down,
+    }));
+  };
+  const controllerEventsForRole = (role: TrackIR['role']): { atTick: Ticks; controller: number; value: number }[] | undefined => {
+    const plannedEvents = instrumentation.controllerPlanByRole?.[role]?.events ?? [];
+    if (plannedEvents.length === 0) return undefined;
+    return plannedEvents.map((event) => ({
+      atTick: ticks(timebase.beatToTick(beats(event.atBeat)) as number),
+      controller: event.controller,
+      value: event.value,
+    }));
+  };
   const mixAttachedTracks = balancedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const bankBySection = instrumentation.bankByRoleSection?.[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program
     const fallbackBank = instrumentation.roleBank?.[t.role];
-    const pedalEvents = t.role === 'comp' ? compPedal : undefined;
+    const pedalEvents = pedalEventsForRole(t.role);
+    const plannedControllerEvents = controllerEventsForRole(t.role);
     // ★ program + 混音【单遍】投影(段边界):程序变 → 必带 CC 刷新(directive:每个 programChange 边界发匹配 CC);
     //   或混音本身变(关系型护栏 per-section 差异)→ 也刷新。二者同 tick 耦合 → irToMidi 只读 IR。
     let initialProgram = fallback;
@@ -909,41 +1362,52 @@ export function renderSongFull(
       ? t.notes
       : t.notes.map((note) => {
           const program = programForSection(sectionIdForTick(note.startTick as number));
-          const fitted = fitMidiToProgramRange(note.pitch as number, t.role, program);
+          const programFitted = fitMidiToProgramRange(note.pitch as number, t.role, program);
+          const strictRange = instrumentation.strictRegisterByRole?.[t.role];
+          const fitted = strictRange ? fitMidiToStrictRegister(programFitted, strictRange) : programFitted;
           return fitted === note.pitch ? note : { ...note, pitch: midi(fitted) };
         });
     const notesForGesture = rangeFittedNotes;
     // ★ 手势表情层:器配层据最终音色下发 sax/pipe-wind 等 gesture plan;render 只执行计划。
-    const gesture = applyGestureExpressionToTrack({
+    // ACG PIANOSONG's lead, comp and bass are three hands of the same scored
+    // piano.  Bypass gesture NoteIR shaping for all of them: keyboard gates,
+    // electric-key tails and bass techniques would otherwise alter a planned
+    // duration/velocity after PianoScorePlan.  The score-owned pedal plan is
+    // attached below, so this keeps the needed MIDI expression intact.
+    const gestureTrack = {
       ...t,
       notes: notesForGesture,
       program: initialProgram,
       programChanges: programChanges.length ? programChanges : undefined,
-    }, instrumentation.gestureExpressionByRole?.[t.role], timebase);
-    // userBrick 是用户输入动机的权威 quote。前面早插入一次让 ducking/occupation 看到旋律占位;
-    // 这里在 pocket / ACG lead shaping / gesture 之后恢复 quote span,保证最终 IR 第一句仍忠实用户 motif。
-    const quoteRestored = t.role === 'lead' && userMotifBrick
-      ? applyUserMotifBrickToLead({ ...t, notes: gesture.notes, program: initialProgram }, userMotifBrick, timebase, totalBeatsForLead, {
-        leadProgram: initialProgram,
-        leadProgramForBeat: (beat) => programForSection(sectionIdForTick(timebase.beatToTick(beats(beat)) as number)),
-        swingRatio: arrangement.songGrooveContract.melodySwingRatio,
-        beatsPerBar: beatsPerBarOf(arrangement.meter),
-        grooveContract: arrangement.songGrooveContract,
-        tempoBpm: arrangement.tempoBpm,
-      })
-      : { ...t, notes: gesture.notes, program: initialProgram };
-    const ccEvents = gesture.ccEvents?.length ? gesture.ccEvents : undefined;
+    };
+    // A timed role pattern owns onset, release and reference touch as one
+    // authored gesture. Generic instrument gates (Jazz Comp = 0.72, keyboard
+    // Bass = 0.96) would otherwise silently rewrite the MIDI-derived cell
+    // after every phase test had already passed.
+    const gesture = t.role === 'drum' || isAcgPianoRole(t.role) || timedRoleNames.has(t.role)
+      ? { notes: notesForGesture }
+      : applyGestureExpressionToTrack(gestureTrack, instrumentation.gestureExpressionByRole?.[t.role], timebase);
+    // CC72/74 等 Sound Controller 未经板端标定仍不可写。这里仅合并器配层已按
+    // 完整 CC0+Program 能力下发的原声钢琴 CC11 计划与既有手势事件。
+    const rawCcEvents = [...(gesture.ccEvents ?? []), ...(plannedControllerEvents ?? [])]
+      .sort((a, b) => (a.atTick as number) - (b.atTick as number) || a.controller - b.controller);
+    const ccEvents: typeof rawCcEvents = [];
+    for (const event of rawCcEvents) {
+      const previous = ccEvents[ccEvents.length - 1];
+      if (previous && previous.atTick === event.atTick && previous.controller === event.controller) ccEvents[ccEvents.length - 1] = event;
+      else ccEvents.push(event);
+    }
     const pitchBendEvents = gesture.pitchBendEvents?.length ? gesture.pitchBendEvents : undefined;
     return {
       ...t,
-      notes: quoteRestored.notes,
+      notes: gesture.notes,
       program: initialProgram,
       bank: initialBank,
       programChanges: programChanges.length ? programChanges : undefined,
       pedalEvents,
       mix: initialMix,
       mixChanges: mixChanges.length ? mixChanges : undefined,
-      ccEvents,
+      ccEvents: ccEvents.length ? ccEvents : undefined,
       pitchBendEvents,
     };
   });
@@ -952,9 +1416,11 @@ export function renderSongFull(
     instrumentation.programByRoleSection.lead?.[sectionId]
     ?? instrumentation.roleProgram.lead
     ?? band.roleProgram.lead;
-  const contractResolvedTracks = mixAttachedTracks.map((track) => {
+  const contractResolvedGeneratedTracks = mixAttachedTracks.map((track) => {
     if (track.role !== 'lead') return track;
-    const resolvedNotes = leadAvoidExposureResolver(
+    // ACG 的 harmonic arrival 已在主链锁定；这里只保留 collision sanitizer，
+    // 不让末端 resolver 再改写已计划的 targetPc / approach。
+    const resolvedNotes = isAcg ? track.notes : leadAvoidExposureResolver(
       track.notes,
       plan,
       timebase,
@@ -966,13 +1432,60 @@ export function renderSongFull(
     // earlier safety pass. Reuse the authoritative sanitizer once more before final audit/MIDI.
     return { ...track, notes: sanitizeLeadNoteIR(resolvedNotes, SANITIZE_OPTS) };
   });
-  const finalTracks = applyRenderMixBalance(contractResolvedTracks, {
+  // The authored motif enters the audible lead exactly once, after all generic
+  // pitch/range/gesture transforms and before Drum follow/audit/MIDI export.
+  const contractResolvedTracks = authoredUserMotifPlan
+    ? withAuthoredLeadContext(contractResolvedGeneratedTracks)
+    : contractResolvedGeneratedTracks;
+  const followedTracks = applyFinalDrumFollow(contractResolvedTracks, {
+    beatsPerBar: beatsPerBarOf(arrangement.meter),
+    ppq: timebase.ppq,
+    grooveScorePlan: arrangement.grooveScorePlan,
+    performanceBySection: arrangement.drumPerformanceBySection,
+    activeDrumSectionIds: drumActiveSectionIds,
+    followSources: {
+      bass: {
+        notes: contractResolvedTracks.find((track) => track.role === 'bass')?.notes ?? [],
+        activeSectionIds: bassActiveSectionIds,
+      },
+      comp: {
+        notes: contractResolvedTracks.find((track) => track.role === 'comp')?.notes ?? [],
+        activeSectionIds: compActiveSectionIds,
+      },
+      lead: {
+        notes: contractResolvedTracks.find((track) => track.role === 'lead')?.notes ?? [],
+        activeSectionIds: leadActiveSectionIds,
+      },
+    },
+  });
+  // The Jazz 5/4 compiler owns every Bass/Comp/Drum musical event. Replace the
+  // legacy provisional tracks at one explicit seam, then make Drum performance
+  // transparent. No later stage may change the score event multiset.
+  const scoreProjectedTracks = projectJazzFiveFourScoreTracks(followedTracks, suppliedJazzFiveFourScorePlan);
+  const drumRealizedTracks = scoreProjectedTracks.map((track) => realizeDrumPerformanceTrack(track, {
+    timebase,
+    beatsPerBar: beatsPerBarOf(arrangement.meter),
+    tempoBpm: arrangement.tempoBpm,
+    grooveScorePlan: arrangement.grooveScorePlan,
+    performanceBySection: arrangement.drumPerformanceBySection,
+    performanceMode: suppliedJazzFiveFourScorePlan ? 'reference-zero' : 'profiled',
+  }));
+  const finalTracks = applyRenderMixBalance(drumRealizedTracks, {
     style: band.style,
     ppq: timebase.ppq,
     durationTicks: resolved.data.durationTicks as number,
     sectionTicks: sectionTicks.map((s) => s.tick),
   });
+  if (suppliedJazzFiveFourScorePlan) {
+    assertJazzFiveFourProjectionIdentity(finalTracks, suppliedJazzFiveFourScorePlan);
+  }
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
+  // Reference-quartet production is fail-closed at the final boundary.  The
+  // full Gate G checks clock/tempo, canonical phase+gate+velocity, timing
+  // links, bar drift and Score -> FinalIR identity; it never repairs output.
+  if (suppliedJazzFiveFourScorePlan) {
+    assertJazzFiveFourGrooveMatch(suppliedJazzFiveFourScorePlan, ir);
+  }
   // ★ ACG comp 硬合同(acg_comp_track_hard_contract §5.2,fail-closed):ACG 必须有独立 lead + comp(有音符)
   //   两条轨,即便同用 GM0 也不能塌成 lead-only。band 层 hardRequiredRolesForStyle 已保证 comp 入 lineup;
   //   此处是最后防线 —— 若 ACG 到 render 仍缺 comp,抛不变量(宁失败也不静默降级)。
@@ -993,7 +1506,19 @@ export function renderSongFull(
   const denseExclude = band.style.toLowerCase() === 'lofi'
     ? denseMelodySpanRanges(gatedTracks, plan, timebase)
     : [];
-  const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
+  const scoreOwnedCompSilence = isAcg
+    ? scoreOwnedAcgCompSilenceRanges(acgPianoScorePlan, plan, timebase)
+    : [];
+  const musicality = auditMusicality(
+    ir,
+    arrangement,
+    instrumentation,
+    timebase,
+    band.style,
+    denseExclude,
+    scoreOwnedCompSilence,
+    !!acgPianoScorePlan,
+  );
   // ★ Phase 7:render 把【自己消费的完整 intent】(含 ACG acgBarFamilyBySpan enforce)挂 report → 服务层不再重派生(消双源 + 修 audit gap)。
   return { ir, audit: { findings: [...harmonyAudit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—'), intent: summarizeMusicIntent(intent) } };
 }

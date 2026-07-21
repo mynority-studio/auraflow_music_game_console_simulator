@@ -63,7 +63,7 @@ describe('render/windBreath — 端到端兼容', () => {
     expect(isWindFamily(lead.program!)).toBe(false); // sax 不走旧 72-79 pipe wind 判定
     const controllers = new Set((lead.ccEvents ?? []).map((e) => e.controller));
     expect(controllers.has(11)).toBe(true);
-    expect(controllers.has(2)).toBe(true);
+    expect(controllers.has(2)).toBe(false);
     expect(controllers.has(65)).toBe(false);
     expect(controllers.has(5)).toBe(false);
     expect(controllers.has(84)).toBe(false);

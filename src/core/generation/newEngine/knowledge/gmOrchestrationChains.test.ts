@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CHAIN_PROFILES, chooseEnsembleWorld, chooseOrchestrationChain,
-  deriveChainWorld, orchestrateRolePrograms,
+  deriveChainWorld, ensembleAllowsRoleProgram, orchestrateRolePrograms,
   scoreProgramPair, isHarshLead, type ChainProfile,
 } from './gmOrchestrationChains';
 import { instrumentInfo, gmName, canPlayComp, leadCompCompatible, instrumentInfo as info } from './instruments';

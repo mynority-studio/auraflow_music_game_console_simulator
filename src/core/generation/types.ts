@@ -4,7 +4,6 @@ import { StyleId } from './config/StyleFlags';
 
 // CONSTITUTION CHAPTER I — 核心 IR 类型已迁移至 ./ir/index.ts。
 // 此处保留 re-export 以兼容现有 callsite。新代码请直接从 './ir' 导入。
-// (旧 GeneratedTrack/ArrangedTrack/MusicContext 已随 legacy 播放壳删除,不再 re-export。)
 import type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch } from './ir';
 import { VoiceRole } from './ir';
 export type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch };
@@ -372,7 +371,7 @@ export interface Musician {
     id: string;                   // 如 'accomp_alex_pop'
     name: string;                 // 显示名称
     genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）= styleId
-    instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID（旧字段，过渡期保留）
+    instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID（兼容字段，过渡期保留）
     /**
      * 乐器族裔 — 决定 ToplineEngine Pass 3 的 sustain 策略（damper pedal / monophonic legato / pad envelope）。
      * 必填：新乐手卡上岗前必须显式声明族裔，避免 pedal 物理被错套到管乐/人声/吉他上。
@@ -381,7 +380,7 @@ export interface Musician {
     defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
     /**
      * B3：可选 GM 程式号显式覆盖（0~127）。
-     * 设置时优先于 defaultSound → GM 的查表映射。（旧 UI forcedGmPrograms 覆盖路径已随 participant 化删除。）
+     * 设置时优先于 defaultSound → GM 的查表映射。（产品 Band Selection 不走 GM override。）
      * 主要用例：同一 musician card 在不同曲风下挂不同音色（暂未启用，预留）。
      */
     gmProgramOverride?: number;
@@ -457,7 +456,7 @@ export interface Af2MusicianOverrides {
 
 // 5. 乐队阵容名单 (Band Roster)
 //    全部槽位可选；缺槽 = null/undefined（BandEngine + UI 按此判断）
-//    字段名与 BandRole enum 对齐（mainInst / accomp / atmosphere 替代旧 lead / comping / 无）
+//    字段名与 BandRole enum 对齐（mainInst / accomp / atmosphere）
 export interface BandRoster {
     vocal?: Musician | null;
     mainInst?: Musician | null;
@@ -598,8 +597,7 @@ export interface BandPlan {
     activeMusicians: ActiveMusician[];
 }
 
-// ★ 旧 GeneratedTrack(RELATIVE 空间旧引擎成曲结构)已删除 —— Q+N 主链路用 MusicalIR + uiSnapshot,
-//   app 播放视图用 musicGeneration/playbackView.PlaybackSong。
+// Q+N 主链路用 MusicalIR + uiSnapshot,app 播放视图用 musicGeneration/playbackView.PlaybackSong。
 
 export type InstrumentRole =
     | 'melody'
@@ -610,7 +608,7 @@ export type InstrumentRole =
     | 'counter'
     | 'secondary';
 
-// CONSTITUTION CHAPTER I — MusicContext 已迁移至 ./ir/index.ts（顶部统一 re-export）。
+// CONSTITUTION CHAPTER I — 核心 IR 类型由 ./ir/index.ts 提供（顶部统一 re-export）。
 
 export interface GenerationOptions {
     styleId?: StyleId;
@@ -652,7 +650,7 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-// ★ 旧 ArrangedTrack(ABSOLUTE 空间旧引擎播放结构,MidiConverter 消费)已删除 —— Q+N 用 MusicalIR + musicalIrToMidi。
+// Q+N 输出使用 MusicalIR + musicalIrToMidi。
 
 // ============================================================
 // 数值枚举 & 查找表（Phase 1 cherry-pick：类型安全基础设施）
@@ -953,8 +951,8 @@ export enum DensityLevel {
     Saturated      = 7,  // 几乎无 rest 满载
 }
 
-// 数值枚举 → 字符串名映射，仅供需要 hashmap key 的旧代码使用
-// 新代码应直接用 SectionType.X 数值比较
+// 数值枚举 → 字符串名映射，仅供需要 hashmap key 的兼容调用使用
+// 推荐直接用 SectionType.X 数值比较
 export const SectionTypeName: Record<SectionType, string> = {
     [SectionType.Intro]: 'Intro',
     [SectionType.Verse]: 'Verse',
@@ -1000,7 +998,7 @@ export enum RHRole {
     Comp = 4,
 }
 
-/** 段落收尾策略（AbsoluteTransposer 后处理） */
+/** 段落收尾策略 */
 export enum OutroStrategy {
     FadeOut = 0,
     Ritardando = 1,
@@ -1020,7 +1018,7 @@ export enum OutroStrategy {
  *   Drums       — 打击乐
  *   Atmosphere  — 氛围声部（Pad/合唱/弦乐铺底）
  *
- * 历史命名兼容：旧 `RoleType.AccompInst` → 新 `BandRole.Accomp`；旧 `BandSlot` 字符串 union 已废弃。
+ * 命名兼容：`RoleType.AccompInst` → `BandRole.Accomp`；`BandSlot` 字符串 union 已废弃。
  */
 /**
  * C++ Porting Guide:
@@ -1037,8 +1035,8 @@ export enum OutroStrategy {
  *   - Conductor rosterMask 构造 switch + MASK_* 常量
  *   - pipeline/index.ts buildDefaultRoster 默认填充
  *   - CastingEngine 决策路由
- *   - audio/MidiConverter channel 分配 + bandRoleToTrackKeys
- *   - idioms/MusicianRegistry musician.eligibleRoles
+ *   - Q+N MIDI channel 分配
+ *   - Q+N participant/role 映射
  *   - app_integration_rule.md §3 BandRole 取值文档
  * Cross-sync §1.5。
  */

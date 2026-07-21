@@ -83,4 +83,35 @@ describe('render/repeatGroupReplay — duration boundary', () => {
     expect(sourceCrossing.durationTicks).toBe(1.5 * timebase.ppq);
     expect(enteringTarget.durationTicks).toBe(1 * timebase.ppq);
   });
+
+  it('重放鼓 body，但保护 Arranger 为重复段写下的不同边界 fill', () => {
+    const fullArrangement = {
+      ...arrangement,
+      grooveScorePlan: {
+        boundaries: [
+          { fromSectionId: 'verse-a', toSectionId: 'verse-b', sourceBar: 0, landingBar: 1, durationBeats: 1, opening: false },
+          { fromSectionId: 'verse-b', toSectionId: 'outro', sourceBar: 1, landingBar: 2, durationBeats: 2, opening: false },
+        ],
+      },
+    } as unknown as ArrangementPlan;
+    const fullTimeline: ChordSpan[] = [
+      chord('source-body', 'verse-a', 0, 0),
+      chord('source-link', 'verse-a', 2, 7),
+      chord('target-body', 'verse-b', 4, 0),
+      chord('target-link', 'verse-b', 6, 7),
+    ];
+    const sourceBody = note(36, 0.5, 0.25);
+    const sourceFill = note(47, 3.5, 0.25);
+    const replacedTargetBody = note(38, 4.5, 0.25);
+    const targetClimaxFill = note(45, 6.75, 0.25);
+    const drum: TrackIR = { role: 'drum', notes: [sourceBody, sourceFill, replacedTargetBody, targetClimaxFill] };
+
+    const out = applyRepeatGroupReplay([drum], fullArrangement, fullTimeline, timebase)[0];
+    const atBeat = (beat: number) => out.notes.filter((event) =>
+      (event.startTick as number) === (timebase.beatToTick(beats(beat)) as number));
+
+    expect(atBeat(4.5).map((event) => event.pitch)).toEqual([midi(36)]);
+    expect(atBeat(6.75).map((event) => event.pitch)).toEqual([midi(45)]);
+    expect(atBeat(7.5)).toHaveLength(0);
+  });
 });

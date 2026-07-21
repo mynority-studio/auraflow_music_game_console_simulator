@@ -7,15 +7,21 @@
 // ============================================================
 
 import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
+import { DREAM5504_DEFAULT_MASTER_VOLUME, type Dream5504MasterPlan } from './masteringProfile';
 import {
   DEFAULT_CHANNELS,
+  DREAM5504_RAW_DEFAULT_OUTPUT,
   MIDI_OUT_TRACKS,
+  isDream5504RawDefaultMessageAllowed,
   midiEventToRoutedMessage,
   requestMidiOutputAccess,
   registerMidiPolyphonyAuditionSender,
   resolveOutputChannel,
+  resolveSchedulerOutputChannel,
   schedulerChannelToRole,
   sendMidiMessage,
+  sendDream5504NeutralOutputBaseline,
+  sendNrpn7,
   sendNotes,
   sendPanic,
   type MidiOutputAccessHandle,
@@ -40,6 +46,7 @@ export interface Dream5504MidiState {
   roleOutputs: RoleMap<string | null>;
   channels: RoleMap<number>;
   eventCount: number;
+  generatedMasterVolume: number | null;
   lastEvent: string;
   silentReason: string | null;
 }
@@ -78,10 +85,6 @@ function schedulerChannelToOutputRole(channel: number): MidiOutRole {
   return schedulerChannelToRole(channel) ?? (channel === 0 ? 'lead' : 'lead');
 }
 
-function schedulerChannelToMidiChannel(channel: number): number {
-  return Math.max(1, Math.min(16, Math.round(channel) + 1));
-}
-
 class Dream5504MidiOutputController {
   private state: Dream5504MidiState = {
     status: 'idle',
@@ -92,6 +95,7 @@ class Dream5504MidiOutputController {
     roleOutputs: emptyRoleMap<string | null>(null),
     channels: DEFAULT_CHANNELS,
     eventCount: 0,
+    generatedMasterVolume: null,
     lastEvent: '等待 Dream 5504 MIDI 输出',
     silentReason: '未连接 Dream 5504 EK：已静音',
   };
@@ -176,8 +180,9 @@ class Dream5504MidiOutputController {
   }
 
   public disableOutput(): void {
-    this.setState({ armed: false });
+    this.restoreGeneratedMasterDefault();
     this.panic();
+    this.setState({ armed: false });
     this.markSilent('Dream 5504 MIDI 输出已关闭：已静音');
   }
 
@@ -209,6 +214,67 @@ class Dream5504MidiOutputController {
     this.setState({ lastEvent: 'panic sent' });
   }
 
+  /** DREAM 官方 GM2 固件：NRPN 3707h = General Master Volume。 */
+  public setGeneralMasterVolume(value: number): void {
+    if (DREAM5504_RAW_DEFAULT_OUTPUT) {
+      this.setState({ lastEvent: 'Raw default：忽略 Master Volume NRPN' });
+      return;
+    }
+    if (!this.requireReady('设置 Dream 5504 Master Volume')) return;
+    const now = performance.now();
+    for (const output of this.currentRoutedOutputs()) {
+      try { sendNrpn7(output, 1, 0x3707, clamp7(value), now); } catch { /* best effort */ }
+    }
+    this.setState({ lastEvent: `Dream 5504 Master Volume ${clamp7(value)}` });
+  }
+
+  /**
+   * Generated songs may use the documented GM2 General Master Volume NRPN.
+   * This is intentionally separate from the manual setter: raw-default mode
+   * still blocks arbitrary output processing and only permits the one score
+   * master plan computed from the final MusicalIR.
+   */
+  public applyGeneratedMasterPlan(plan: Dream5504MasterPlan): boolean {
+    if (!this.requireReady('下发 Dream 5504 总谱 Master')) return false;
+    const volume = clamp7(plan.volume);
+    const now = performance.now();
+    for (const output of this.currentRoutedOutputs()) {
+      try { sendNrpn7(output, 1, 0x3707, volume, now); } catch { /* best effort */ }
+    }
+    this.setState({
+      generatedMasterVolume: volume,
+      lastEvent: `Dream 5504 总谱 Master ${volume} (${plan.reason})`,
+    });
+    return true;
+  }
+
+  /** Restore the board's documented full-scale default after a generated song. */
+  public restoreGeneratedMasterDefault(): void {
+    if (this.state.generatedMasterVolume === null) return;
+    const now = performance.now();
+    for (const output of this.currentRoutedOutputs()) {
+      try { sendNrpn7(output, 1, 0x3707, DREAM5504_DEFAULT_MASTER_VOLUME, now); } catch { /* best effort */ }
+    }
+    this.setState({
+      generatedMasterVolume: null,
+      lastEvent: `Dream 5504 Master restored ${DREAM5504_DEFAULT_MASTER_VOLUME}`,
+    });
+  }
+
+  /** Firm5504-EK 官方 NRPN：关闭总 EQ，并把板载输出级固定在 0 dB。 */
+  public setNeutralOutputBaseline(): void {
+    if (DREAM5504_RAW_DEFAULT_OUTPUT) {
+      this.setState({ lastEvent: 'Raw default：忽略 EQ / Front Gain NRPN' });
+      return;
+    }
+    if (!this.requireReady('设置 Dream 5504 中性输出基线')) return;
+    const now = performance.now();
+    for (const output of this.currentRoutedOutputs()) {
+      try { sendDream5504NeutralOutputBaseline(output, now); } catch { /* best effort */ }
+    }
+    this.setState({ lastEvent: 'Dream 5504 EQ OFF · Front 0 dB' });
+  }
+
   public pingRole(role: MidiOutRole): boolean {
     const track = MIDI_OUT_TRACKS.find((candidate) => candidate.role === role);
     if (!track) return false;
@@ -225,11 +291,11 @@ class Dream5504MidiOutputController {
       this.markSilent(`${role} 没有 MIDI 输出路由：已静音`);
       return false;
     }
-    const channel = this.state.mode === 'five-port'
-      ? 1
-      : schedulerChannelToMidiChannel(channel0);
+    const channel = resolveSchedulerOutputChannel(channel0, this.state.mode, this.state.channels);
+    const routedMessage = { ...message, channel } as MidiOutMessage;
+    if (!isDream5504RawDefaultMessageAllowed(routedMessage, role)) return true;
     try {
-      sendMidiMessage(output, { ...message, channel });
+      sendMidiMessage(output, routedMessage);
       this.incrementEvent(`${role} · ch ${channel} · ${message.type}`);
       return true;
     } catch {
@@ -251,12 +317,9 @@ class Dream5504MidiOutputController {
       if (request.role !== 'drum') {
         sendMidiMessage(output, { type: 'cc', channel, data1: 0, data2: bank });
       }
-      sendMidiMessage(output, { type: 'cc', channel, data1: 7, data2: request.volume });
-      sendMidiMessage(output, { type: 'cc', channel, data1: 10, data2: 64 });
-      sendMidiMessage(output, { type: 'cc', channel, data1: 11, data2: 127 });
       sendMidiMessage(output, { type: 'programChange', channel, data1: clamp7(request.program) });
       sendNotes(output, channel, request.notes, request.velocity, request.durationMs);
-      this.incrementEvent(`${request.role} · MIDI 复音测试 · ${request.durationMs}ms`, request.notes.length * 2 + (request.role === 'drum' ? 5 : 6));
+      this.incrementEvent(`${request.role} · MIDI 原始复音测试 · ${request.durationMs}ms`, request.notes.length * 2 + (request.role === 'drum' ? 1 : 2));
       return true;
     } catch {
       this.markSilent(`${request.role} MIDI 复音测试发送失败：已静音`);
@@ -282,6 +345,7 @@ class Dream5504MidiOutputController {
       return;
     }
     try {
+      if (!isDream5504RawDefaultMessageAllowed(routed.message, routed.role)) return;
       sendMidiMessage(output, routed.message);
       this.incrementEvent(`${routed.role} · ch ${routed.message.channel} · ${routed.message.type}`);
     } catch {

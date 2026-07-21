@@ -114,7 +114,7 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(ev.indexOf(cc0!)).toBeLessThan(ev.indexOf(pc11!));
   });
 
-  // —— 混音 (5.4) ——
+  // —— Dream 5504 原生默认输出 ——
   const mixIR = freezeMusicalIR({
     tracks: (['bass', 'comp', 'pad', 'lead', 'drum'] as const).map((role) => ({
       role,
@@ -124,43 +124,71 @@ describe('newEngine/sandbox/irToMidi', () => {
     durationTicks: ticks(480),
   });
   const mixEvents = musicalIRToMidiEvents(mixIR);
-  const cc = (channel: number, ccNum: number) =>
-    mixEvents.find((e) => e.type === 'cc' && e.channel === channel && e.data1 === ccNum)!;
-  // 角色→通道
   const CH = { bass: 3, comp: 2, lead: 1, pad: 4, drum: 9 };
 
-  it('每轨发 CC7(音量)+ CC10(声像),ticks=0 且在 noteOn 前', () => {
-    for (const ch of Object.values(CH)) {
-      expect(cc(ch, 7)).toBeDefined();
-      expect(cc(ch, 10)).toBeDefined();
-      expect(cc(ch, 7).ticks).toBe(0);
-    }
-    // CC 在该通道首个 noteOn 之前
-    const firstLeadCCIdx = mixEvents.findIndex((e) => e.type === 'cc' && e.channel === CH.lead);
-    const firstLeadOnIdx = mixEvents.findIndex((e) => e.type === 'noteOn' && e.channel === CH.lead);
-    expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
+  it('没有显式 Bank 时五轨先复位至 5504 文档默认控制器，再发送 PC 与 Note', () => {
+    expect(mixEvents.filter((event) => event.type === 'cc')).toEqual([
+      { ticks: 0, type: 'cc', channel: CH.bass, data1: 121, data2: 0 },
+      { ticks: 0, type: 'cc', channel: CH.comp, data1: 121, data2: 0 },
+      { ticks: 0, type: 'cc', channel: CH.pad, data1: 121, data2: 0 },
+      { ticks: 0, type: 'cc', channel: CH.lead, data1: 121, data2: 0 },
+      { ticks: 0, type: 'cc', channel: CH.drum, data1: 121, data2: 0 },
+    ]);
+    expect(mixEvents.filter((event) => event.type === 'programChange')).toHaveLength(5);
+    expect(mixEvents.filter((event) => event.type === 'noteOn')).toHaveLength(5);
   });
 
-  it('★ 音量:bass 最弱(−25%)· pad 抬起(+30%,用户)· comp fader 补低 velocity · 全合法范围', () => {
-    const vol = (ch: number) => cc(ch, 7).data2;
-    // bass 降到旋律之下、现为骨干最弱(用户 −25%)
-    expect(vol(CH.bass)).toBeLessThan(vol(CH.lead));
-    expect(vol(CH.bass)).toBeLessThan(vol(CH.pad));
-    // comp fader 高(补它最低的 source velocity)
-    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.lead));
-    // ★ pad CC7 抬起(+30%)即便高于 lead 的【通道音量】,有效响度=CC7×velocity 仍低于 lead
-    //   (pad velocity ~35 远低于 lead ~85)→ 软 pad 抬亮但不埋旋律。
-    expect(vol(CH.pad)).toBeGreaterThan(vol(CH.bass));
-    for (const ch of Object.values(CH)) { expect(vol(ch)).toBeGreaterThan(0); expect(vol(ch)).toBeLessThanOrEqual(127); }
+  it('TrackMix、非钢琴踏板和未经批准的通用 ccEvents 留在 IR，不进入硬件演奏流', () => {
+    const shapedIR = freezeMusicalIR({
+      tracks: [{
+        role: 'lead', bank: 0, program: 5,
+        mix: { volume: 12, pan: 1, reverb: 127, chorus: 127, expression: 3 },
+        pedalEvents: [{ atTick: ticks(0), down: true }],
+        ccEvents: [{ atTick: ticks(0), controller: 74, value: 127 }],
+        notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }],
+      }],
+      timebase,
+      durationTicks: ticks(480),
+    });
+    const shaped = musicalIRToMidiEvents(shapedIR);
+    expect(shaped.filter((event) => event.type === 'cc')).toEqual([
+      { ticks: 0, type: 'cc', channel: CH.lead, data1: 121, data2: 0 },
+      { ticks: 0, type: 'cc', channel: CH.lead, data1: 0, data2: 0 },
+    ]);
   });
 
-  it('声像:comp 偏左(<64)/ pad 偏右(>64)/ bass·lead·drum 居中(=64)', () => {
-    const pan = (ch: number) => cc(ch, 10).data2;
-    expect(pan(CH.comp)).toBeLessThan(64);
-    expect(pan(CH.pad)).toBeGreaterThan(64);
-    expect(pan(CH.bass)).toBe(64);
-    expect(pan(CH.lead)).toBe(64);
-    expect(pan(CH.drum)).toBe(64);
+  it('只把原声钢琴的器配 CC11/CC64 投影到硬件；Pad CC1 与所有其他音色 ccEvents 仍丢弃', () => {
+    const modulatedIR = freezeMusicalIR({
+      tracks: [
+        {
+          role: 'comp', bank: 0, program: 0,
+          pedalEvents: [{ atTick: ticks(0), down: true }, { atTick: ticks(480), down: false }],
+          ccEvents: [
+            { atTick: ticks(0), controller: 1, value: 0 },
+            { atTick: ticks(240), controller: 11, value: 90 },
+            { atTick: ticks(240), controller: 74, value: 100 },
+          ],
+          notes: [{ pitch: midi(55), startTick: ticks(0), durationTicks: ticks(480), velocity: 62 }],
+        },
+        {
+          role: 'lead', bank: 0, program: 89,
+          ccEvents: [{ atTick: ticks(240), controller: 11, value: 127 }],
+          notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(480), velocity: 80 }],
+        },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    });
+
+    const output = musicalIRToMidiEvents(modulatedIR);
+    expect(output.filter((event) => event.type === 'cc' && event.data1 === 1)).toEqual([]);
+    expect(output.filter((event) => event.type === 'cc' && event.data1 === 11)).toEqual([
+      { ticks: 240, type: 'cc', channel: CH.comp, data1: 11, data2: 90 },
+    ]);
+    expect(output.filter((event) => event.type === 'cc' && event.data1 === 64)).toEqual([
+      { ticks: 0, type: 'cc', channel: CH.comp, data1: 64, data2: 127 },
+      { ticks: 480, type: 'cc', channel: CH.comp, data1: 64, data2: 0 },
+    ]);
   });
 
   it('Dream GM128 硬件 MIDI 输出不再导出非标准 CC95 delay send', () => {
@@ -181,7 +209,7 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(delayCC).toBeUndefined();
   });
 
-  it('pitchBendEvents 导出为 14-bit pitchBend MIDI 事件', () => {
+  it('pitchBendEvents 在原生默认试听期不发送', () => {
     const bendIR = freezeMusicalIR({
       tracks: [
         {
@@ -195,9 +223,6 @@ describe('newEngine/sandbox/irToMidi', () => {
       durationTicks: ticks(480),
     });
     const bendEvents = musicalIRToMidiEvents(bendIR).filter((e) => e.type === 'pitchBend');
-    expect(bendEvents).toEqual([
-      { ticks: ticks(120), type: 'pitchBend', channel: CH.lead, data1: 7000, data2: 0 },
-      { ticks: ticks(180), type: 'pitchBend', channel: CH.lead, data1: 8192, data2: 0 },
-    ]);
+    expect(bendEvents).toEqual([]);
   });
 });

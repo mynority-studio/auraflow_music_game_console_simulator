@@ -30,6 +30,11 @@ export interface ReplaySpan {
   prefixTicks: number; // 和声一致前缀长度(body);其后 = 各自发散尾巴(保留)
 }
 
+export interface ReplayProtectionRange {
+  lo: number;
+  hi: number;
+}
+
 /** 求 repeatGroup 重放计划(纯计算;trace/测试复用)。 */
 export function planRepeatGroupReplays(
   arrangement: ArrangementPlan,
@@ -84,6 +89,43 @@ export function planRepeatGroupReplays(
   return out;
 }
 
+export interface DrumReplayProtection {
+  source: readonly ReplayProtectionRange[];
+  target: readonly ReplayProtectionRange[];
+}
+
+/** Protect score-authored fill/landing windows while the repeated drum body is copied. */
+export function planDrumReplayProtection(
+  arrangement: ArrangementPlan,
+  timebase: Timebase,
+  plan: ReplaySpan,
+): DrumReplayProtection {
+  const beatsPerBar = beatsPerBarOf(arrangement.meter);
+  const jitterMargin = Math.max(2, Math.round(timebase.ppq / 15));
+  const boundaries = arrangement.grooveScorePlan?.boundaries ?? [];
+  const boundaryRange = (boundary: ArrangementPlan['grooveScorePlan']['boundaries'][number]): ReplayProtectionRange => {
+    const landingBeat = boundary.landingBar * beatsPerBar;
+    const lo = timebase.beatToTick(beats(landingBeat - boundary.durationBeats)) as number;
+    const landing = timebase.beatToTick(beats(landingBeat)) as number;
+    return { lo: lo - jitterMargin, hi: landing + Math.round(timebase.ppq * 0.3) + jitterMargin };
+  };
+  const sourceEnd = plan.sourceStartTick + plan.prefixTicks;
+  const targetEnd = plan.targetStartTick + plan.prefixTicks;
+  const shift = plan.targetStartTick - plan.sourceStartTick;
+  const sourceRanges = boundaries
+    .filter((boundary) => boundary.fromSectionId === plan.sourceId || (boundary.opening && boundary.toSectionId === plan.sourceId))
+    .map(boundaryRange)
+    .filter((range) => range.hi > plan.sourceStartTick && range.lo < sourceEnd);
+  const targetRanges = boundaries
+    .filter((boundary) => boundary.fromSectionId === plan.targetId || (boundary.opening && boundary.toSectionId === plan.targetId))
+    .map(boundaryRange)
+    .filter((range) => range.hi > plan.targetStartTick && range.lo < targetEnd);
+  return {
+    source: [...sourceRanges, ...targetRanges.map((range) => ({ lo: range.lo - shift, hi: range.hi - shift }))],
+    target: [...sourceRanges.map((range) => ({ lo: range.lo + shift, hi: range.hi + shift })), ...targetRanges],
+  };
+}
+
 /**
  * 应用 repeatGroup 重放:每条轨,后续段【前缀(body)】= 首段对应音符 time-shift 复制;【尾巴(link)】保留。
  *   无重放计划 → 原样返回。确定性、深不可变。
@@ -96,6 +138,9 @@ export function applyRepeatGroupReplay(
 ): TrackIR[] {
   const plans = planRepeatGroupReplays(arrangement, chordTimeline, timebase);
   if (plans.length === 0) return tracks.map((t) => t);
+  const protectedDrumRanges = new Map(plans.map((plan) => [plan, planDrumReplayProtection(arrangement, timebase, plan).target]));
+  const protectedForPlan = (tick: number, plan: ReplaySpan): boolean =>
+    (protectedDrumRanges.get(plan) ?? []).some((range) => tick >= range.lo && tick < range.hi);
 
   return tracks.map((t) => {
     // 1) 删除落在任一目标前缀的音符(将被源拷贝替代)。若旧音从前缀前持续进入前缀，
@@ -104,7 +149,8 @@ export function applyRepeatGroupReplay(
     for (const n of t.notes) {
       const start = n.startTick as number;
       const originalEnd = start + (n.durationTicks as number);
-      if (plans.some((p) => start >= p.targetStartTick && start < p.targetStartTick + p.prefixTicks)) continue;
+      const replacement = plans.find((p) => start >= p.targetStartTick && start < p.targetStartTick + p.prefixTicks);
+      if (replacement && !(t.role === 'drum' && protectedForPlan(start, replacement))) continue;
 
       const firstEnteredPrefixStart = plans
         .map((p) => p.targetStartTick)
@@ -126,6 +172,7 @@ export function applyRepeatGroupReplay(
       for (const n of t.notes) {
         const st = n.startTick as number;
         if (st < p.sourceStartTick || st >= sourceEnd) continue;
+        if (t.role === 'drum' && protectedForPlan(st + shift, p)) continue;
         const duration = Math.min(n.durationTicks as number, sourceEnd - st);
         if (duration <= 0) continue;
         added.push({ ...n, startTick: ticks(st + shift), durationTicks: ticks(duration) });

@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { renderDrums } from './drumRenderer';
+import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
 import { drumGrooveVariants, drumPerformanceVariants, DRUM, type GrooveKind, type DrumHit } from '../knowledge/grooves';
+import { materializePopRockFill } from '../knowledge/drumFillVocabulary';
 import { planGroove } from '../arranger/groovePlanner';
 import { buildHarmonicPlan, buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
-import { createTimebase, createRandomContext, pc } from '../foundation';
-import type { Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
+import { createTimebase, createRandomContext, midi, pc, ticks } from '../foundation';
+import type { GrooveScorePlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 
 // ============================================================
 // 鼓组 groove(2026-06-08):4 macro 风格 × 4 GrooveKind × 2-3 变体。
@@ -304,9 +305,9 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     const sid0 = plan.chordTimeline[0].sectionId;
     const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 2, vel: 84 }, { drum: DRUM.CHAT, beat: 0, vel: 44 }, { drum: DRUM.CHAT, beat: 1, vel: 40 }];
     const perf = {
-      id: 'test', sectionId: sid0, role: 'breakdown', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
-      entryMode: 'hat-only', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
-      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      id: 'test', sectionId: sid0, grooveContractId: 'test', feelProfileId: 'pop-tight-backbeat', role: 'breakdown', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'hat-only', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1,
+      maxMoveTicks: 12, humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
       hatPolicy: 'eighths', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'strict',
     } as const;
@@ -319,9 +320,9 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
 
   it('DrumPerformanceContract fillPolicy=none 会压住 legacy fillBars', () => {
     const perf = {
-      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
-      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
-      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      id: 'test', sectionId: sid, grooveContractId: 'test', feelProfileId: 'pop-tight-backbeat', role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1,
+      maxMoveTicks: 12, humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
       hatPolicy: 'eighths', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'strict',
     } as const;
@@ -335,9 +336,9 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
   it('DrumPerformanceContract timingProfile=dilla-late 会实际移动鼓点 tick,且受 maxMove 限制', () => {
     const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 1, vel: 84 }, { drum: DRUM.CHAT, beat: 1.5, vel: 44 }];
     const perf = {
-      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 25, patternFamily: 'tr808-dilla-pocket', complexity: 2, intensity: 2, densityCeiling: 1,
-      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 0, swingUnit: '16th',
-      safeRangeTicks: 4, maxMoveTicks: 24, preQuantizeGrid: '16th', humanizeAmount: 3, feelOffsetMs: 25,
+      id: 'test', sectionId: sid, grooveContractId: 'test', feelProfileId: 'rnb-dilla-voices', role: 'timekeeper', kitProgram: 25, patternFamily: 'tr808-dilla-pocket', complexity: 2, intensity: 2, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 0,
+      maxMoveTicks: 24, humanizeAmount: 3, feelOffsetMs: 25,
       timingProfile: 'dilla-late', velocityProfile: 'ghosted', kickPolicy: 'syncopated', snarePolicy: 'ghost-before-backbeat',
       hatPolicy: 'shaker16', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'normal',
     } as const;
@@ -351,9 +352,9 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
 
   it('DrumPerformanceContract fillAmount/fillComplexity 改变 fill 密度', () => {
     const base = {
-      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
-      entryMode: 'full', fillPolicy: 'light', phraseVariation: 0, swingUnit: '8th',
-      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      id: 'test', sectionId: sid, grooveContractId: 'test', feelProfileId: 'pop-tight-backbeat', role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'light', phraseVariation: 0,
+      maxMoveTicks: 12, humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
       hatPolicy: 'eighths', cymbalPolicy: 'section-crash', tomPolicy: 'turnaround', foregroundGuard: 'normal',
     } as const;
@@ -361,6 +362,312 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     const high = renderDrums(plan, timebase, 4, { style: 'pop', fillBars: new Set([0]), performanceBySection: { [sid]: { ...base, fillAmount: 2, fillComplexity: 2 } } });
     const bar0 = (t: typeof low) => t.notes.filter((n) => (n.startTick as number) < timebase.ppq * 4).length;
     expect(bar0(high)).toBeGreaterThan(bar0(low));
+  });
+
+  it('逐小节 drumInteraction 会实际让 kick 跟 Bass、snare catch Comp，而不是只记录字段', () => {
+    const base: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 100 },
+      { drum: DRUM.KICK, beat: 2, vel: 88 },
+      { drum: DRUM.SNARE, beat: 1, vel: 84 },
+      { drum: DRUM.SNARE, beat: 3, vel: 88 },
+      ...Array.from({ length: 8 }, (_, index) => ({ drum: DRUM.CHAT, beat: index * 0.5, vel: 42 })),
+    ];
+    const makeScore = (
+      kickFollow: 'bass' | 'pulse',
+      snareFollow: 'backbeat' | 'comping' | 'lead-accents',
+    ): GrooveScorePlan => ({
+      grooveContractId: 'test-follow',
+      bySection: {
+        [sid]: {
+          sectionId: sid,
+          grooveContractId: 'test-follow',
+          bars: [0, 1].map((absoluteBar) => ({
+            sectionId: sid,
+            barInSection: absoluteBar,
+            absoluteBar,
+            phraseIndex: 0,
+            phraseBarIndex: absoluteBar,
+            role: 'base',
+            beatStrength: [1, 0.9, 1, 0.9],
+            subdivision: 'sixteenth',
+            subdivisionAccent: [1, 0.65, 0.84, 0.62],
+            phraseAccent: 1,
+            drumInteraction: {
+              kickFollow,
+              snareFollow,
+              structuralKickBeats: kickFollow === 'bass' ? [0] : [0, 2],
+              structuralSnareBeats: snareFollow === 'backbeat' ? [1, 3] : [],
+              kickResponseLimit: kickFollow === 'bass' ? 2 : 0,
+              snareResponseLimit: snareFollow === 'backbeat' ? 0 : 2,
+            },
+          })),
+        },
+      },
+      boundaries: [],
+    });
+    const note = (beat: number, velocity: number) => ({
+      pitch: midi(48),
+      startTick: ticks(Math.round(beat * timebase.ppq)),
+      durationTicks: ticks(Math.round(timebase.ppq * 0.4)),
+      velocity,
+    });
+    const followSources = {
+      bass: { notes: [note(0, 92), note(1.5, 90), note(2.75, 84)] },
+      comp: { notes: [note(1.5, 70), note(1.5, 62), note(3.5, 74)] },
+      lead: { notes: [note(0.75, 88), note(2.25, 82)] },
+    };
+    const followed = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan: makeScore('bass', 'comping'),
+      followSources,
+    });
+    const fixed = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan: makeScore('pulse', 'backbeat'),
+      followSources,
+    });
+    const leadCaught = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan: makeScore('pulse', 'lead-accents'),
+      followSources,
+    });
+    const beatsOf = (track: typeof followed, pitch: number) => track.notes
+      .filter((entry) => entry.pitch === pitch && (entry.startTick as number) < timebase.ppq * 4)
+      .map((entry) => (entry.startTick as number) / timebase.ppq);
+
+    expect(beatsOf(followed, DRUM.KICK)).toEqual([0, 1.5, 2.75]);
+    expect(beatsOf(fixed, DRUM.KICK)).toEqual([0, 2]);
+    expect(beatsOf(followed, DRUM.SNARE)).toEqual(expect.arrayContaining([1.5, 3.5]));
+    expect(beatsOf(fixed, DRUM.SNARE)).not.toEqual(expect.arrayContaining([1.5, 3.5]));
+    expect(beatsOf(leadCaught, DRUM.SNARE)).toEqual(expect.arrayContaining([0.75, 2.25]));
+
+    const shiftedBass = [
+      { ...note(1.5, 90), startTick: ticks(Math.round(1.5 * timebase.ppq) + 11) },
+      { ...note(2.75, 84), startTick: ticks(Math.round(2.75 * timebase.ppq) + 17) },
+    ];
+    const baseDrum = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan: makeScore('bass', 'backbeat'),
+    });
+    const final = applyFinalDrumFollow([baseDrum, { role: 'bass', notes: shiftedBass }], {
+      beatsPerBar: 4,
+      ppq: timebase.ppq,
+      grooveScorePlan: makeScore('bass', 'backbeat'),
+      followSources: { bass: { notes: shiftedBass }, comp: { notes: [] }, lead: { notes: [] } },
+    });
+    const finalKicks = final.find((track) => track.role === 'drum')!.notes
+      .filter((entry) => entry.pitch === DRUM.KICK && (entry.startTick as number) < timebase.ppq * 4)
+      .map((entry) => entry.startTick as number);
+    expect(finalKicks).toEqual([0, shiftedBass[0].startTick as number, shiftedBass[1].startTick as number]);
+    expect(finalKicks).not.toContain(2 * timebase.ppq);
+
+    const earlyNextDownbeat = [{
+      ...note(4, 94),
+      startTick: ticks(4 * timebase.ppq - 8),
+    }];
+    const anchored = applyFinalDrumFollow([baseDrum, { role: 'bass', notes: earlyNextDownbeat }], {
+      beatsPerBar: 4,
+      ppq: timebase.ppq,
+      grooveScorePlan: makeScore('bass', 'backbeat'),
+      followSources: { bass: { notes: earlyNextDownbeat }, comp: { notes: [] }, lead: { notes: [] } },
+    });
+    const secondBarKick = anchored.find((track) => track.role === 'drum')!.notes.find((entry) =>
+      entry.pitch === DRUM.KICK
+      && Math.abs((entry.startTick as number) - 4 * timebase.ppq) <= 16);
+    expect(secondBarKick?.startTick as number).toBe(4 * timebase.ppq);
+  });
+
+  it('GrooveScore 边界会先遮掉旧 loop 的 fill 窗口，再实现 RNB pocket turn 与唯一落点', () => {
+    const base: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 96 },
+      { drum: DRUM.SNARE, beat: 1, vel: 82 },
+      ...Array.from({ length: 8 }, (_, index) => ({ drum: DRUM.CHAT, beat: index * 0.5, vel: 42 })),
+    ];
+    const grooveScorePlan = {
+      grooveContractId: 'test-rnb',
+      bySection: {},
+      boundaries: [{
+        id: 'a->b:rnb-pocket-turn',
+        fromSectionId: sid,
+        toSectionId: sid,
+        sourceBar: 0,
+        landingBar: 1,
+        kind: 'fill',
+        intensity: 2,
+        durationBeats: 1,
+        baseMask: 'mask-window',
+        drumFillFamily: 'rnb-pocket-turn',
+        landing: 'kick',
+        opening: false,
+      }],
+    } satisfies GrooveScorePlan;
+    const rendered = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan,
+    });
+    const at = (beat: number, pitch: number) => rendered.notes.filter((note) =>
+      (note.startTick as number) === Math.round(beat * timebase.ppq)
+      && (note.pitch as number) === pitch);
+    const fillWindow = rendered.notes.filter((note) => {
+      const beat = (note.startTick as number) / timebase.ppq;
+      return beat >= 3 && beat < 4;
+    });
+
+    expect(at(3.5, DRUM.CHAT)).toHaveLength(0);
+    expect(at(3.25, DRUM.SIDESTICK)).toHaveLength(1);
+    expect(at(3.5, DRUM.SNARE)).toHaveLength(1);
+    expect(at(3.75, DRUM.KICK)).toHaveLength(1);
+    expect(fillWindow.some((note) => new Set<number>([DRUM.TOM_LO, DRUM.TOM_MID, DRUM.TOM_HI]).has(note.pitch as number))).toBe(false);
+    expect(at(4, DRUM.KICK)).toHaveLength(1);
+  });
+
+  it('Renderer 会逐击消费 Arranger 写下的 POP/Rock hand-foot fill score', () => {
+    const base: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 96 },
+      { drum: DRUM.SNARE, beat: 1, vel: 82 },
+      ...Array.from({ length: 8 }, (_, index) => ({ drum: DRUM.CHAT, beat: index * 0.5, vel: 42 })),
+    ];
+    const fillScore = materializePopRockFill({
+      rhythmClass: 'syncopated-sixteenth',
+      orchestration: 'linear-hand-foot',
+      function: 'climax',
+      variant: 3,
+      durationBeats: 2,
+      intensity: 3,
+    });
+    const grooveScorePlan = {
+      grooveContractId: 'test-pop-rock',
+      bySection: {},
+      boundaries: [{
+        id: 'verse->chorus:pop-rock',
+        fromSectionId: sid,
+        toSectionId: sid,
+        sourceBar: 0,
+        landingBar: 1,
+        kind: 'fill',
+        intensity: 3,
+        durationBeats: 2,
+        baseMask: 'mask-window',
+        drumFillFamily: 'pop-tom-build',
+        fillFunction: 'climax',
+        fillScore,
+        landing: 'none',
+        opening: false,
+      }],
+    } satisfies GrooveScorePlan;
+    const rendered = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      grooveScorePlan,
+    });
+    const pitchByVoice = {
+      kick: DRUM.KICK,
+      snare: DRUM.SNARE,
+      'tom-high': DRUM.TOM_HI,
+      'tom-mid': DRUM.TOM_MID,
+      'tom-low': DRUM.TOM_LO,
+    } as const;
+
+    for (const hit of fillScore.hits) {
+      const tick = Math.round((4 + hit.offsetBeatsFromEnd) * timebase.ppq);
+      expect(rendered.notes.some((note) =>
+        (note.startTick as number) === tick
+        && (note.pitch as number) === pitchByVoice[hit.voice]), `${hit.voice}@${hit.offsetBeatsFromEnd}`).toBe(true);
+    }
+    expect(rendered.notes.some((note) =>
+      (note.startTick as number) === timebase.ppq * 2
+      && (note.pitch as number) === DRUM.CHAT)).toBe(false);
+    expect(fillScore.hits.some((hit) => hit.voice === 'kick')).toBe(true);
+    expect(fillScore.hits.some((hit) => hit.voice.startsWith('tom-'))).toBe(true);
+  });
+
+  it('Renderer consumes bar trajectory so the scored climax is dynamically above a settled bar', () => {
+    const pattern: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 100 },
+      { drum: DRUM.SNARE, beat: 1, vel: 84 },
+      { drum: DRUM.SNARE, beat: 3, vel: 88 },
+    ];
+    const bar = (absoluteBar: number, trajectory: 'settled' | 'peak', energy: number) => ({
+      sectionId: sid,
+      barInSection: absoluteBar,
+      absoluteBar,
+      phraseIndex: 0,
+      phraseBarIndex: absoluteBar,
+      role: 'base' as const,
+      beatStrength: [1, 0.9, 1, 0.9],
+      subdivision: 'sixteenth' as const,
+      subdivisionAccent: [1, 0.65, 0.84, 0.62],
+      phraseAccent: 1,
+      energy,
+      trajectory,
+    });
+    const grooveScorePlan = {
+      grooveContractId: 'test-trajectory',
+      bySection: {
+        [sid]: {
+          sectionId: sid,
+          grooveContractId: 'test-trajectory',
+          bars: [bar(0, 'settled', 0.52), bar(1, 'peak', 0.9)],
+        },
+      },
+      boundaries: [],
+    } satisfies GrooveScorePlan;
+    const rendered = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: pattern },
+      grooveScorePlan,
+    });
+    const kickAtBar = (barIndex: number) => rendered.notes.find((note) =>
+      (note.pitch as number) === DRUM.KICK
+      && (note.startTick as number) === barIndex * 4 * timebase.ppq)!;
+
+    expect(kickAtBar(1).velocity).toBeGreaterThan(kickAtBar(0).velocity);
+  });
+
+  it('GrooveScore phrase roles materially author ghost, lift and turnaround events', () => {
+    const pattern: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 100 },
+      { drum: DRUM.SNARE, beat: 1, vel: 94 },
+      { drum: DRUM.SNARE, beat: 3, vel: 96 },
+      ...Array.from({ length: 8 }, (_, index) => ({ drum: DRUM.CHAT, beat: index * 0.5, vel: 48 })),
+    ];
+    const bar = (absoluteBar: number, role: 'answer' | 'turnaround') => ({
+      sectionId: sid, barInSection: absoluteBar, absoluteBar, phraseIndex: 0, phraseBarIndex: absoluteBar,
+      role, beatStrength: [1, 0.9, 1, 0.88], subdivision: 'sixteenth' as const,
+      subdivisionAccent: [1, 0.68, 0.86, 0.64], phraseAccent: 1,
+      drumInteraction: {
+        kickFollow: 'pulse' as const, snareFollow: 'backbeat' as const,
+        structuralKickBeats: [0], structuralSnareBeats: [1, 3], kickResponseLimit: 0, snareResponseLimit: 0,
+      },
+    });
+    const grooveScorePlan = {
+      grooveContractId: 'pop_citypop_boogie',
+      bySection: {
+        [sid]: {
+          sectionId: sid, grooveContractId: 'pop_citypop_boogie',
+          bars: [bar(0, 'answer'), bar(1, 'turnaround')],
+        },
+      },
+      boundaries: [],
+    } satisfies GrooveScorePlan;
+    const performance = {
+      id: 'phrase-consumption', sectionId: sid, grooveContractId: 'pop_citypop_boogie',
+      feelProfileId: 'pop-driving-rock', role: 'lift', kitProgram: 8, patternFamily: 'citypop-disco-boogie',
+      complexity: 3, intensity: 2, densityCeiling: 1, entryMode: 'full', fillPolicy: 'none',
+      fillAmount: 0, fillComplexity: 0, phraseVariation: 3, timingProfile: 'tight', maxMoveTicks: 16,
+      humanizeAmount: 2, feelOffsetMs: 0, velocityProfile: 'ghosted', kickPolicy: 'syncopated',
+      snarePolicy: 'ghost-before-backbeat', hatPolicy: 'eighths', cymbalPolicy: 'section-crash',
+      tomPolicy: 'turnaround', foregroundGuard: 'normal',
+    } as const;
+    const rendered = renderDrums(plan, timebase, 4, {
+      style: 'pop', patternBySection: { [sid]: pattern }, performanceBySection: { [sid]: performance },
+      grooveScorePlan, tempoBpm: 120,
+    });
+    const hasNear = (pitch: number, beat: number, tolerance = 0.06) => rendered.notes.some((note) =>
+      (note.pitch as number) === pitch
+      && Math.abs((note.startTick as number) / timebase.ppq - beat) <= tolerance);
+
+    expect(hasNear(DRUM.SNARE, 0.75)).toBe(true);
+    expect(hasNear(DRUM.OHAT, 1.5)).toBe(true);
+    expect(hasNear(DRUM.TOM_MID, 7.5)).toBe(true);
   });
 });
 

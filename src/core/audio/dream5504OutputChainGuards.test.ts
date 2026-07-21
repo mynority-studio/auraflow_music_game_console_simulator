@@ -27,6 +27,12 @@ describe('Dream 5504 hardware MIDI output guards', () => {
         expect(source).not.toContain('SAMPLE_RATE_OPTIONS');
         expect(generated).toContain("Dream5504MidiOutput.requireReady('播放生成音乐')");
         expect(uploaded).toContain("Dream5504MidiOutput.requireReady('播放上传 MIDI')");
+        expect(generated).not.toContain('Dream5504MidiOutput.setNeutralOutputBaseline()');
+        expect(uploaded).not.toContain('Dream5504MidiOutput.setNeutralOutputBaseline()');
+        expect(generated).not.toContain('Dream5504MidiOutput.setGeneralMasterVolume(');
+        expect(uploaded).not.toContain('Dream5504MidiOutput.setGeneralMasterVolume(');
+        expect(generated).toContain('Dream5504MidiOutput.applyGeneratedMasterPlan(masterPlan)');
+        expect(generated).toContain('Dream5504MidiOutput.restoreGeneratedMasterDefault()');
         expect(generated).not.toContain('await startAudioContext()');
         expect(generated).not.toContain('active' + 'Synth.setSongSpace');
     });

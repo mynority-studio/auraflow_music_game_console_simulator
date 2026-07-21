@@ -8,11 +8,25 @@
 
 import { beats, midi, ticks, type Timebase } from '../foundation';
 import { DRUM, drumPattern, type DrumHit } from '../knowledge/grooves';
+import type { GrooveDrumFillVoice } from '../knowledge/drumFillVocabulary';
 import { texturePocket } from './textureRenderer';
 import type { TextureSchedule } from './textureSchedule';
-import type { DrumPerformanceContract } from '../arranger/ArrangementPlan';
+import type {
+  DrumPerformanceContract,
+  GrooveBarScore,
+  GrooveBoundaryScore,
+  GrooveDrumInteractionScore,
+  GrooveScorePlan,
+} from '../arranger/ArrangementPlan';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
+import { drumFeelProfile } from '../knowledge/drumPerformanceKnowledge';
+import { realizeDrumPerformanceTrack } from './drumPerformanceRealizer';
+
+export interface DrumFollowSource {
+  notes: readonly NoteIR[];
+  activeSectionIds?: ReadonlySet<string>;
+}
 
 export interface DrumOptions {
   style?: string;
@@ -21,7 +35,13 @@ export interface DrumOptions {
   bigFillBars?: ReadonlySet<number>; // ★ lead-in 边界:更密 16 分 roll 推进(跃升段前末小节)
   textureSchedule?: TextureSchedule; // ★ 跟纹理 pocket:halftime/sparse 段换鼓型(对拍/同律动)
   patternBySection?: Record<string, readonly DrumHit[]>; // ★ groove 下发(主权威):器配按段匹配的鼓型,逐段换
+  patternBySectionBar?: Readonly<Record<string, readonly (readonly DrumHit[])[]>>; // Arranger bar score 的器配投影
   performanceBySection?: Readonly<Record<string, Readonly<DrumPerformanceContract>>>; // ★ Arranger 鼓手演奏合同:entry/fill/guard
+  grooveScorePlan?: Readonly<GrooveScorePlan>;
+  /** Production defers realization until final cross-track follow notes exist. */
+  deferPerformanceRealization?: boolean;
+  /** Concrete rhythm-section onsets used only through Arranger-authored follow directives. */
+  followSources?: Partial<Record<'bass' | 'comp' | 'lead', DrumFollowSource>>;
 }
 
 // ★ 纹理 pocket 鼓型(跟 bass/comp 的纹理走):half-time = 慢一倍重拍;sparse = 留白。
@@ -41,6 +61,202 @@ const RIDE_DRUMS = new Set<number>([DRUM.RIDE, DRUM.RIDE_BELL, DRUM.PHAT]);
 const CYMBAL_DRUMS = new Set<number>([DRUM.CHAT, DRUM.OHAT, DRUM.PHAT, DRUM.SHAKER, DRUM.TAMB, DRUM.RIDE, DRUM.RIDE_BELL]);
 const TOM_DRUMS = new Set<number>([DRUM.TOM_LO, DRUM.TOM_MID, DRUM.TOM_HI]);
 const SNARE_DRUMS = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP]);
+const PRIMARY_SNARE_DRUMS = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK]);
+
+interface FollowCandidate {
+  beat: number;
+  velocity: number;
+  startTick: number;
+}
+
+function nearBeat(a: number, b: number, epsilon = 0.07): boolean {
+  return Math.abs(a - b) <= epsilon;
+}
+
+function canonicalSourceBeat(beat: number, score: Readonly<GrooveBarScore>): number {
+  const unit = score.subdivision === 'sixteenth' ? 0.25 : score.subdivision === 'triplet' ? 1 / 3 : 0.5;
+  const snapped = Math.round(beat / unit) * unit;
+  const normalized = Math.abs(beat - snapped) <= 0.08 ? snapped : beat;
+  return Math.round(normalized * 1000) / 1000;
+}
+
+function sourceCandidatesForBar(
+  source: DrumFollowSource | undefined,
+  barStartBeat: number,
+  beatsPerBar: number,
+  score: Readonly<GrooveBarScore>,
+  ppq: number,
+): FollowCandidate[] {
+  if (!source || (source.activeSectionIds && !source.activeSectionIds.has(score.sectionId))) return [];
+  const byBeat = new Map<number, FollowCandidate>();
+  for (const note of source.notes) {
+    const relative = (note.startTick as number) / ppq - barStartBeat;
+    if (relative < -0.06 || relative >= beatsPerBar - 0.02) continue;
+    const beat = canonicalSourceBeat(Math.max(0, relative), score);
+    const key = Math.round(beat * 1000);
+    const current = byBeat.get(key);
+    if (!current || note.velocity > current.velocity) {
+      byBeat.set(key, { beat, velocity: note.velocity, startTick: note.startTick as number });
+    }
+  }
+  return [...byBeat.values()].sort((a, b) => a.beat - b.beat);
+}
+
+function beatStrength(score: Readonly<GrooveBarScore>, beat: number): number {
+  const index = Math.max(0, Math.min(score.beatStrength.length - 1, Math.floor(beat)));
+  return score.beatStrength[index] ?? 1;
+}
+
+function pickResponses(
+  candidates: readonly FollowCandidate[],
+  limit: number,
+  score: Readonly<GrooveBarScore>,
+  avoidBeats: readonly number[],
+  preferOffbeats: boolean,
+): FollowCandidate[] {
+  if (limit <= 0) return [];
+  const ranked = candidates
+    .filter((candidate) => !avoidBeats.some((beat) => nearBeat(candidate.beat, beat, 0.12)))
+    .map((candidate) => {
+      const offbeat = Math.abs(candidate.beat - Math.round(candidate.beat)) > 0.09;
+      const scoreValue = candidate.velocity * 0.45
+        + beatStrength(score, candidate.beat) * 22
+        + (preferOffbeats === offbeat ? 12 : 0)
+        + (candidate.beat === 0 ? 18 : 0);
+      return { candidate, scoreValue };
+    })
+    .sort((a, b) => b.scoreValue - a.scoreValue || a.candidate.beat - b.candidate.beat);
+  const selected: FollowCandidate[] = [];
+  for (const item of ranked) {
+    if (selected.length >= limit) break;
+    if (selected.some((candidate) => Math.abs(candidate.beat - item.candidate.beat) < 0.24)) continue;
+    selected.push(item.candidate);
+  }
+  return selected.sort((a, b) => a.beat - b.beat);
+}
+
+function ensureSnareAnchors(
+  hits: readonly DrumHit[],
+  interaction: Readonly<GrooveDrumInteractionScore>,
+  performance: Readonly<DrumPerformanceContract> | undefined,
+): DrumHit[] {
+  const out = hits.map((hit) => ({ ...hit }));
+  const drum = performance?.snarePolicy === 'rim' ? DRUM.SIDESTICK : DRUM.SNARE;
+  const velocity = performance?.snarePolicy === 'rim'
+    ? 70 + (performance?.intensity ?? 1) * 3
+    : 82 + (performance?.intensity ?? 1) * 5;
+  for (const beat of interaction.structuralSnareBeats) {
+    const existing = out.find((hit) => PRIMARY_SNARE_DRUMS.has(hit.drum) && nearBeat(hit.beat, beat));
+    if (existing) {
+      existing.beat = beat;
+      existing.vel = Math.max(existing.vel, velocity);
+    } else {
+      out.push({ drum, beat, vel: velocity });
+    }
+  }
+  return out;
+}
+
+function applyKickFollow(
+  hits: readonly DrumHit[],
+  interaction: Readonly<GrooveDrumInteractionScore>,
+  sourceCandidates: readonly FollowCandidate[],
+  score: Readonly<GrooveBarScore>,
+  performance: Readonly<DrumPerformanceContract> | undefined,
+): DrumHit[] {
+  const intensity = performance?.intensity ?? 1;
+  const sourceResponses = interaction.kickFollow === 'bass'
+    ? pickResponses(sourceCandidates, interaction.kickResponseLimit, score, interaction.structuralKickBeats, true)
+    : [];
+  const targets = new Map<number, number>();
+  const pulseVelocity = performance?.patternFamily.startsWith('jazz')
+    ? 40 + intensity * 4
+    : 86 + intensity * 6;
+  for (const beat of interaction.structuralKickBeats) targets.set(Math.round(beat * 1000), pulseVelocity);
+  for (const candidate of sourceResponses) {
+    const syncopated = Math.abs(candidate.beat - Math.round(candidate.beat)) > 0.09;
+    const velocity = Math.max(66, Math.min(108,
+      Math.round(58 + candidate.velocity * 0.38 + intensity * 4 - (syncopated ? 5 : 0))));
+    const key = Math.round(candidate.beat * 1000);
+    targets.set(key, Math.max(targets.get(key) ?? 0, velocity));
+  }
+
+  // If the followed player is absent, keep the selected KB pattern and only
+  // enforce structural anchors. When source notes exist, the kick line is
+  // reconciled to the bounded source set instead of copying every bass note.
+  const reconcile = interaction.kickFollow === 'bass' && sourceResponses.length > 0;
+  const used = new Set<number>();
+  const out: DrumHit[] = [];
+  for (const hit of hits) {
+    if (hit.drum !== DRUM.KICK) {
+      out.push({ ...hit });
+      continue;
+    }
+    const target = [...targets.entries()].find(([key]) => nearBeat(hit.beat, key / 1000));
+    if (!target) {
+      if (!reconcile) out.push({ ...hit });
+      continue;
+    }
+    const [key, velocity] = target;
+    if (used.has(key)) continue;
+    used.add(key);
+    out.push({ ...hit, beat: key / 1000, vel: Math.max(hit.vel, velocity) });
+  }
+  for (const [key, velocity] of targets) {
+    if (!used.has(key)) out.push({ drum: DRUM.KICK, beat: key / 1000, vel: velocity });
+  }
+  return out;
+}
+
+function applySnareFollow(
+  hits: readonly DrumHit[],
+  interaction: Readonly<GrooveDrumInteractionScore>,
+  sourceCandidates: readonly FollowCandidate[],
+  score: Readonly<GrooveBarScore>,
+  performance: Readonly<DrumPerformanceContract> | undefined,
+): DrumHit[] {
+  const anchored = ensureSnareAnchors(hits, interaction, performance);
+  if (interaction.snareFollow === 'backbeat' || sourceCandidates.length === 0) return anchored;
+  const responses = pickResponses(
+    sourceCandidates.filter((candidate) => candidate.beat >= 0.25),
+    interaction.snareResponseLimit,
+    score,
+    interaction.structuralSnareBeats,
+    true,
+  );
+  const drum = performance?.snarePolicy === 'rim' ? DRUM.SIDESTICK : DRUM.SNARE;
+  for (const candidate of responses) {
+    const existing = anchored.find((hit) => SNARE_DRUMS.has(hit.drum) && nearBeat(hit.beat, candidate.beat));
+    const velocity = interaction.snareFollow === 'lead-accents'
+      ? Math.max(54, Math.min(78, Math.round(candidate.velocity * 0.72)))
+      : Math.max(38, Math.min(58, Math.round(candidate.velocity * 0.58)));
+    if (existing) {
+      existing.beat = candidate.beat;
+      existing.vel = Math.max(existing.vel, velocity);
+    } else {
+      anchored.push({ drum, beat: candidate.beat, vel: velocity });
+    }
+  }
+  return anchored;
+}
+
+function applyDrumInteraction(
+  hits: readonly DrumHit[],
+  score: Readonly<GrooveBarScore> | undefined,
+  performance: Readonly<DrumPerformanceContract> | undefined,
+  followSources: DrumOptions['followSources'],
+  barStartBeat: number,
+  beatsPerBar: number,
+  ppq: number,
+): readonly DrumHit[] {
+  const interaction = score?.drumInteraction;
+  if (!score || !interaction) return hits;
+  const bass = sourceCandidatesForBar(followSources?.bass, barStartBeat, beatsPerBar, score, ppq);
+  const snareSource = interaction.snareFollow === 'comping' ? followSources?.comp : followSources?.lead;
+  const snare = sourceCandidatesForBar(snareSource, barStartBeat, beatsPerBar, score, ppq);
+  const withKick = applyKickFollow(hits, interaction, bass, score, performance);
+  return applySnareFollow(withKick, interaction, snare, score, performance);
+}
 
 function applyEntryMode(
   hits: readonly DrumHit[],
@@ -89,24 +305,49 @@ function embellishBar(
   barInSection: number,
   style: string,
   isFillBar: boolean,
+  score?: Readonly<GrooveBarScore>,
   performance?: Readonly<DrumPerformanceContract>,
 ): DrumHit[] {
+  if (isFillBar || performance?.phraseVariation === 0) return [];
+  const profile = performance ? drumFeelProfile(performance.feelProfileId) : undefined;
+  const phraseRole = score?.role;
+  const ghostAllowed = phraseRole
+    ? profile?.phrase.ghostRoles.includes(phraseRole) ?? false
+    : barInSection % 2 === 1;
+  const openHatAllowed = phraseRole
+    ? profile?.phrase.openHatRoles.includes(phraseRole) ?? false
+    : barInSection % 4 === 2;
+  const turnaroundAllowed = phraseRole
+    ? phraseRole === 'turnaround' && (profile?.phrase.allowInternalTurnaround ?? true)
+    : barInSection % 4 === 3;
+  const triplet = score?.subdivision === 'triplet';
+  const ghostPickup = triplet ? 2 / 3 : 0.75;
+  const liftOffbeat = triplet ? 1 + 2 / 3 : 1.5;
+  const turnFirst = triplet ? 3 + 1 / 3 : 3.25;
+  const turnLast = triplet ? 3 + 2 / 3 : 3.5;
+
   if (style.toLowerCase() === 'jazz') {
-    if (!performance || performance.snarePolicy !== 'jazz-comping' || performance.complexity < 2 || performance.role !== 'lift' || performance.phraseVariation < 2) return [];
-    return barInSection % 2 === 1
-      ? [{ drum: DRUM.SNARE, beat: 1.5, vel: 42 }, { drum: DRUM.SNARE, beat: 3.5, vel: 44 }]
-      : [];
+    if (!performance || performance.snarePolicy !== 'jazz-comping' || performance.complexity < 2
+      || performance.phraseVariation < 2 || !ghostAllowed) return [];
+    if (phraseRole === 'turnaround') {
+      return [{ drum: DRUM.SNARE, beat: 1.5, vel: 40 }, { drum: DRUM.TOM_MID, beat: 3 + 1 / 3, vel: 62 }];
+    }
+    return [{ drum: DRUM.SNARE, beat: 1.5, vel: 42 }, { drum: DRUM.SNARE, beat: 3.5, vel: 44 }];
   }
-  if (performance?.foregroundGuard === 'strict' && performance.role !== 'lift') return [];
-  if (performance && performance.phraseVariation <= 0) return [];
   const out: DrumHit[] = [];
-  const phrase = barInSection % 4;
-  // 鬼军鼓:奇数小节在 backbeat 前的"a"(0.75/2.75)加 ghost(35-45,研究:a-before-2/4 的 bounce)
-  if ((!performance || performance.phraseVariation >= 2) && barInSection % 2 === 1) { out.push({ drum: DRUM.SNARE, beat: 0.75, vel: 36 }, { drum: DRUM.SNARE, beat: 2.75, vel: 40 }); }
-  // 开镲 lift:每 4 小节第 3 小节 1.5 开镲(呼吸/抬起)
-  if ((!performance || performance.phraseVariation >= 2) && phrase === 2) out.push({ drum: DRUM.OHAT, beat: 1.5, vel: 52 });
-  // 4 小节乐句末轻 tom turnaround(段界另有真 fill → 此处跳过避免叠加)
-  if ((!performance || performance.phraseVariation >= 3) && phrase === 3 && !isFillBar && performance?.tomPolicy !== 'none') out.push({ drum: DRUM.SNARE, beat: 3.25, vel: 44 }, { drum: DRUM.TOM_MID, beat: 3.5, vel: 66 });
+  // Strict foreground guard still permits quiet ghost responses, but blocks
+  // attention-grabbing cymbal lifts and internal tom turns.
+  if ((!performance || performance.phraseVariation >= 2) && ghostAllowed) {
+    out.push({ drum: DRUM.SNARE, beat: ghostPickup, vel: 36 }, { drum: DRUM.SNARE, beat: 2 + ghostPickup, vel: 40 });
+  }
+  if ((!performance || performance.phraseVariation >= 2) && openHatAllowed
+    && performance?.foregroundGuard !== 'strict') {
+    out.push({ drum: DRUM.OHAT, beat: liftOffbeat, vel: 52 });
+  }
+  if ((!performance || performance.phraseVariation >= 3) && turnaroundAllowed
+    && performance?.tomPolicy !== 'none' && performance?.foregroundGuard !== 'strict') {
+    out.push({ drum: DRUM.SNARE, beat: turnFirst, vel: 44 }, { drum: DRUM.TOM_MID, beat: turnLast, vel: 66 });
+  }
   return out;
 }
 
@@ -132,6 +373,26 @@ function humanizeVel(
   }
   v += (((bar * 31 + idx * 17) % 9) - 4);         // 逐小节/逐击确定性抖动 ±4
   return v;
+}
+
+function scoreVelocity(velocity: number, hit: DrumHit, score: Readonly<GrooveBarScore> | undefined): number {
+  if (!score) return velocity;
+  const beatIndex = Math.max(0, Math.min(score.beatStrength.length - 1, Math.floor(hit.beat)));
+  const beatFactor = score.beatStrength[beatIndex] ?? 1;
+  const subdivisionCount = score.subdivisionAccent.length;
+  const fraction = ((hit.beat % 1) + 1) % 1;
+  const subdivisionIndex = Math.round(fraction * subdivisionCount) % subdivisionCount;
+  const subdivision = score.subdivisionAccent[subdivisionIndex] ?? 1;
+  // Existing KB hit velocities already carry voice accents. The shared score
+  // shapes them gently instead of flattening that orchestration.
+  const subdivisionFactor = 0.75 + subdivision * 0.25;
+  const energyFactor = score.energy === undefined ? 1 : 0.94 + Math.max(0, Math.min(1, score.energy)) * 0.08;
+  const trajectoryFactor = score.trajectory === 'rising' ? 1.025
+    : score.trajectory === 'arrival' ? 1.055
+      : score.trajectory === 'peak' ? 1.04
+        : score.trajectory === 'falling' ? 0.97
+          : 1;
+  return clampVel(velocity * beatFactor * subdivisionFactor * score.phraseAccent * energyFactor * trajectoryFactor);
 }
 
 function fillPolicyFor(
@@ -219,6 +480,127 @@ function pushFill(
   push(DRUM.OHAT, b0 + beatsPerBar - 0.5, 80);
 }
 
+function pushGrooveFill(
+  push: (drum: number, beat: number, vel: number, dur?: number) => void,
+  b0: number,
+  beatsPerBar: number,
+  boundary: Readonly<GrooveBoundaryScore>,
+): void {
+  const end = b0 + beatsPerBar;
+  const start = end - Math.min(beatsPerBar, Math.max(0.25, boundary.durationBeats));
+  const at = (drum: number, beat: number, velocity: number) => {
+    if (beat >= start - 1e-6 && beat < end - 1e-6) push(drum, beat, velocity);
+  };
+  const strong = boundary.intensity >= 2;
+
+  if (boundary.drumFillFamily === 'pop-snare-pickup') {
+    at(DRUM.SNARE, end - 0.75, 68);
+    at(DRUM.SNARE, end - 0.5, 82);
+    at(DRUM.OHAT, end - 0.25, 74);
+    return;
+  }
+  if (boundary.drumFillFamily === 'pop-tom-build') {
+    if (strong) {
+      at(DRUM.SNARE, end - 1.5, 78);
+      at(DRUM.TOM_HI, end - 1.25, 86);
+      at(DRUM.SNARE, end - 1, 92);
+      at(DRUM.TOM_MID, end - 0.75, 98);
+    }
+    at(DRUM.SNARE, end - 0.5, strong ? 104 : 82);
+    at(DRUM.TOM_LO, end - 0.25, strong ? 112 : 94);
+    return;
+  }
+  if (boundary.drumFillFamily === 'motown-tom-bridge') {
+    at(DRUM.TOM_HI, end - 1.5, 86);
+    at(DRUM.SNARE, end - 1, 88);
+    at(DRUM.SNARE, end - 0.75, 94);
+    at(DRUM.TOM_LO, end - 0.5, 102);
+    return;
+  }
+  if (boundary.drumFillFamily === 'rnb-pocket-turn') {
+    at(DRUM.SIDESTICK, end - 0.75, 46);
+    at(DRUM.SNARE, end - 0.5, 58);
+    at(DRUM.KICK, end - 0.25, 82);
+    return;
+  }
+  if (boundary.drumFillFamily === 'rnb-gospel-triplet') {
+    at(DRUM.SNARE, end - 1, 72);
+    at(DRUM.SNARE, end - 2 / 3, 86);
+    at(DRUM.TOM_MID, end - 1 / 3, 102);
+    return;
+  }
+  if (boundary.drumFillFamily === 'trap-snare-roll') {
+    let index = 0;
+    for (let beat = start; beat < end - 1e-6; beat += 0.25) {
+      at(DRUM.SNARE, beat, 54 + index * 6);
+      index += 1;
+    }
+    return;
+  }
+  if (boundary.drumFillFamily === 'lofi-one-shot') {
+    at(DRUM.SIDESTICK, Math.max(start, end - 0.5), 52);
+    at(DRUM.KICK, end - 0.25, 74);
+    return;
+  }
+  if (boundary.drumFillFamily === 'jazz-bossa-cross-stick') {
+    at(DRUM.SIDESTICK, end - 0.75, 50);
+    at(DRUM.SIDESTICK, end - 0.25, 62);
+    return;
+  }
+  // Jazz swing: triplet-grid accents move from snare to tom while preserving
+  // the same subdivision as the ride pattern.
+  at(DRUM.SNARE, end - 1.67, 48);
+  at(DRUM.SNARE, end - 1.33, 60);
+  at(DRUM.TOM_MID, end - 1, 70);
+  at(DRUM.TOM_LO, end - 0.33, 84);
+}
+
+const DRUM_BY_FILL_VOICE: Readonly<Record<GrooveDrumFillVoice, number>> = {
+  kick: DRUM.KICK,
+  snare: DRUM.SNARE,
+  'tom-high': DRUM.TOM_HI,
+  'tom-mid': DRUM.TOM_MID,
+  'tom-low': DRUM.TOM_LO,
+};
+
+function scoredGrooveFillHits(
+  beatsPerBar: number,
+  boundary: Readonly<GrooveBoundaryScore>,
+): DrumHit[] {
+  const score = boundary.fillScore;
+  if (!score) return [];
+  return score.hits
+    .filter((hit) => hit.offsetBeatsFromEnd >= -boundary.durationBeats - 1e-6 && hit.offsetBeatsFromEnd < -1e-6)
+    .map((hit) => ({
+      drum: DRUM_BY_FILL_VOICE[hit.voice],
+      beat: beatsPerBar + hit.offsetBeatsFromEnd,
+      vel: hit.velocity,
+    }));
+}
+
+function pushLanding(
+  pushUnique: (drum: number, beat: number, vel: number, dur?: number) => void,
+  beat: number,
+  boundary: Readonly<GrooveBoundaryScore>,
+): void {
+  if (boundary.landing === 'kick' || boundary.landing === 'kick-crash' || boundary.landing === 'kick-ride') {
+    pushUnique(DRUM.KICK, beat, boundary.intensity >= 3 ? 112 : 96, 0.5);
+  }
+  if (boundary.landing === 'kick-crash') pushUnique(DRUM.CRASH, beat, boundary.intensity >= 3 ? 108 : 94, 1);
+  if (boundary.landing === 'ride' || boundary.landing === 'kick-ride') pushUnique(DRUM.RIDE, beat, boundary.intensity >= 3 ? 88 : 76, 0.75);
+}
+
+function maskBaseForBoundary(
+  hits: readonly DrumHit[],
+  beatsPerBar: number,
+  boundary: Readonly<GrooveBoundaryScore> | undefined,
+): readonly DrumHit[] {
+  if (!boundary || boundary.baseMask === 'keep') return hits;
+  if (boundary.baseMask === 'replace-bar') return [];
+  const fillStart = beatsPerBar - Math.min(beatsPerBar, Math.max(0.25, boundary.durationBeats));
+  return hits.filter((hit) => hit.beat < fillStart - 1e-6);
+}
+
 export function renderDrums(
   plan: HarmonicPlan,
   timebase: Timebase,
@@ -228,6 +610,8 @@ export function renderDrums(
   const pattern = drumPattern(opts.style ?? 'default');
   const fillBars = opts.fillBars ?? new Set<number>();
   const tempoBpm = opts.tempoBpm ?? 120;
+  const performanceBySection = opts.performanceBySection;
+  const useUnifiedPerformance = !!opts.grooveScorePlan && !!performanceBySection;
   const notes: NoteIR[] = [];
 
   let totalBeats = 0;
@@ -245,21 +629,41 @@ export function renderDrums(
       velocity: clampVel(vel),
     });
   };
+  const pushUnique = (drum: number, beat: number, vel: number, dur = 0.25) => {
+    const start = timebase.beatToTick(beats(beat)) as number;
+    if (notes.some((note) => (note.pitch as number) === drum && (note.startTick as number) === start)) return;
+    push(drum, beat, vel, dur);
+  };
   const pushHit = (hit: DrumHit, beat: number, vel: number, performance?: Readonly<DrumPerformanceContract>) =>
-    push(hit.drum, beat, vel, 0.25, timingOffsetTicks(hit, performance, timebase.ppq, tempoBpm));
+    push(hit.drum, beat, vel, 0.25,
+      useUnifiedPerformance ? 0 : timingOffsetTicks(hit, performance, timebase.ppq, tempoBpm));
 
   const sched = opts.textureSchedule;
   const bySection = opts.patternBySection;
-  const performanceBySection = opts.performanceBySection;
+  const bySectionBar = opts.patternBySectionBar;
+  const scoreByAbsoluteBar = new Map<number, Readonly<GrooveBarScore>>();
+  for (const section of Object.values(opts.grooveScorePlan?.bySection ?? {})) {
+    for (const bar of section.bars) scoreByAbsoluteBar.set(bar.absoluteBar, bar);
+  }
+  const boundaryBySourceBar = new Map<number, Readonly<GrooveBoundaryScore>>();
+  const boundaryByLandingBar = new Map<number, Readonly<GrooveBoundaryScore>>();
+  for (const boundary of opts.grooveScorePlan?.boundaries ?? []) {
+    boundaryBySourceBar.set(boundary.sourceBar, boundary);
+    boundaryByLandingBar.set(boundary.landingBar, boundary);
+  }
   const spanAtBeat = (beat: number): ChordSpan | undefined =>
     plan.chordTimeline.find((c) => beat >= c.startBeat && beat < c.startBeat + c.durationBeats);
   const performanceForBar = (bar: number): Readonly<DrumPerformanceContract> | undefined => {
     const span = spanAtBeat(bar * beatsPerBar);
     return span ? performanceBySection?.[span.sectionId] : undefined;
   };
-  const kitForBar = (b0: number): readonly DrumHit[] => {
+  const kitForBar = (b0: number, barInSectionIndex: number): readonly DrumHit[] => {
     const span = spanAtBeat(b0);
     // ★ groove 下发 = 鼓节奏【主权威】:器配按段匹配的鼓型逐段换(取代单一 pattern)。
+    if (bySectionBar && span) {
+      const p = bySectionBar[span.sectionId]?.[barInSectionIndex];
+      if (p) return p;
+    }
     if (bySection && span) {
       const p = bySection[span.sectionId];
       if (p) return p;
@@ -295,25 +699,244 @@ export function renderDrums(
 
   for (let bar = 0; bar < bars; bar++) {
     const b0 = bar * beatsPerBar;
-    const fill = fillBars.has(bar);
+    const boundary = boundaryBySourceBar.get(bar);
+    const legacyFill = !boundary && fillBars.has(bar);
+    const fill = !!boundary || legacyFill;
+    const score = scoreByAbsoluteBar.get(bar);
     const performance = performanceForBar(bar);
-    const kit = applyDensityCeiling(applyEntryMode(kitForBar(b0), performance, barInSection[bar]), performance);
+    const interacted = applyDrumInteraction(
+      kitForBar(b0, barInSection[bar]),
+      score,
+      performance,
+      opts.followSources,
+      b0,
+      beatsPerBar,
+      timebase.ppq,
+    );
+    const entered = applyEntryMode(interacted, performance, barInSection[bar]);
+    const kit = applyDensityCeiling(maskBaseForBoundary(entered, beatsPerBar, boundary), performance);
     kit.forEach((hit, idx) => {
-      pushHit(hit, b0 + hit.beat, humanizeVel(hit, bar, idx, barInSection[bar], performance), performance);
+      const velocity = scoreVelocity(humanizeVel(hit, bar, idx, barInSection[bar], performance), hit, score);
+      pushHit(hit, b0 + hit.beat, velocity, performance);
     });
     // ★ per-bar 装饰(去死板):鬼音/开镲/turnaround,段内小节位决定 → 相邻小节不复读。sparse 段不叠(留白)。
     if (!fill && !isSparseKit(b0, performance)) {
-      for (const e of embellishBar(barInSection[bar], style, fill, performance)) pushHit(e, b0 + e.beat, e.vel, performance);
+      embellishBar(barInSection[bar], style, fill, score, performance).forEach((hit, index) => {
+        const velocity = scoreVelocity(
+          humanizeVel(hit, bar, kit.length + index, barInSection[bar], performance),
+          hit,
+          score,
+        );
+        pushHit(hit, b0 + hit.beat, velocity, performance);
+      });
+    }
+    const landing = boundaryByLandingBar.get(bar);
+    if (landing && performance?.role !== 'silent' && performance?.entryMode !== 'none') {
+      pushLanding(pushUnique, b0, landing);
     }
     // ★ crash 落点:fill 推进后的【新段下拍】= 经典"fill→crash";非 jazz/非 sparse。
     const prevPerformance = bar > 0 ? performanceForBar(bar - 1) : undefined;
-    if (sectionStart[bar] && fillBars.has(bar - 1) && style !== 'jazz' && !isSparseKit(b0, performance) && cymbalAllowed(prevPerformance)) {
+    if (!opts.grooveScorePlan && sectionStart[bar] && fillBars.has(bar - 1) && style !== 'jazz' && !isSparseKit(b0, performance) && cymbalAllowed(prevPerformance)) {
       push(DRUM.CRASH, b0, 96, 1.0);
     }
-    if (fill) {
+    if (boundary) {
+      const scoredFill = scoredGrooveFillHits(beatsPerBar, boundary);
+      if (scoredFill.length > 0) {
+        scoredFill.forEach((hit, index) => {
+          const velocity = scoreVelocity(
+            humanizeVel(hit, bar, kit.length + index, barInSection[bar], performance),
+            hit,
+            score,
+          );
+          pushHit(hit, b0 + hit.beat, velocity, performance);
+        });
+      } else {
+        pushGrooveFill(push, b0, beatsPerBar, boundary);
+      }
+    } else if (legacyFill) {
       pushFill(push, b0, beatsPerBar, fillPolicyFor(performance, opts.bigFillBars?.has(bar) ?? false), performance);
     }
   }
 
-  return { role: 'drum', notes };
+  const track: TrackIR = { role: 'drum', notes };
+  if (!useUnifiedPerformance || opts.deferPerformanceRealization) return track;
+  return realizeDrumPerformanceTrack(track, {
+    timebase,
+    beatsPerBar,
+    tempoBpm,
+    grooveScorePlan: opts.grooveScorePlan!,
+    performanceBySection: performanceBySection!,
+  });
+}
+
+export interface FinalDrumFollowOptions {
+  beatsPerBar: number;
+  ppq: number;
+  grooveScorePlan: Readonly<GrooveScorePlan>;
+  performanceBySection?: Readonly<Record<string, Readonly<DrumPerformanceContract>>>;
+  followSources: NonNullable<DrumOptions['followSources']>;
+  activeDrumSectionIds?: ReadonlySet<string>;
+}
+
+function responseAllowedByEntry(
+  drum: number,
+  score: Readonly<GrooveBarScore>,
+  performance: Readonly<DrumPerformanceContract> | undefined,
+): boolean {
+  if (!performance) return true;
+  if (performance.role === 'silent' || performance.entryMode === 'none' || performance.entryMode === 'dropout') return false;
+  if (score.barInSection > 0 || performance.entryMode === 'full') return true;
+  if (performance.entryMode === 'hat-only' || performance.entryMode === 'ride-only') return false;
+  if (performance.entryMode === 'kick-only' || performance.entryMode === 'kick-hat') return drum === DRUM.KICK;
+  return true;
+}
+
+function dedupeDrumNotes(notes: readonly NoteIR[]): NoteIR[] {
+  const byKey = new Map<string, NoteIR>();
+  for (const note of notes) {
+    const key = `${note.pitch as number}:${note.startTick as number}`;
+    const current = byKey.get(key);
+    if (!current) {
+      byKey.set(key, note);
+      continue;
+    }
+    byKey.set(key, {
+      ...current,
+      durationTicks: ticks(Math.max(current.durationTicks as number, note.durationTicks as number)),
+      velocity: Math.max(current.velocity, note.velocity),
+    });
+  }
+  return [...byKey.values()].sort((a, b) =>
+    (a.startTick as number) - (b.startTick as number)
+    || (a.pitch as number) - (b.pitch as number));
+}
+
+/**
+ * Production reconciliation pass. It runs after all source-track timing and
+ * presence transforms, so a response cannot follow a note that was later
+ * gated away or shifted to another pocket position.
+ */
+export function applyFinalDrumFollow(
+  tracks: TrackIR[],
+  options: FinalDrumFollowOptions,
+): TrackIR[] {
+  const drumIndex = tracks.findIndex((track) => track.role === 'drum');
+  if (drumIndex < 0) return tracks;
+  let notes = [...tracks[drumIndex].notes];
+  const { beatsPerBar, ppq } = options;
+  const barTicks = beatsPerBar * ppq;
+  const responseToleranceTicks = Math.max(1, Math.round(ppq * 0.08));
+  const boundaryBySourceBar = new Map<number, Readonly<GrooveBoundaryScore>>();
+  for (const boundary of options.grooveScorePlan.boundaries) boundaryBySourceBar.set(boundary.sourceBar, boundary);
+  const bars = Object.values(options.grooveScorePlan.bySection)
+    .flatMap((section) => section.bars)
+    .sort((a, b) => a.absoluteBar - b.absoluteBar);
+
+  const upsertResponse = (
+    pitch: number,
+    candidate: FollowCandidate,
+    velocity: number,
+    score: Readonly<GrooveBarScore>,
+  ): void => {
+    const performance = options.performanceBySection?.[score.sectionId];
+    if (!responseAllowedByEntry(pitch, score, performance)) return;
+    const targetStartTick = nearBeat(candidate.beat, 0, 0.001)
+      ? score.absoluteBar * barTicks
+      : candidate.startTick;
+    const existingIndex = notes.findIndex((note) =>
+      (note.pitch as number) === pitch
+      && Math.abs((note.startTick as number) - targetStartTick) <= responseToleranceTicks);
+    const durationTicks = ticks(Math.max(1, Math.round(ppq * 0.22)));
+    if (existingIndex >= 0) {
+      const existing = notes[existingIndex];
+      notes[existingIndex] = {
+        ...existing,
+        startTick: ticks(Math.max(0, targetStartTick)),
+        velocity: Math.max(existing.velocity, velocity),
+      };
+      return;
+    }
+    notes.push({
+      pitch: midi(pitch),
+      startTick: ticks(Math.max(0, targetStartTick)),
+      durationTicks,
+      velocity,
+    });
+  };
+
+  for (const score of bars) {
+    if (options.activeDrumSectionIds && !options.activeDrumSectionIds.has(score.sectionId)) continue;
+    const interaction = score.drumInteraction;
+    if (!interaction) continue;
+    const performance = options.performanceBySection?.[score.sectionId];
+    const barStartBeat = score.absoluteBar * beatsPerBar;
+    const barStartTick = score.absoluteBar * barTicks;
+    const boundary = boundaryBySourceBar.get(score.absoluteBar);
+    const responseEndBeat = boundary && boundary.baseMask !== 'keep'
+      ? beatsPerBar - Math.min(beatsPerBar, Math.max(0.25, boundary.durationBeats))
+      : beatsPerBar;
+
+    const bassCandidates = sourceCandidatesForBar(
+      options.followSources.bass,
+      barStartBeat,
+      beatsPerBar,
+      score,
+      ppq,
+    ).filter((candidate) => candidate.beat < responseEndBeat - 1e-6);
+    const kickResponses = interaction.kickFollow === 'bass'
+      ? pickResponses(bassCandidates, interaction.kickResponseLimit, score, interaction.structuralKickBeats, true)
+      : [];
+    if (kickResponses.length > 0) {
+      // Match the old interaction semantics: once real bass responses exist,
+      // non-structural base-pattern kicks yield to them. Scored fill kicks live
+      // beyond responseEndBeat and remain untouched.
+      notes = notes.filter((note) => {
+        if ((note.pitch as number) !== DRUM.KICK) return true;
+        const tick = note.startTick as number;
+        if (tick < barStartTick - responseToleranceTicks || tick >= barStartTick + barTicks + responseToleranceTicks) return true;
+        const relativeBeat = (tick - barStartTick) / ppq;
+        if (relativeBeat >= responseEndBeat - 0.08) return true;
+        return interaction.structuralKickBeats.some((beat) => Math.abs(relativeBeat - beat) <= 0.14);
+      });
+      for (const candidate of kickResponses) {
+        const syncopated = Math.abs(candidate.beat - Math.round(candidate.beat)) > 0.09;
+        const rawVelocity = Math.max(66, Math.min(108,
+          Math.round(58 + candidate.velocity * 0.38 + (performance?.intensity ?? 1) * 4 - (syncopated ? 5 : 0))));
+        const hit = { drum: DRUM.KICK, beat: candidate.beat, vel: rawVelocity };
+        upsertResponse(DRUM.KICK, candidate, scoreVelocity(rawVelocity, hit, score), score);
+      }
+    }
+
+    const snareSource = interaction.snareFollow === 'comping'
+      ? options.followSources.comp
+      : options.followSources.lead;
+    const snareCandidates = sourceCandidatesForBar(
+      snareSource,
+      barStartBeat,
+      beatsPerBar,
+      score,
+      ppq,
+    ).filter((candidate) => candidate.beat >= 0.25 && candidate.beat < responseEndBeat - 1e-6);
+    if (interaction.snareFollow !== 'backbeat') {
+      const responses = pickResponses(
+        snareCandidates,
+        interaction.snareResponseLimit,
+        score,
+        interaction.structuralSnareBeats,
+        true,
+      );
+      const drum = performance?.snarePolicy === 'rim' ? DRUM.SIDESTICK : DRUM.SNARE;
+      for (const candidate of responses) {
+        const rawVelocity = interaction.snareFollow === 'lead-accents'
+          ? Math.max(54, Math.min(78, Math.round(candidate.velocity * 0.72)))
+          : Math.max(38, Math.min(58, Math.round(candidate.velocity * 0.58)));
+        const hit = { drum, beat: candidate.beat, vel: rawVelocity };
+        upsertResponse(drum, candidate, scoreVelocity(rawVelocity, hit, score), score);
+      }
+    }
+  }
+
+  const out = [...tracks];
+  out[drumIndex] = { ...out[drumIndex], notes: dedupeDrumNotes(notes) };
+  return out;
 }

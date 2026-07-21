@@ -36,8 +36,11 @@ export function styleIntentProfile(style: StyleName | string): StyleIntentProfil
   return PROFILES[String(style).toLowerCase()] ?? { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [1, 2], defaultTextureFamily: 'block', leadTargetCoverage: [0.5, 0.7], leadMaxGapBeats: 4 };
 }
 
-/** bass 地板拍位数 → 家族(与 finalEventProfile.bassFloorBeats 一致的投影;Phase 2 迁移用)。 */
-export function bassFamilyFromFloorBeats(style: string): BassPatternFamily {
+/** bass 地板拍位数 → style 默认家族；具体 archetype pattern 由 Arranger 另行覆盖。 */
+export function bassFamilyFromFloorBeats(
+  style: string,
+  _beatsPerBar?: number,
+): BassPatternFamily {
   const beats = finalEventProfile(style).bassFloorBeats.length;
   if (String(style).toLowerCase() === 'jazz') return 'walking';
   if (beats >= 3) return 'syncopated';

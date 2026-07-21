@@ -10,7 +10,7 @@
 
 import { mod12, type PitchClass, type Rng } from '../foundation';
 import type { Section } from '../arranger/ArrangementPlan';
-import type { ProgressionSlot, HarmonyStyleName } from '../knowledge/progressions';
+import { romanScaleDegree, type ProgressionSlot, type HarmonyStyleName } from '../knowledge/progressions';
 import type { ChordQuality } from '../knowledge/chords';
 import type { TSD_Func } from '../knowledge/dynamicTsdDictionary';
 import type { HarmonicFunction, RomanChord } from './HarmonicPlan';
@@ -39,6 +39,22 @@ function accidentalOf(roman: string): RomanChord['accidental'] {
   return 'natural';
 }
 
+function appliedTargetQuality(roman: string): ChordQuality {
+  const head = roman.replace(/^[b#nx]+/, '').match(/^[IVivXx]+/)?.[0] ?? '';
+  if (head.toLowerCase() === 'vii') return 'm7b5';
+  return head === head.toLowerCase() ? 'm7' : 'maj7';
+}
+
+function realizedAppliedTarget(slot: ProgressionSlot): RomanChord | undefined {
+  const target = slot.appliedTarget;
+  if (!target) return undefined;
+  return {
+    degree: Math.min(7, Math.max(1, romanScaleDegree(target.roman))) as RomanChord['degree'],
+    accidental: accidentalOf(target.roman),
+    quality: appliedTargetQuality(target.roman),
+  };
+}
+
 /** prototype slots → ResolvedChord[](rootPc/durationBeats/窄品质 + 定义层字段)。
  *  Loop 3:对【非锁定】槽按动态 TSD 字典装饰 chordType(锁定槽=作者类型不动=不消耗 rng)。 */
 export function realizeProgressionSlots(args: {
@@ -63,10 +79,15 @@ export function realizeProgressionSlots(args: {
     });
     const rootPc = mod12(sectionKey + slot.rootOffset);
     const quality = narrowQuality(chordType);
+    const appliedTarget = realizedAppliedTarget(slot);
+    const appliedTonalCenter = slot.appliedTarget
+      ? mod12(sectionKey + slot.appliedTarget.rootOffset)
+      : undefined;
     const roman: RomanChord = {
       degree: (Math.min(7, Math.max(1, slot.scaleDegree)) as RomanChord['degree']),
       accidental: accidentalOf(slot.roman),
       quality,
+      secondaryTarget: appliedTarget,
     };
     return {
       roman,
@@ -79,16 +100,19 @@ export function realizeProgressionSlots(args: {
       borrowedSource: slot.borrowedSource,
       mustResolve: slot.mustResolve,
       forcedScale: slot.forcedScale,
-      localTonalCenterPc: slot.localTonalCenterPc !== undefined ? mod12(slot.localTonalCenterPc) : undefined,
+      localTonalCenterPc: appliedTonalCenter
+        ?? (slot.localTonalCenterPc !== undefined ? mod12(slot.localTonalCenterPc) : undefined),
       bassRole: slot.bassRole,
       bassPedalPc: slot.bassPedalPc !== undefined ? mod12(slot.bassPedalPc) : undefined,
+      bassPc: slot.bassOffset !== undefined ? mod12(sectionKey + slot.bassOffset) : undefined,
       tonicizationPlacement: slot.tonicizationPlacement,
       preserveType: slot.preserveType,
       // ★ Gap A:slot 作者语义标签透传(borrowedFrom='soft V/vi'/'Dorian IV (raised 6)' 等精确保留)。
       borrowedFrom: slot.borrowedFrom,
       effectiveFunc: slot.effectiveFunc,
-      analysisKeyPc: slot.analysisKeyPc !== undefined ? mod12(slot.analysisKeyPc) : undefined,
-      localRoman: slot.localRoman,
+      analysisKeyPc: appliedTonalCenter
+        ?? (slot.analysisKeyPc !== undefined ? mod12(slot.analysisKeyPc) : undefined),
+      localRoman: slot.appliedTarget ? slot.roman.split('/')[0] : slot.localRoman,
       sectionKeyPc: isModulated ? sectionKey : undefined,
     };
   });

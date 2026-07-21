@@ -2,7 +2,7 @@
 // newEngine · knowledge · 暖路线调色板扩充 + lead↔comp 配对一致性(2026-06-09)
 // ------------------------------------------------------------
 // 锁:① 暖 GM 乐器进池(吉他/哈蒙德/大提琴/暖 pad/古筝/卡林巴)+ 有 INFO/NAME/SOURCE;
-//   ② coherentLeadComp 修不搭对(马林巴+电钢→电钢配电钢 / 解绑),已和谐保留;③ 不破坏风格世界守卫。
+//   ② coherentLeadComp 修不搭对并防非 ACG 的 lead/comp 同音色叠加;③ 不破坏风格世界守卫。
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -106,9 +106,9 @@ describe('leadCompCompatible — 配对判据', () => {
 });
 
 describe('coherentLeadComp — 器配层修不搭对', () => {
-  it('★ 电钢 comp 配电钢 lead:lofi 马林巴 lead + DX7 comp → DX7 lead + DX7 comp', () => {
+  it('★ 电钢 comp 配不同的键盘 lead:lofi 马林巴 lead + DX7 comp → 钢琴 lead + DX7 comp', () => {
     const out = coherentLeadComp({ lead: 12, comp: 5, bass: 33, pad: 89, drum: 0 }, 'lofi');
-    expect(out.lead).toBe(5);  // 改成 CityPop DX7 EP(池里有 5)→ 电钢配电钢
+    expect(out.lead).toBe(0);  // 同族相配，但不让两个独立角色重复同一音色
     expect(out.comp).toBe(5);  // comp 不动
     expect(leadCompCompatible(out.lead, out.comp)).toBe(true);
   });
@@ -116,9 +116,18 @@ describe('coherentLeadComp — 器配层修不搭对', () => {
     const rp = { lead: 12, comp: 24, bass: 33, pad: 89, drum: 0 };
     expect(coherentLeadComp(rp, 'lofi')).toBe(rp); // 同对象返回(已和谐)
   });
-  it('已和谐对(电钢 lead + 电钢 comp)→ 原样', () => {
+  it('非 ACG 的相同电钢 lead/comp → 保留 comp，lead 换成相配的不同键盘', () => {
     const rp = { lead: 5, comp: 5, bass: 33, pad: 89, drum: 0 };
-    expect(coherentLeadComp(rp, 'rnb')).toBe(rp);
+    expect(coherentLeadComp(rp, 'rnb')).toEqual({ ...rp, lead: 0 });
+    expect(coherentLeadComp(rp, 'rnb')).not.toBe(rp);
+  });
+  it('ACG 的 lead/comp 是同一架钢琴分工 → 明确保留相同音色', () => {
+    const rp = { lead: 0, comp: 0, bass: 0, pad: 89, drum: 0 };
+    expect(coherentLeadComp(rp, 'acg')).toBe(rp);
+  });
+  it('Jazz 单钢琴模板可显式保留同一音色，不把钢琴手误换成另一件乐器', () => {
+    const rp = { lead: 0, comp: 0, bass: 32, pad: 89, drum: 40 };
+    expect(coherentLeadComp(rp, 'jazz', true)).toBe(rp);
   });
   it('modal 马林巴 lead + Rhodes comp → 修成相配(键盘 lead 或保马林巴换暖 comp)', () => {
     const out = coherentLeadComp({ lead: 12, comp: 5, bass: 32, pad: 89, drum: 0 }, 'modal');

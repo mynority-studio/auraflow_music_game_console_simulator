@@ -55,6 +55,50 @@ describe('realizeProgressionSlots', () => {
     // bVI 在 Db:rootPc = 1 + 8 = 9
     expect(rc.some((c) => c.rootPc === 9 && c.borrowedSource === 'modal_interchange')).toBe(true);
   });
+
+  it('应用属和弦同时保留局部 V/X 与可移调的目标中心', () => {
+    const slots = [{
+      roman: 'V/iv',
+      type: '7',
+      rootOffset: 0,
+      scaleDegree: 5,
+      appliedTarget: { roman: 'iv', rootOffset: 5 },
+      lockType: true,
+      borrowedSource: 'secondary_dominant' as const,
+    }];
+    const inE = realizeProgressionSlots({
+      slots,
+      section: sec,
+      sectionKey: pc(4),
+      isModulated: false,
+      beatsPerBar: 5,
+      style: 'JAZZ',
+      colorBudget: 0.5,
+      random: createRandomContext(1).substream('harmony'),
+    })[0];
+    expect(inE.rootPc).toBe(4); // E7
+    expect(inE.roman).toMatchObject({
+      degree: 5,
+      quality: '7',
+      secondaryTarget: { degree: 4, accidental: 'natural', quality: 'm7' },
+    });
+    expect(inE.localTonalCenterPc).toBe(9); // A = iv of E minor
+    expect(inE.analysisKeyPc).toBe(9);
+    expect(inE.localRoman).toBe('V');
+
+    const inD = realizeProgressionSlots({
+      slots,
+      section: sec,
+      sectionKey: pc(2),
+      isModulated: false,
+      beatsPerBar: 5,
+      style: 'JAZZ',
+      colorBudget: 0.5,
+      random: createRandomContext(1).substream('harmony'),
+    })[0];
+    expect(inD.rootPc).toBe(2); // D7
+    expect(inD.localTonalCenterPc).toBe(7); // G
+  });
 });
 
 describe('端到端:prototype 元数据进 HarmonicPlan', () => {

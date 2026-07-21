@@ -9,7 +9,8 @@ import { ticks, type Timebase, type Ticks } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 import { instrumentInfo, isSustainedInstrument } from '../knowledge/instruments';
-import { isAcgPianoSongPianoProgram } from '../../../sound/GMBK5X128Voices';
+import { isAcgPianoSongPianoProgram, isAcousticPianoProgram } from '../../../sound/GMBK5X128Voices';
+import { dreamVoiceCcProfile, mayEmitAutomaticCc } from './dreamCcCapabilities';
 import {
   buildSaxBreathCcEvents,
   isSaxProgram,
@@ -121,11 +122,6 @@ export function isElectricKeyProgram(program: number): boolean {
   return program === 4 || program === 5;
 }
 
-const CC_RELEASE_TIME = 72;      // ★ Layer 1:release time(64-centered;两 synth 都响应)
-const CC_BRIGHTNESS = 74;        // ★ Layer 1:brightness/filter cutoff,用于把 electric-key 高频锋利感收软。
-const ELECTRIC_KEY_LEAD_RELEASE = 68; // electric-key lead:短尾音,避免和 shared FX 叠糊
-const ELECTRIC_KEY_COMP_RELEASE = 64; // electric-key comp:不加 release,多音和声靠短 gate
-const ELECTRIC_KEY_BRIGHTNESS = 54; // electric-key 柔化值(<64 → 更暗、更 vaporwave)。
 const ELECTRIC_KEY_LEAD_CONNECT_BEATS = 2.25; // electric-key lead:短 gate 延到下一音前,release 只做尾巴不是主体。
 
 export function gestureExpressionForProgram(
@@ -159,7 +155,7 @@ export function gestureExpressionForProgram(
   }
 
   // ACG 白名单钢琴 bass 是左手键盘触键，不套贝斯拨弦/ghost 手势；低音区由器配 register + render 末端范围保护。
-  if (role === 'bass' && isAcgPianoSongPianoProgram(program)) {
+  if (role === 'bass' && (isAcgPianoSongPianoProgram(program) || (s === 'acg' && isAcousticPianoProgram(program)))) {
     return {
       kind: 'keyboard-touch',
       family: 'keyboard',
@@ -175,6 +171,29 @@ export function gestureExpressionForProgram(
       hiHatPolicy: 'none',
       gateRatio: 0.96,
       tailPolicy: 'keyboard-natural',
+    };
+  }
+
+  // Contrabass is a bowed string even when it fulfils the bass role. Do not
+  // give it the electric/acoustic bass pluck grammar.
+  if ((program >= 40 && program <= 43) && (role === 'lead' || (role === 'bass' && program === 43))) {
+    const ccProfile = dreamVoiceCcProfile(program, role);
+    return {
+      kind: 'bowed-string-legato',
+      family: 'bowed-string',
+      program,
+      ccControllers: ccProfile.automaticControllers,
+      ...contract('legato-flow', 'direction', 'note-overlap', 'bow-group', STRING_EVIDENCE),
+      breathModel: 'none',
+      noteShape: 'bow-legato',
+      articulation: 'slur',
+      velocityCurve: 'soft',
+      pedalPolicy: 'none',
+      rudimentPolicy: 'none',
+      hiHatPolicy: 'none',
+      maxConnectBeats: 1.15,
+      overlapBeats: 0.02,
+      gateRatio: 1,
     };
   }
 
@@ -217,11 +236,15 @@ export function gestureExpressionForProgram(
   }
 
   if (isSaxProgram(program) && role === 'lead') {
+    const ccProfile = dreamVoiceCcProfile(program, role);
     return {
       kind: 'sax-breath-legato',
       family: 'sax',
       program,
-      ccControllers: [SAX_CC.expression, SAX_CC.breath],
+      // CC11 is documented as channel expression by Dream. CC2 is only a
+      // generic Breath Controller number and remains blocked until this exact
+      // GMBK voice is explicitly mapped and auditioned on the hardware.
+      ccControllers: ccProfile.automaticControllers,
       ...contract('legato-flow', 'direction', 'cc-lane', 'breath-group', SAX_EVIDENCE),
       breathModel: 'reed-continuous',
       noteShape: 'keyed-legato',
@@ -255,26 +278,6 @@ export function gestureExpressionForProgram(
     };
   }
 
-  if (program === 40 && role === 'lead') {
-    return {
-      kind: 'bowed-string-legato',
-      family: 'bowed-string',
-      program,
-      ccControllers: [],
-      ...contract('legato-flow', 'direction', 'note-overlap', 'bow-group', STRING_EVIDENCE),
-      breathModel: 'none',
-      noteShape: 'bow-legato',
-      articulation: 'slur',
-      velocityCurve: 'soft',
-      pedalPolicy: 'none',
-      rudimentPolicy: 'none',
-      hiHatPolicy: 'none',
-      maxConnectBeats: 1.15,
-      overlapBeats: 0.02,
-      gateRatio: 1,
-    };
-  }
-
   if (info.family === 'keyboard' && isSustainedInstrument(program)) {
     return {
       kind: 'sustained-pad',
@@ -296,27 +299,22 @@ export function gestureExpressionForProgram(
   if (info.family === 'keyboard') {
     const comp = role === 'comp';
     const electricKey = isElectricKeyProgram(program);
-    const electricKeyComp = comp && isElectricKeyProgram(program);
-    const pedalPolicy = !comp || electricKeyComp ? 'none'
-      : s === 'acg' ? 'acg-legato-change'
-      : s === 'jazz' || s === 'blues' ? 'none'
-      : s === 'lofi' ? 'light-syncopated'
-      : s === 'pop' || s === 'rnb' ? 'harmonic-change'
-      : 'none';
-    // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠合成器 release 包络,不靠 reverb 假装尾音。
-    //   GM4/5 comp 多音时禁用 CC64 pedal,否则 pedal + release + shared FX 会糊成一团。
-    const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : (comp && pedalPolicy !== 'none' ? 'piano-pedal-comp' : 'keyboard-natural');
-    const releaseCc = electricKey ? CC_RELEASE_TIME : undefined;
-    const cc = pedalPolicy === 'none' ? [] : [64];
-    const continuity: GestureContinuity = pedalPolicy !== 'none' ? 'pedal-legato' : 'connected';
-    const triggerPolicy: GestureTriggerPolicy = pedalPolicy !== 'none' ? 'pedal-cc' : 'velocity-gate';
-    const phrasePolicy: GesturePhrasePolicy = pedalPolicy !== 'none' ? 'pedal-harmony' : 'none';
+    // Pedal is now a concrete section plan owned by InstrumentationPlan.
+    // Never infer it from a style/program in this per-role static gesture.
+    const pedalPolicy = 'none';
+    // The note-tail shape remains valid for electric keys. CC72/CC74 values
+    // are explicitly audition-required in dreamCcCapabilities, so they are
+    // not auto-emitted until a board-calibrated mapping exists.
+    const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : 'keyboard-natural';
+    const continuity: GestureContinuity = 'connected';
+    const triggerPolicy: GestureTriggerPolicy = 'velocity-gate';
+    const phrasePolicy: GesturePhrasePolicy = 'none';
     return {
       kind: 'keyboard-touch',
       family: 'keyboard',
       program,
-      ccControllers: releaseCc ? [...cc, releaseCc, CC_BRIGHTNESS] : cc,
-      ...contract(continuity, 'direction', triggerPolicy, phrasePolicy, pedalPolicy !== 'none' || releaseCc ? MIDI_EVIDENCE : DAW_EVIDENCE),
+      ccControllers: [],
+      ...contract(continuity, 'direction', triggerPolicy, phrasePolicy, DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'finger-legato',
       articulation: comp ? 'comping' : 'finger-legato',
@@ -326,7 +324,6 @@ export function gestureExpressionForProgram(
       hiHatPolicy: 'none',
       gateRatio: comp ? (s === 'jazz' ? 0.72 : 0.9) : 0.98,
       tailPolicy,
-      releaseCc,
     };
   }
 
@@ -530,7 +527,12 @@ function withVelocityCurve(notes: readonly NoteIR[], plan: GestureExpressionPlan
 
 function shapeKeyboardOrPadNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: Timebase): NoteIR[] {
   if (track.role === 'lead') {
-    if (plan.tailPolicy === 'electric-key-tail') return shapeElectricKeyLeadTailNotes(track.notes, timebase);
+    if (plan.tailPolicy === 'electric-key-tail') {
+      // The electric-key plan already declares a soft touch. Lead used to
+      // execute only its gate/tail and accidentally bypass this final velocity
+      // curve, leaving GM4/5 close to forte for the whole phrase.
+      return withVelocityCurve(shapeElectricKeyLeadTailNotes(track.notes, timebase), plan, timebase);
+    }
     return track.notes.map((n) => ({ ...n })); // MG lead grammar/velocity parity 由 lead renderer 拥有;吹奏 lead 走上面的专用分支。
   }
   const ratio = clampGateRatio(plan.gateRatio);
@@ -605,9 +607,9 @@ function isHat(n: NoteIR): boolean {
   return p === DRUM_CHAT || p === DRUM_OHAT || p === DRUM_PHAT || p === DRUM_RIDE || p === DRUM_RIDE_BELL;
 }
 
-function shapeDrumVelocity(n: NoteIR, plan: GestureExpressionPlan, timebase: Timebase): number {
+function shapeDrumVelocity(n: NoteIR, plan: GestureExpressionPlan, timebase: Timebase, index: number): number {
   const phase = beatPhase(n.startTick as number, timebase);
-  let scale = velocityScaleForCurve(plan, n, 0, timebase);
+  let scale = velocityScaleForCurve(plan, n, index, timebase);
   if (plan.rudimentPolicy === 'ride-swing') {
     if (isDrumPitch(n, DRUM_RIDE) || isDrumPitch(n, DRUM_RIDE_BELL)) scale *= nearBeat(phase, 0) || nearBeat(phase, 2) ? 1.05 : 0.92;
     if (isDrumPitch(n, DRUM_SNARE)) scale *= 0.72;
@@ -627,34 +629,19 @@ function shapeDrumVelocity(n: NoteIR, plan: GestureExpressionPlan, timebase: Tim
 
 function shapeDrumNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: Timebase): NoteIR[] {
   const gated = withGate(track.notes, plan.gateRatio);
-  return gated.map((n) => ({ ...n, velocity: shapeDrumVelocity(n, plan, timebase) }));
+  return gated.map((n, index) => ({ ...n, velocity: shapeDrumVelocity(n, plan, timebase, index) }));
 }
 
-function buildElectricKeyTailCcEvents(track: TrackIR, notes: NoteIR[], plan: GestureExpressionPlan): GestureCcEvent[] {
-  if (plan.kind !== 'keyboard-touch') return [];
-  const initialProgram = typeof track.program === 'number' ? track.program : plan.program;
-  const changes = [...(track.programChanges ?? [])].sort((a, b) => (a.atTick as number) - (b.atTick as number));
-  const usesElectricKey = isElectricKeyProgram(initialProgram ?? -1) || changes.some((pc) => isElectricKeyProgram(pc.program));
-  if (!usesElectricKey || notes.length === 0) return [];
-  const electricRelease = track.role === 'comp' ? ELECTRIC_KEY_COMP_RELEASE : ELECTRIC_KEY_LEAD_RELEASE;
-
-  const eventAt = (tick: number, program: number | undefined): GestureCcEvent[] => {
-    const electric = isElectricKeyProgram(program ?? -1);
-    return [
-      { atTick: ticks(Math.max(0, tick)), controller: CC_RELEASE_TIME, value: electric ? electricRelease : 64 },
-      { atTick: ticks(Math.max(0, tick)), controller: CC_BRIGHTNESS, value: electric ? ELECTRIC_KEY_BRIGHTNESS : 64 },
-    ];
-  };
-
-  const events = eventAt(0, initialProgram);
-  let prevProgram = initialProgram;
-  for (const pc of changes) {
-    const wasElectric = isElectricKeyProgram(prevProgram ?? -1);
-    const isElectric = isElectricKeyProgram(pc.program);
-    if (wasElectric !== isElectric) events.push(...eventAt(pc.atTick as number, pc.program));
-    prevProgram = pc.program;
-  }
-  return events;
+/** Keep generation inside the per-voice 5504 capability contract. */
+function permittedGestureCcEvents(
+  track: TrackIR,
+  plan: GestureExpressionPlan,
+  events: readonly GestureCcEvent[],
+): GestureCcEvent[] {
+  const program = track.program ?? plan.program;
+  if (program === undefined) return [];
+  const profile = dreamVoiceCcProfile(program, track.role);
+  return events.filter((event) => mayEmitAutomaticCc(profile, event.controller));
 }
 
 export function applyGestureExpressionToTrack(
@@ -672,15 +659,17 @@ export function applyGestureExpressionToTrack(
     const ccEvents = plan.triggerPolicy === 'cc-lane'
       ? buildSaxBreathCcEvents(notes, opts).sort((a, b) => (a.atTick as number) - (b.atTick as number) || a.controller - b.controller)
       : [];
+    const permittedCcEvents = permittedGestureCcEvents(track, plan, ccEvents);
     return {
       notes,
-      ccEvents: ccEvents.length ? ccEvents : undefined,
+      ccEvents: permittedCcEvents.length ? permittedCcEvents : undefined,
     };
   }
   if (plan.kind === 'pipe-wind-breath') {
     if (track.role !== 'lead') return { notes: track.notes };
     const ccEvents = plan.triggerPolicy === 'cc-lane' ? buildPipeWindBreathCcEvents(track.notes, timebase) : [];
-    return { notes: track.notes, ccEvents: ccEvents.length ? ccEvents : undefined };
+    const permittedCcEvents = permittedGestureCcEvents(track, plan, ccEvents);
+    return { notes: track.notes, ccEvents: permittedCcEvents.length ? permittedCcEvents : undefined };
   }
   if (plan.kind === 'bowed-string-legato') {
     if (track.role !== 'lead') return { notes: track.notes };
@@ -697,11 +686,6 @@ export function applyGestureExpressionToTrack(
   }
   if (plan.kind === 'keyboard-touch' || plan.kind === 'mallet-strike' || plan.kind === 'sustained-pad') {
     const notes = shapeKeyboardOrPadNotes(track, plan, timebase);
-    // ★ electric-key-tail:随 programChanges 进入/退出 EP 时同步 CC72/CC74,避免 EP release/brightness 残留到钢琴/颤音琴。
-    const ccEvents = buildElectricKeyTailCcEvents(track, notes, plan);
-    if (ccEvents.length > 0) {
-      return { notes, ccEvents };
-    }
     return { notes };
   }
   return { notes: track.notes };

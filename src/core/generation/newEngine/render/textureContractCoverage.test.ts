@@ -47,7 +47,7 @@ describe('render/textureContractCoverage — Phase E §3.6', () => {
   });
 
   it('★ dry render:四个新 case 在多种 voicing/span 下产 chord+bass 事件(非空、合法、tRel<dur)', () => {
-    const voicings = [[48, 55, 60, 64, 67], [50, 57, 60, 65], [52, 59, 67]]; // 5/4/3 声部
+    const voicings = [[48, 55, 60, 64, 67], [50, 57, 60, 65], [52, 59, 67]]; // full / four / three voices
     for (const tc of NEW_RNB_CASES) {
       let anyChord = 0;
       for (const v of voicings) for (const dur of [2, 4]) {

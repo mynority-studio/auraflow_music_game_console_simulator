@@ -39,8 +39,7 @@ export interface GM128VoiceRequest {
  * ACG PIANOSONG 的纯钢琴核心。
  */
 const ACG_PIANOSONG_PIANO_ADDRESSES = [
-  { bank: 0, program: 0, weight: 8 },   // Acoustic Grand Piano
-  { bank: 127, program: 0, weight: 4 }, // Acou Piano 1
+  { bank: 0, program: 0, weight: 12 },  // Acoustic Grand Piano
   { bank: 0, program: 1, weight: 2 },   // Bright Acoustic Piano
   { bank: 0, program: 2, weight: 1 },   // Electric Grand Piano
   { bank: 8, program: 4, weight: 1 },   // Soft Electric Piano
@@ -79,16 +78,34 @@ export function isAcgPianoSongPianoProgram(program: number | undefined): boolean
   return program !== undefined && ACG_PIANOSONG_PIANO_PROGRAMS.includes(program);
 }
 
+/** Bank-0 acoustic piano family used by the audited acoustic arrangement profiles. */
+export function isAcousticPianoProgram(program: number | undefined): boolean {
+  return program === 0 || program === 1 || program === 3;
+}
+
+/**
+ * Automatic piano controllers are intentionally keyed by the complete Dream
+ * address. PC0/1/3 in a variation or MT-32 compatibility bank must never
+ * inherit the Bank-0 acoustic-piano pedal/expression policy.
+ */
+export function isAcousticPianoVoice(bank: number | undefined, program: number | undefined): boolean {
+  return (bank ?? 0) === 0 && isAcousticPianoProgram(program);
+}
+
 const GM128_GENERATION_VARIATION_ADDRESSES = [
   { bank: 8, program: 4 }, { bank: 16, program: 5 }, { bank: 24, program: 5 },
-  { bank: 16, program: 24 }, { bank: 1, program: 25 }, { bank: 9, program: 25 },
+  { bank: 16, program: 24 }, { bank: 1, program: 25 }, { bank: 8, program: 25 }, { bank: 9, program: 25 },
   { bank: 8, program: 27 }, { bank: 2, program: 33 }, { bank: 1, program: 34 },
   { bank: 9, program: 38 }, { bank: 16, program: 38 }, { bank: 17, program: 39 },
   { bank: 19, program: 39 }, { bank: 8, program: 66 }, { bank: 1, program: 67 },
   { bank: 3, program: 89 }, { bank: 8, program: 107 }, { bank: 16, program: 12 },
 ] as const;
 
-/** Curated generation addresses, with labels resolved only from Dream's TSV. */
+/**
+ * Curated variation addresses, with labels resolved from the complete Dream catalog.
+ * They remain available to explicit full-address orchestration/audition; being
+ * present here does not make a variation interchangeable with its Bank-0 voice.
+ */
 export const GM128_GENERATION_VARIATION_VOICES = GM128_GENERATION_VARIATION_ADDRESSES.map((address) => {
   const tone = GM128_VARIATION_PROGRAMS.find((item) => item.bank === address.bank && item.program === address.program);
   if (!tone) throw new Error(`Missing official GMBK5X128 variation: CC0=${address.bank}, PC=${address.program}`);
@@ -97,34 +114,11 @@ export const GM128_GENERATION_VARIATION_VOICES = GM128_GENERATION_VARIATION_ADDR
 
 const normStyle = (style?: string): string => (style ?? '').toLowerCase();
 const clampProgram = (program: number | undefined): number => Math.max(0, Math.min(127, Math.round(program ?? 0)));
-const inStyles = (style: string, styles: readonly string[]): boolean => styles.includes(style);
 
 function catalogTone(role: GM128Role, program: number, bank: number): GM128CatalogItem | undefined {
   if (role === 'drum') return GM128_DRUM_KITS.find((item) => item.program === program);
   if (bank > 0) return GM128_VARIATION_PROGRAMS.find((item) => item.bank === bank && item.program === program);
   return GM128_MAIN_PROGRAMS.find((item) => item.program === program);
-}
-
-function preferredBankForProgram(style: string, role: GM128Role, program: number): number | undefined {
-  if (role === 'drum') return undefined;
-  if (program === 5 && inStyles(style, ['pop', 'rnb', 'lofi', 'modal'])) return 16;
-  if (program === 4 && inStyles(style, ['pop', 'rnb', 'lofi'])) return 8;
-  if (program === 27 && inStyles(style, ['pop', 'rnb', 'lofi', 'modal'])) return 8;
-  if (program === 25 && inStyles(style, ['pop', 'rnb', 'modal'])) return 1;
-  if (program === 25 && style === 'lofi') return 9;
-  if (program === 24 && inStyles(style, ['lofi', 'modal'])) return 16;
-  if (program === 33 && inStyles(style, ['pop', 'rnb', 'lofi'])) return 2;
-  if (program === 34 && inStyles(style, ['pop', 'rnb', 'lofi'])) return 1;
-  if (program === 38 && style === 'lofi') return 9;
-  if (program === 38 && inStyles(style, ['pop', 'rnb', 'modal'])) return 16;
-  if (program === 39 && style === 'lofi') return 17;
-  if (program === 39 && inStyles(style, ['pop', 'rnb', 'modal'])) return 19;
-  if (program === 66 && inStyles(style, ['jazz', 'blues'])) return 8;
-  if (program === 67 && inStyles(style, ['jazz', 'blues', 'modal'])) return 1;
-  if (program === 89 && inStyles(style, ['pop', 'rnb', 'lofi', 'modal'])) return 3;
-  if (program === 107 && inStyles(style, ['lofi', 'modal'])) return 8;
-  if (program === 12 && inStyles(style, ['lofi', 'modal'])) return 16;
-  return 0;
 }
 
 const drumProgramSet = new Set<number>(GMBK5X128_DRUM_PROGRAMS);
@@ -134,7 +128,13 @@ export const DREAM5504_LABEL = 'Dream 5504 · GMBK5X128';
 export const DREAM5504_HINT = 'Dream5504 GMBK5X128: melodic voices use CC0 + Program Change; drum kits use Program Change on channel 10.';
 export const DREAM5504_MELODIC_PROGRAMS = Array.from({ length: 128 }, (_, index) => index) as readonly number[];
 export const DREAM5504_DRUM_PROGRAMS = GMBK5X128_DRUM_PROGRAMS;
+/**
+ * @deprecated Compatibility export for the old four-family browser list.
+ * NewEngine orchestration resolves full CC0 + PC profiles in
+ * `instrumental/dreamVoiceProfiles` instead.
+ */
 export const DREAM5504_VOICE_WORLD = GMBK5X128_VOICE_WORLD;
+/** @deprecated See DREAM5504_VOICE_WORLD. */
 export const DREAM5504_VOICE_WORLD_COUNTS = GMBK5X128_VOICE_WORLD_COUNTS;
 
 export const DREAM5504_PROGRAMS_BY_ROLE: Readonly<Record<GM128Role, readonly number[]>> = Object.freeze({
@@ -162,7 +162,10 @@ export function isGMBK5X128VoiceAddressable(bank: number | undefined, program: n
 export function selectGMBK5X128Voice(request: GM128VoiceRequest): GM128VoiceSelection {
   const role = request.role;
   const program = clampProgram(request.program);
-  const preferredBank = request.bank ?? preferredBankForProgram(normStyle(request.style), role, program);
+  // Catalog lookup resolves only the full address supplied by orchestration.
+  // A style name must never silently turn a Bank-0 instrument into a different
+  // resonant/FX variation that happens to share the same Program number.
+  const preferredBank = role === 'drum' ? undefined : (request.bank ?? 0);
   const tone = catalogTone(role, program, preferredBank ?? 0)
     ?? catalogTone(role, program, 0)
     ?? catalogTone(role, 0, 0);
@@ -210,10 +213,22 @@ export function mapProgramToDream5504(program: number, role?: GM128Role, style?:
   if (role === 'drum') return drumProgramSet.has(value) ? value : styleFallback(role, style);
   // 允许 ACG PIANOSONG 的白名单钢琴在 bass 轨演奏左手低音；音区由器配 register 合同限制在 E1-G3。
   if (role === 'bass') {
-    const pianoLeftHand = value === 0 || (normStyle(style) === 'acg' && isAcgPianoSongPianoProgram(value));
-    return pianoLeftHand || (value >= 32 && value <= 39) ? value : styleFallback(role, style);
+    // ACG passes its style entitlement through the MIDI adapter so the full
+    // approved piano palette can remain on the left-hand role. Keep the
+    // bank-0 acoustic pianos legal for legacy direct-IR callers as well.
+    const pianoLeftHand = isAcousticPianoProgram(value)
+      || (normStyle(style) === 'acg' && isAcgPianoSongPianoProgram(value));
+    // Contrabass is the bowed member of the active acoustic string family.
+    // It is admitted only as an explicit orchestration choice, never as a
+    // fallback for an arbitrary malformed bass program.
+    return pianoLeftHand || value === 43 || (value >= 32 && value <= 39) ? value : styleFallback(role, style);
   }
-  if (role === 'pad') return (value >= 16 && value <= 23) || (value >= 88 && value <= 95) ? value : styleFallback(role, style);
+  // Sustained acoustic string sections are valid pad-role voices too. This is
+  // required by the acoustic-debug palette and remains a safe GM capability
+  // for any future explicit orchestration profile.
+  if (role === 'pad') return value === 44 || (value >= 16 && value <= 23) || (value >= 48 && value <= 55) || (value >= 88 && value <= 95)
+    ? value
+    : styleFallback(role, style);
   if (role === 'comp') return value >= 0 && value <= 31 ? value : styleFallback(role, style);
   return value;
 }

@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { InstrumentRoleName } from '../band/BandSpec';
-import type { GrooveContract } from '../knowledge/grooveContracts';
+import { rhythmSwingSourceForContract, type GrooveContract } from '../knowledge/grooveContracts';
 import type {
   DrumFillPolicy,
   DrumPerformanceContract,
@@ -15,6 +15,7 @@ import type {
   PerformanceArticulationScope,
   PerformanceContinuity,
   PerformanceFollowSource,
+  KeyboardMotion,
   PerformancePreQuantizeGrid,
   RolePerformanceContract,
   Section,
@@ -30,7 +31,7 @@ function clampLevel(v: number): 0 | 1 | 2 | 3 {
 }
 
 function swingUnitFor(contract: GrooveContract): DrumSwingUnit {
-  return contract.grid === 'shuffle' || contract.grid === 'dilla' ? '16th' : '8th';
+  return rhythmSwingSourceForContract(contract) === 'straight-sixteenths' ? '16th' : '8th';
 }
 
 export function timingSafetyForContract(contract: GrooveContract): {
@@ -39,6 +40,9 @@ export function timingSafetyForContract(contract: GrooveContract): {
   preQuantizeGrid: PerformancePreQuantizeGrid;
   humanizeAmount: 0 | 1 | 2 | 3;
 } {
+  if (rhythmSwingSourceForContract(contract) === 'authored') {
+    return { safeRangeTicks: 8, maxMoveTicks: Math.round(BASE_PPQ * 0.08), preQuantizeGrid: 'none', humanizeAmount: 2 };
+  }
   if (contract.grid === 'dilla') return { safeRangeTicks: 4, maxMoveTicks: Math.round(BASE_PPQ * 0.07), preQuantizeGrid: '16th', humanizeAmount: 3 };
   if (contract.grid === 'swing' || contract.grid === 'shuffle') return { safeRangeTicks: 8, maxMoveTicks: Math.round(BASE_PPQ * 0.08), preQuantizeGrid: contract.grid === 'shuffle' ? '16th' : '8th', humanizeAmount: 2 };
   if (contract.grid === 'rubato') return { safeRangeTicks: 10, maxMoveTicks: Math.round(BASE_PPQ * 0.05), preQuantizeGrid: 'none', humanizeAmount: 2 };
@@ -110,6 +114,42 @@ function roleFillPolicy(role: InstrumentRoleName, drum: DrumPerformanceContract 
   return role === 'drum' ? (drum?.fillPolicy ?? 'none') : 'none';
 }
 
+function keyboardMotionForRole(
+  role: InstrumentRoleName,
+  style: string,
+  section: Section,
+  contract: GrooveContract,
+  active: boolean,
+  continuity: PerformanceContinuity,
+): KeyboardMotion {
+  if (!active) return 'none';
+  const normalized = style.toLowerCase();
+  if (role === 'comp') {
+    if (contract.articulation === 'short') return 'percussive';
+    // Jazz comping is normally a dry, syncopated response to the ride/bass
+    // time. Only an explicit ballad/sparse sentence earns the lyrical damper
+    // lane; treating bebop/swing as a generic broken chord leaves CC64 down
+    // across dense attacks and turns the real piano into a wash.
+    if (normalized === 'jazz') {
+      if (contract.articulation === 'ballad' || contract.density === 'sparse'
+        || section.functionTag === 'setup' || section.functionTag === 'tag' || section.functionTag === 'outro') return 'lyrical';
+      return 'syncopated-comp';
+    }
+    // An active CityPop/RNB groove is a rhythmic keyboard statement. It must
+    // reserve the right to be dry before a concrete texture is rendered.
+    if (contract.density === 'active' && (normalized === 'pop' || normalized === 'rnb')) return 'sixteenth-ostinato';
+    if (contract.grid === 'dilla' || contract.grid === 'shuffle') return 'syncopated-comp';
+    if (normalized === 'acg' || contract.articulation === 'ballad' || contract.density === 'sparse'
+      || section.functionTag === 'setup' || section.functionTag === 'tag' || section.functionTag === 'outro') return 'lyrical';
+    return 'broken-chord';
+  }
+  if (role === 'lead') return continuity === 'legato-flow' ? 'lyrical' : 'none';
+  // ACG bass/comp/lead are one scored piano player. Instrumentation groups
+  // their pedal state only when the selected voice is a documented piano.
+  if (role === 'bass' && normalized === 'acg') return 'lyrical';
+  return 'none';
+}
+
 export function planRolePerformance(
   sections: readonly Section[],
   style: string,
@@ -158,6 +198,7 @@ export function planRolePerformance(
         phraseVariation: role === 'drum' ? (drum?.phraseVariation ?? 0) : clampLevel(foreground ? 3 : density * 2),
         feelOffsetMs: role === 'drum' ? (drum?.feelOffsetMs ?? 0) : role === 'bass' ? contract.bassPocketMs[1] : role === 'lead' ? contract.melodyWeakPocketMs[1] : contract.chordPocketMs[1],
         followSource: followSourceFor(role),
+        keyboardMotion: keyboardMotionForRole(role, style, section, contract, roleActive, continuity),
       };
     }
   }

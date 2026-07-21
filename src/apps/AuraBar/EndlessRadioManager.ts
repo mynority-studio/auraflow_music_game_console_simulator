@@ -2,15 +2,15 @@ import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
-// ★ Q+N 主链路(qn_main_engine_takeover §9):AuraBar 走 MusicGenerationService + AudioEngine.playMusicGeneration,
-//   不再直接调 sandbox audioOut / traceGeneration。播放视图走 Q+N PlaybackSong(不再假 GeneratedTrack)。
+// ★ Q+N 主链路(qn_main_engine_takeover §9):AuraBar 走 MusicGenerationService + AudioEngine.playMusicGeneration。
+//   播放视图走 Q+N PlaybackSong。
 import { generateMusic } from '../../core/generation/musicGeneration/MusicGenerationService';
 import type { MusicGenerationResult } from '../../core/generation/musicGeneration/types';
 import { toPlaybackSong, type PlaybackSong } from '../../core/generation/musicGeneration/playbackView';
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JAMMING_DRUMS' | 'JAMMING_MELODY';
 
-// bar 主题(旧 StyleId)→ newEngine styleHint 映射。多风格 bar 随机选其一。
+// bar 主题 StyleId → Q+N styleHint 映射。多风格 bar 随机选其一。
 const STYLE_HINT_BY_ID: Partial<Record<StyleId, string>> = {
   [StyleId.ModernPop]: 'pop',
   [StyleId.ChillJazz]: 'jazz',
@@ -25,7 +25,7 @@ export class EndlessRadioManager {
   private generationId: number = 0;
 
   public currentStyleHint?: string;
-  public currentSong?: PlaybackSong;  // ★ Q+N 播放视图(段/bpm/key/拍号);取代旧 GeneratedTrack + StyleConfig 兼容投影
+  public currentSong?: PlaybackSong;  // ★ Q+N 播放视图(段/bpm/key/拍号)
 
   private stateChangeCallback?: (state: AppState) => void;
   public onStyleChange?: (styleName: string) => void;
@@ -72,8 +72,8 @@ export class EndlessRadioManager {
   private jamCheckInterval: any = null;
 
   public getCurrentChord(): any {
-    // 旧兼容投影从不填 chords → 本方法历来恒返回 null(和弦显示当前惰性)。
-    // 迁移保持此行为;如需启用,可从 currentMusicGeneration.uiSnapshot.chords 派生(单独决策)。
+    // 当前播放视图不填 chords → 本方法恒返回 null(和弦显示惰性)。
+    // 如需启用,可从 currentMusicGeneration.uiSnapshot.chords 派生(单独决策)。
     return null;
   }
 
@@ -121,9 +121,6 @@ export class EndlessRadioManager {
 
     if (type === 'drums' || type === 'melody') {
         this.jamStartTick = jamStartTick;
-        
-        // Increase drum channel volume to max
-        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'cc', channel: 9, data1: 7, data2: 127 });
         
         // 1. Inject Count-in events (4 Crashes + Drum Fill)
         const ticksPerBeat = ppq * 4 / timeSignature[1];
@@ -212,9 +209,6 @@ export class EndlessRadioManager {
         
         AudioEngine.muteChannel(9, false);
         AudioEngine.muteChannel(1, false);
-        
-        // Restore drum channel volume to normal
-        AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'cc', channel: 9, data1: 7, data2: 100 });
         
         if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {
             console.log(`[Jam Mode] Exited during preparation. Resuming original drums.`);
@@ -407,7 +401,7 @@ export class EndlessRadioManager {
       this.onStyleChange(styleName);
     }
 
-    // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot;不再假 GeneratedTrack/StyleConfig。
+    // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot。
     this.currentSong = toPlaybackSong(result);
 
     // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(MusicalIR + uiSnapshot + 视觉)。

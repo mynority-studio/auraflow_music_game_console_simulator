@@ -20,45 +20,44 @@ describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4
     expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('★ exposition:motif 永远在曲首(beat0)原样陈述(否则听感上"动机丢了")', () => {
+  it('★ cadence motif 不强制曲首复述,落到最早 Cadence brick', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Cadence', 4, 'Cadence|V-I'), rb('c', 'Approach', 8, 'Approach|ii-V'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
-    // 即便 motif 是 cadence 功能,曲首 slot 也必 quote(主题陈述)
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('cadence'), seed: 5 });
-    expect(quoteStartsOf(plan)).toContain(0);          // 曲首陈述
-    expect(slotById(plan, plan.slots[0].id).userMotifPolicy).toBe('mustQuote');
+    expect(quoteStartsOf(plan)).toEqual([4, 12]);
+    expect(slotById(plan, plan.slots[0].id).userMotifPolicy).not.toBe('mustQuote');
   });
 
-  it('★ directive#4:approach motif → quote 落在 Approach slot(+ 曲首陈述)', () => {
+  it('★ directive#4:approach motif → quote 落在 Approach slot', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|V-I'), rb('d', 'Approach', 12, 'Approach|ii-V')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 3 });
     expect(quoteFns(plan)).toContain('approach'); // motif 落在 Approach slot(among quotes)
-    expect(quoteStartsOf(plan)).toContain(0);     // 同时曲首陈述
+    expect(quoteStartsOf(plan)).toEqual([4, 12]);
   });
 
-  it('★ directive#5:cadence motif → quote 落在 Cadence/resolution slot(+ 曲首陈述)', () => {
+  it('★ directive#5:cadence motif → quote 落在 Cadence/resolution slot', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Cadence', 4, 'Cadence|V-I'), rb('c', 'Approach', 8, 'Approach|ii-V'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('cadence'), seed: 5 });
     expect(quoteFns(plan).some((f) => f === 'cadence' || f === 'resolution')).toBe(true);
-    expect(quoteStartsOf(plan)).toContain(0);
+    expect(quoteStartsOf(plan)).toEqual([4, 12]);
   });
 
-  it('★ 结构性复现:同 recurrenceKey 的 brick 都 mustQuote(motif 在等价 brick 再现)+ 曲首陈述', () => {
+  it('★ 结构性复现:同 recurrenceKey 的 brick 都 mustQuote(motif 在等价 brick 再现)', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 6, 'Approach|ii-V'), rb('c', 'Approach', 18, 'Approach|ii-V')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(24), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 1 });
     const qs = quoteStartsOf(plan);
     expect(qs).toContain(6); expect(qs).toContain(18);  // 结构性复现落 RoadMap brick(6/18),非固定锚
-    expect(qs).toContain(0);                            // + 曲首陈述
+    expect(qs).not.toContain(0);
     expect(plan.warnings.some((w) => w.includes('结构再现点') || w.includes('段落开头'))).toBe(false); // 走结构性复现,非回退
   });
 
-  it('★ 无复现 → 回退段落开头 + 后半段结构再现点(用户决策;warning 标记,最佳匹配仍被 quote)', () => {
+  it('★ 无复现 → 只落最早功能匹配 brick(warning 标记,不强制曲首)', () => {
     // 全唯一 recurrenceKey → 无结构复现
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|IV-V'), rb('d', 'Turnaround', 12, 'Turnaround|vi-IV')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 2 });
-    expect(plan.warnings.some((w) => w.includes('结构再现点') || w.includes('段落开头'))).toBe(true);
-    expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
+    expect(plan.warnings.some((w) => w.includes('最早功能匹配') && w.includes('不强制曲首'))).toBe(true);
+    expect(plan.userQuoteSlotIds.length).toBe(1);
     // 最佳匹配(Approach@4)一定在 quote 集合里
-    expect(plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat)).toContain(4);
+    expect(plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat)).toEqual([4]);
   });
 
   it('★ 非 quote slot:同类型→mustDevelop / 答句区→mayReference / 抵触→generatedOnly,带 lineage', () => {

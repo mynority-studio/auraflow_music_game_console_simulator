@@ -3,6 +3,7 @@ import { ticks, midi } from '../foundation';
 import type { TrackIR } from '../ir/MusicalIR';
 import { generateSong } from '../generation/GenerationController';
 import { applyRenderMixBalance, leadCompWetEnergyRatio } from './renderMixBalance';
+import { auditRenderedMix } from './renderMixAudit';
 
 const ctx = (style: string, durationTicks: number, sectionTicks: number[] = [0]) => ({
   style,
@@ -15,7 +16,7 @@ const isGuitarProgram = (program: number | undefined): boolean =>
   program !== undefined && program >= 24 && program <= 31;
 
 describe('render/renderMixBalance — render 后处理混音', () => {
-  it('只改 TrackMix 音量,不改音符/program/声像/空间', () => {
+  it('不改音符/program/声像，并在 Dream 四风格出口恢复默认 CC7、清零空间', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -45,8 +46,10 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(out.map((t) => t.notes)).toEqual(beforeNotes);
     expect(out.map((t) => t.program)).toEqual(beforePrograms);
     expect(out.find((t) => t.role === 'lead')!.mix!.pan).toBe(64);
-    expect(out.find((t) => t.role === 'comp')!.mix!.chorus).toBe(58);
-    expect(afterRatio).toBeGreaterThan(beforeRatio);
+    expect(out.find((t) => t.role === 'comp')!.mix).toMatchObject({ reverb: 0, chorus: 0 });
+    expect(afterRatio).not.toBe(beforeRatio);
+    expect(out.find((t) => t.role === 'lead')!.mix!.volume).toBe(100);
+    expect(out.find((t) => t.role === 'comp')!.mix!.volume).toBe(100);
   });
 
   it('代表 macro seed 的 lead/comp 有效响度落在可预览+可移植区间', () => {
@@ -70,30 +73,43 @@ describe('render/renderMixBalance — render 后处理混音', () => {
         expect(Math.max(...comp!.notes.map((n) => n.durationTicks as number)), `${c.style}/${c.seed} guitar comp gate`).toBeLessThanOrEqual(163);
         continue;
       }
+      if (c.style !== 'acg') {
+        const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
+        const compTrack = r.ir!.tracks.find((t) => t.role === 'comp')!;
+        expect(lead.mix!.volume, `${c.style}/${c.seed}/lead`).toBe(100);
+        expect(compTrack.mix!.volume, `${c.style}/${c.seed}/comp`).toBe(100);
+        for (const track of r.ir!.tracks) {
+          expect(track.mix!.volume, `${c.style}/${c.seed}/${track.role}/volume`).toBe(100);
+          expect(track.mix!.reverb, `${c.style}/${c.seed}/${track.role}/reverb`).toBe(0);
+          expect(track.mix!.chorus, `${c.style}/${c.seed}/${track.role}/chorus`).toBe(0);
+        }
+        continue;
+      }
       expect(ratio, `${c.style}/${c.seed} ratio`).toBeGreaterThanOrEqual(c.lo);
       expect(ratio, `${c.style}/${c.seed} ratio`).toBeLessThanOrEqual(c.hi);
     }
   });
 
-  it('RNB seed=7 不再出现 comp 长 roll 压住 lead 的失衡', () => {
+  it('RNB seed=7 不再用 CC7 修正 comp/lead 的乐谱能量比', () => {
     const r = generateSong({ seed: 7, styleHint: 'rnb', mood: 'build', targetDuration: 90 });
     const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx('rnb', r.ir!.durationTicks as number));
     const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
     const comp = r.ir!.tracks.find((t) => t.role === 'comp')!;
 
-    expect(ratio).toBeGreaterThanOrEqual(0.75);
+    expect(ratio).toBeGreaterThan(0);
     if (isGuitarProgram(comp.program)) {
-      expect(comp.mix!.volume).toBeLessThanOrEqual(58);
+      expect(comp.mix!.volume).toBe(100);
       expect(comp.mix!.reverb).toBeLessThanOrEqual(20);
       expect(comp.mix!.delay).toBeUndefined();
       expect(Math.max(...comp.notes.map((n) => n.durationTicks as number))).toBeLessThanOrEqual(163);
     } else {
       expect(ratio).toBeLessThanOrEqual(1.35);
     }
-    expect(lead.mix!.volume).toBeGreaterThan(comp.mix!.volume);
+    expect(lead.mix!.volume).toBe(100);
+    expect(comp.mix!.volume).toBe(100);
   });
 
-  it('JAZZ sax lead 保持前景,但不再被设备链路推到 CC100', () => {
+  it('JAZZ sax 保留 CC11 表情，但通道电平使用 Dream 默认值', () => {
     const r = generateSong({ seed: 7, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
     const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx('jazz', r.ir!.durationTicks as number));
     const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
@@ -103,10 +119,10 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     const avgExpression = expressionValues.reduce((sum, value) => sum + value, 0) / Math.max(1, expressionValues.length);
 
     expect(lead.program).toBe(66);
-    expect(lead.mix!.volume).toBeGreaterThanOrEqual(84);
-    expect(Math.max(...leadVolumes)).toBeLessThanOrEqual(88);
-    expect(comp.mix!.volume).toBeGreaterThanOrEqual(78);
-    expect(ratio).toBeGreaterThanOrEqual(0.95);
+    expect(lead.mix!.volume).toBe(100);
+    expect(new Set(leadVolumes)).toEqual(new Set([100]));
+    expect(comp.mix!.volume).toBe(100);
+    expect(ratio).toBeGreaterThan(0);
     expect(ratio).toBeLessThanOrEqual(3.80);
     expect(avgExpression).toBeGreaterThanOrEqual(90);
   });
@@ -125,7 +141,92 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     }
   });
 
-  it('吉他 COMP 不被 render 平衡重新推成主角音量', () => {
+  it('ACG 三手钢琴为真实柱式抵达保留 top/middle 分层 CC7 余量，不改 PianoScore 的 NoteIR', () => {
+    const durationTicks = 960;
+    const tracks: TrackIR[] = [
+      {
+        role: 'lead',
+        program: 0,
+        mix: { volume: 100, pan: 64, reverb: 44, chorus: 8 },
+        notes: [{ pitch: midi(76), startTick: ticks(0), durationTicks: ticks(480), velocity: 90 }],
+      },
+      {
+        role: 'comp',
+        program: 0,
+        mix: { volume: 100, pan: 64, reverb: 44, chorus: 8 },
+        notes: [{ pitch: midi(60), startTick: ticks(480), durationTicks: ticks(480), velocity: 56 }],
+      },
+      {
+        role: 'bass',
+        program: 0,
+        mix: { volume: 74, pan: 64, reverb: 10, chorus: 2 },
+        notes: [{ pitch: midi(40), startTick: ticks(0), durationTicks: ticks(960), velocity: 48 }],
+      },
+    ];
+    const beforeNotes = tracks.map((track) => track.notes);
+    const out = applyRenderMixBalance(tracks, ctx('acg', durationTicks, [0, 480]));
+
+    expect(out.map((track) => track.notes)).toEqual(beforeNotes);
+    expect(out.find((track) => track.role === 'lead')!.mix).toMatchObject({ volume: 92, pan: 64, reverb: 44, chorus: 8 });
+    expect(out.find((track) => track.role === 'comp')!.mix).toMatchObject({ volume: 85, pan: 64, reverb: 44, chorus: 8 });
+    // The left hand is the score's root/support carrier, so the upper-hand
+    // headroom contract must not quietly pull it back.
+    expect(out.find((track) => track.role === 'bass')!.mix!.volume).toBe(74);
+  });
+
+  it('ACG 活动中的四音中声部仍让 cantabile top line 保持有效响度优势', () => {
+    const durationTicks = 960;
+    const tracks: TrackIR[] = [
+      {
+        role: 'lead',
+        program: 0,
+        mix: { volume: 100, pan: 64, reverb: 44, chorus: 5 },
+        notes: [{ pitch: midi(76), startTick: ticks(0), durationTicks: ticks(durationTicks), velocity: 90 }],
+      },
+      {
+        role: 'comp',
+        program: 0,
+        // A real piano-score block: four inner voices sustain under the top
+        // line. The policy floor, not a post-note carve, must preserve the
+        // score's top/middle hierarchy here.
+        mix: { volume: 80, pan: 64, reverb: 44, chorus: 8 },
+        notes: [55, 55, 54, 54].map((velocity, index) => ({
+          pitch: midi(55 + index * 4),
+          startTick: ticks(0),
+          durationTicks: ticks(durationTicks),
+          velocity,
+        })),
+      },
+    ];
+
+    const out = applyRenderMixBalance(tracks, ctx('acg', durationTicks));
+    const lead = out.find((track) => track.role === 'lead')!;
+    const comp = out.find((track) => track.role === 'comp')!;
+
+    expect(lead.mix!.volume).toBe(92);
+    expect(comp.mix!.volume).toBe(74);
+    expect(lead.mix!.volume).toBeGreaterThan(comp.mix!.volume);
+    expect(leadCompWetEnergyRatio(out, ctx('acg', durationTicks))).toBeGreaterThanOrEqual(1.05);
+  });
+
+  it('ACG grammar dyads and overlapping cantabile notes stay below the hardware error ceiling', () => {
+    // 3 is the reported dyad arrival; this compact deterministic sweep also
+    // covers the later overlapping-melody and mixed-arrangement peaks.
+    for (const seed of Array.from({ length: 64 }, (_, index) => index)) {
+      const result = generateSong({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
+      expect(result.ir, `acg/${seed} no IR`).toBeTruthy();
+      const report = auditRenderedMix(result.ir!.tracks as TrackIR[], ctx('acg', result.ir!.durationTicks as number));
+      expect(report.findings.filter((finding) => finding.code === 'master.outputClipRisk'), `acg/${seed}`).toEqual([]);
+      for (const role of ['lead', 'comp'] as const) {
+        const track = result.ir!.tracks.find((candidate) => candidate.role === role)!;
+        const volumes = [track.mix?.volume, ...(track.mixChanges ?? []).map((change) => change.mix.volume)]
+          .filter((volume): volume is number => typeof volume === 'number');
+        expect(Math.max(...volumes), `acg/${seed}/${role} upper-hand CC7`).toBeLessThanOrEqual(94);
+      }
+    }
+  });
+
+  it('Dream 四风格不再为吉他 COMP 做 CC7 校平', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -147,12 +248,12 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
     const comp = out.find((t) => t.role === 'comp')!;
-    expect(comp.mix!.volume).toBeLessThanOrEqual(58);
-    expect(comp.mix!.reverb).toBe(20);
-    expect(comp.mix!.chorus).toBe(2);
+    expect(comp.mix!.volume).toBe(100);
+    expect(comp.mix!.reverb).toBe(0);
+    expect(comp.mix!.chorus).toBe(0);
   });
 
-  it('吉他 LEAD 也被热源校平,不会被 melody-forward 推成爆音主角', () => {
+  it('Dream 四风格不再为吉他 LEAD 做 CC7 校平', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -173,12 +274,12 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('pop', durationTicks));
     const lead = out.find((t) => t.role === 'lead')!;
-    expect(lead.mix!.volume).toBeLessThanOrEqual(72);
-    expect(lead.mix!.reverb).toBe(30);
+    expect(lead.mix!.volume).toBe(100);
+    expect(lead.mix!.reverb).toBe(0);
     expect(lead.mix!.chorus).toBe(0);
   });
 
-  it('卡林巴 LEAD 被热源校平,不会被 melody-forward 推成高频谐振主角', () => {
+  it('Dream 四风格不再为卡林巴 LEAD 做 CC7 校平', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -199,12 +300,12 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('pop', durationTicks));
     const lead = out.find((t) => t.role === 'lead')!;
-    expect(lead.mix!.volume).toBeLessThanOrEqual(74);
-    expect(lead.mix!.reverb).toBe(18);
+    expect(lead.mix!.volume).toBe(100);
+    expect(lead.mix!.reverb).toBe(0);
     expect(lead.mix!.chorus).toBe(0);
   });
 
-  it('GM5/Electric Grand COMP 不被 render 平衡重新推成嗡声主角', () => {
+  it('Dream 四风格不再为 GM5/Electric Grand COMP 做 CC7 校平', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -227,8 +328,8 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
     const comp = out.find((t) => t.role === 'comp')!;
-    expect(comp.mix!.volume).toBeLessThanOrEqual(80);
-    expect(comp.mix!.reverb).toBe(24);
-    expect(comp.mix!.chorus).toBe(18);
+    expect(comp.mix!.volume).toBe(100);
+    expect(comp.mix!.reverb).toBe(0);
+    expect(comp.mix!.chorus).toBe(0);
   });
 });

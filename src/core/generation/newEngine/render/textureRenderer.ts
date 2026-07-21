@@ -70,7 +70,13 @@ const RNB_COLOR_TEXTURE_CASES = new Set<string>([
 ]);
 
 /** ★ ACG 和弦语境(directive §3.3):给 textureRenderer 真和弦根/类型 → 算真上方色音(非从已钳 voicing 顶部取)。 */
-export interface AcgChordContext { rootPc: number; chordType: string; }
+export interface AcgChordContext {
+  rootPc: number;
+  chordType: string;
+  /** ACG PianoScorePlan 在生成前写入的中部手区；缺省保留旧 render 行为。 */
+  compFloorMidi?: number;
+  compCeilingMidi?: number;
+}
 
 /**
  * Legacy textureCase 全量覆盖集(Loop 6,2026-06-09 用户决策「全量进可选择池/strict MG」)。
@@ -218,16 +224,21 @@ export function renderTextureChordHits(
       break;
     case 'Piano_Lofi_Tape_Wobble_Arp': {
       const arp = cM.slice(0, Math.min(cM.length, 4));
-      for (let i = 0; i < dur * 2 && i < 8; i++) push([arp[i % arp.length]], i * 0.5 + 0.02, 0.35, i % 2 === 0 ? 0.32 : 0.24);
+      for (let i = 0; i < dur * 2 && i < 8; i++) {
+        // Ground the gesture on the downbeat; retain the tape-late offset on
+        // later plucks. Otherwise the first note bypasses the integer-beat
+        // pocket guard and flams against kick/bass by about 15-19ms.
+        push([arp[i % arp.length]], i === 0 ? 0 : i * 0.5 + 0.02, 0.35, i % 2 === 0 ? 0.32 : 0.24);
+      }
       break;
     }
     case 'Piano_Wide_Color_Motion': // 源 roll widePianoVoicing;voiced 即宽排列 → 强拍轻 roll
     case 'Piano_CommonTone_Soft_Roll':
       // ★ 重音对拍:roll 首声部【落在强拍上】(idx0=beat),其余声部向上 roll(spread 0.015);整个 roll 从拍点起,不再整体晚拍。
-      [0, 2].forEach((beat) => {
-        if (beat >= dur) return;
+      // 长和弦 span 也必须每两拍续一次；固定 [0,2] 会让 8 拍 span 的后半段形成 4+ 拍真空。
+      for (let beat = 0; beat < dur; beat += 2) {
         cM.forEach((m, idx) => push([m], beat + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
-      });
+      }
       break;
 
     // ——— RNB-color(Phase E §3.6):voicing-first wide-inner 演绎,忠实 MG hit timing/velocity 包络 ———

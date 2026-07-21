@@ -47,6 +47,13 @@ describe('core/audio/MidiScheduler', () => {
     expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOff')).toHaveLength(1);
   });
 
+  it('holds a written score tail until its declared duration rather than looping at the last note-off', () => {
+    const scheduler = new MidiScheduler();
+    scheduler.loadTrack([ev(0, 'noteOn', 64), ev(240, 'noteOff', 64)], 120, undefined, 2_400);
+
+    expect((scheduler as unknown as { trackEndTick: number }).trackEndTick).toBe(2_400);
+  });
+
   it('notifies external MIDI listeners for audible non-visual events', () => {
     const scheduler = new MidiScheduler();
     const seen: MidiEvent[] = [];
@@ -64,14 +71,42 @@ describe('core/audio/MidiScheduler', () => {
     expect(seen.map((event) => [event.ticks, event.type, event.data1])).toEqual([[0, 'noteOn', 64]]);
   });
 
-  it('notifies external MIDI listeners on panic/all-notes-off', () => {
+  it('lifts sustain, sends all-notes-off, then restores board controller defaults during panic', () => {
     const scheduler = new MidiScheduler();
     const seen: MidiEvent[] = [];
     scheduler.addMidiEventListener((event) => seen.push(event));
 
     scheduler.panic();
 
-    expect(seen).toHaveLength(16);
-    expect(seen.every((event) => event.type === 'cc' && event.data1 === 123 && event.data2 === 0)).toBe(true);
+    expect(seen).toHaveLength(48);
+    for (let channel = 0; channel < 16; channel++) {
+      const channelEvents = seen.filter((event) => event.channel === channel).map((event) => [event.channel, event.data1, event.data2]);
+      expect(channelEvents).toEqual([[channel, 64, 0], [channel, 123, 0], [channel, 121, 0]]);
+    }
+  });
+
+  it('orders a same-tick program handoff as noteOff, CC64-off, CC121, bank/program, CC11, CC64-on, noteOn', () => {
+    const scheduler = new MidiScheduler();
+    scheduler.loadTrack([
+      ev(480, 'noteOn', 60),
+      ev(480, 'noteOff', 60),
+      { ticks: 480, type: 'cc', channel: 1, data1: 64, data2: 127 },
+      { ticks: 480, type: 'cc', channel: 1, data1: 121, data2: 0 },
+      { ticks: 480, type: 'programChange', channel: 1, data1: 5, data2: 0 },
+      { ticks: 480, type: 'cc', channel: 1, data1: 0, data2: 1 },
+      { ticks: 480, type: 'cc', channel: 1, data1: 11, data2: 90 },
+      { ticks: 480, type: 'cc', channel: 1, data1: 64, data2: 0 },
+    ], 120);
+
+    expect(scheduler.getChannelEvents(1).map((event) => [event.type, event.data1, event.data2])).toEqual([
+      ['noteOff', 60, 0],
+      ['cc', 64, 0],
+      ['cc', 121, 0],
+      ['cc', 0, 1],
+      ['programChange', 5, 0],
+      ['cc', 11, 90],
+      ['cc', 64, 127],
+      ['noteOn', 60, 100],
+    ]);
   });
 });

@@ -20,7 +20,7 @@
  *   - CastingEngine STYLE_ANCHOR_RECIPE 表
  *   - MoodRouter MOOD_RECIPE / MOOD_WALK_PATTERN 二维表的列索引
  *   - config/StyleRegistry / styles/index.ts getStyleHarmonyBundle / getStyleStage5Bundle
- *   - data/GMSoundMap 相关 channel 路由
+ *   - Q+N channel/role 路由
  * Cross-sync §1.6 + §1.18(MoodRouter 二维表)。
  */
 export enum StyleId {

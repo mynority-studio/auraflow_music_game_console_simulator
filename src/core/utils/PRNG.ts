@@ -7,7 +7,7 @@
  *
  * Snapshot mechanism (ACVE §5.1):
  *   - 'A' captured at setSeed() / 播放入口(当前唯一在用)
- *   - 旧 'B'/'C'/'D'(MelodyEngine/AbsoluteTransposer/MidiConverter 入口)随旧引擎删除已废弃。
+ *   - 'B'/'C'/'D' 为历史快照槽位,当前主播放入口只使用 'A'。
  * ★ Q+N 引擎自身走 RandomContext(createRandomContext),不用本 PRNGManager;PRNGManager 仅 app 侧 seed/jam 用。
  *
  * 这些 snapshot 用于隔离验证修改是否影响 PRNG 消耗序列。
@@ -85,4 +85,3 @@ class PRNG {
 
 // D-2 合规：使用固定初始种子，播放入口处由调用方显式 setSeed() 覆盖
 export const PRNGManager = new PRNG(0);
-

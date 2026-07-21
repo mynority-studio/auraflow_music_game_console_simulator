@@ -13,6 +13,7 @@ import type { ArrangementPlan } from './ArrangementPlan';
 import type { StyleName } from '../knowledge/mgMusicTheory';
 import { styleIntentProfile, bassFamilyFromFloorBeats } from '../knowledge/styleIntentProfiles';
 import { dominantFamilyOfCases, dominantOnsetFormOfCases } from '../knowledge/textureFamilyMap';
+import { bassPatternFamilyForId } from '../knowledge/grooveBassPatterns';
 import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule, CompOnsetFormSchedule, LeadGrammarIntent, TextureTransitionPlan } from '../intent/MusicIntentPlan';
 import type { IntentSummary } from '../intent/intentAuditTypes';
 
@@ -25,14 +26,12 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
   const styleName = style.toUpperCase() as StyleName; // band.style 是小写字符串;归一到 StyleName(消费者仍 lowercase 匹配)
   const bpb = beatsPerBarOf(arrangement.meter);
   const prof = styleIntentProfile(style);
-  const bassFamily = bassFamilyFromFloorBeats(style);
+  const defaultBassFamily = bassFamilyFromFloorBeats(style, bpb);
   // ★ Phase 3(observe):texture family intent = GrooveContract preferred 的主导 family(arranger 的织体身份;SIM-native)。
   //   缺 contract → styleProfile 默认。per-section 暂用同一 song-level family(intro/outro 微调留后续精化)。
-  const preferred = (arrangement.songGrooveContract?.preferredTextureCases ?? []) as readonly string[];
-  const grooveFamily = preferred.length > 0 ? dominantFamilyOfCases(preferred) : prof.defaultTextureFamily;
-  // ★ Phase 4:comp onset-form intent。ACG=rollHeavy(enforce,chordRoll 实现之,byte-identical);非 ACG=groove 主导 onset-form(observe)。
+  // ACG phrase score now owns attacks per event (block / roll-up / roll-down /
+  // tacet). Do not leave a conflicting section-wide rollHeavy contract here.
   const isAcgStyle = String(style).toLowerCase() === 'acg';
-  const grooveOnsetForm = isAcgStyle ? 'rollHeavy' : (preferred.length > 0 ? dominantOnsetFormOfCases(preferred) : 'mixed');
   let startBar = 0;
   const sections: SectionMusicIntent[] = arrangement.sections.map((s) => {
     const startBeat = startBar * bpb;
@@ -40,21 +39,31 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
     startBar += s.bars;
     const energy = arrangement.energyBySection[s.id] ?? 0.5;
     const densityHint = energy >= 0.66 ? 'dense' : energy <= 0.4 ? 'sparse' : 'medium';
-    // ★ Phase 2:intro/outro bass = minimal(与 enforceBassDensityFloor 跳过 intro/outro 一致 → schedule 精确编码现 floor)。
-    const secBassFamily = (s.role === 'intro' || s.role === 'outro') ? 'minimal' : bassFamily;
+    const sectionContract = arrangement.grooveContractBySection?.[s.id] ?? arrangement.songGrooveContract;
+    const preferred = (sectionContract?.preferredTextureCases ?? []) as readonly string[];
+    const grooveFamily = preferred.length > 0 ? dominantFamilyOfCases(preferred) : prof.defaultTextureFamily;
+    const grooveOnsetForm = isAcgStyle ? 'mixed' : (preferred.length > 0 ? dominantOnsetFormOfCases(preferred) : 'mixed');
+    const bassPatternId = arrangement.grooveScorePlan?.bySection[s.id]?.bassPatternId;
+    const plannedBassFamily = bassPatternFamilyForId(bassPatternId) ?? defaultBassFamily;
+    const performanceBassInactive = arrangement.rolePerformanceBySection?.bass?.[s.id]?.active === false;
+    const bassInactive = performanceBassInactive;
+    // ★ Phase 2:intro/outro/inactive bass = minimal;其余按 style + meter 选择 family。
+    const secBassFamily = (s.role === 'intro' || s.role === 'outro' || bassInactive) ? 'minimal' : plannedBassFamily;
+    const targetNotesPerBar = prof.bassTargetNotesPerBar;
     const bassPatternSchedule: BassPatternSchedule = {
       meta: bassMeta(),
-      slots: [{ meta: bassMeta(), startBeat, endBeat, family: secBassFamily, targetNotesPerBar: prof.bassTargetNotesPerBar, allowEnergyThinning: true }],
+      slots: [{ meta: bassMeta(), startBeat, endBeat, family: secBassFamily, targetNotesPerBar, allowEnergyThinning: true }],
     };
     const textureFamilySchedule: TextureFamilySchedule = {
       meta: observeMeta(),
       slots: [{ meta: observeMeta(), startBeat, endBeat, family: grooveFamily, densityHint, switchPolicy: 'section' }],
     };
-    // ★ Phase 4:ACG comp onset-form=rollHeavy(enforce,chordRoll 实现,byte-identical);非 ACG observe(元数据,不改 render)。
-    const onsetMeta = isAcgStyle ? bassMeta : observeMeta; // 复用 enforce/observe meta 工厂(ACG rollHeavy=enforce)
+    // ACG's executable onset plan lives in AcgPianoScorePlan; this generic
+    // intent remains descriptive so it cannot overwrite phrase-level score.
+    const onsetMeta = observeMeta;
     const compOnsetFormSchedule: CompOnsetFormSchedule = {
       meta: onsetMeta(),
-      slots: [{ meta: onsetMeta(), startBeat, endBeat, form: grooveOnsetForm, ...(grooveOnsetForm === 'rollHeavy' ? { targetSingleRatio: [0.85, 1.0] as [number, number] } : {}) }],
+      slots: [{ meta: onsetMeta(), startBeat, endBeat, form: grooveOnsetForm }],
     };
     // ★ Phase 6:lead grammar intent(observe —— 不 post-cap;enforce 需 legato/pocket 消费 boundary + replay-safe,directive 保留 observe 直到可保证)。
     const leadGrammarIntent: LeadGrammarIntent = {
@@ -68,7 +77,7 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
       meta: observeMeta(),
       sectionId: s.id, sectionRole: s.role, functionTag: s.functionTag,
       startBeat, endBeat, bars: s.bars, energy,
-      grooveContractId: arrangement.songGrooveContractId,
+      grooveContractId: sectionContract?.id ?? arrangement.songGrooveContractId,
       bassPatternSchedule, textureFamilySchedule, compOnsetFormSchedule, leadGrammarIntent, textureTransitionPlan,
     };
   });

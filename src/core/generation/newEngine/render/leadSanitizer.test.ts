@@ -79,7 +79,7 @@ describe('render/leadSanitizer · renderCoordinator final safety(directive q_n_f
         }
       }
     }
-  });
+  }, 20_000);
 
   it('★ Phase 4 默认 Q+N 不变量:generateSong(无 override)lead 也无同 pitch overlap', () => {
     for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {

@@ -8,49 +8,32 @@
 // ============================================================
 
 import type { MidiEvent } from './MidiScheduler';
-import type { InstrumentRole, MusicalIR, TrackMix } from '../generation/newEngine/ir/MusicalIR';
-import { mapProgramToDream5504 } from '../sound/GMBK5X128Voices';
+import type { InstrumentRole, MusicalIR } from '../generation/newEngine/ir/MusicalIR';
+import { isAcousticPianoVoice, mapProgramToDream5504 } from '../sound/GMBK5X128Voices';
 
 interface ChannelVoice {
   channel: number;
   program: number;
-  volume: number; // CC7 通道音量(混音分层:lead 焦点最响 → pad 铺底最弱)
-  pan: number;    // CC10 声像(64=正中;comp/pad 左右展开 = 宽度)
 }
 
-const CC_VOLUME = 7;
-const CC_PAN = 10;
 const CC_BANK_MSB = 0;
-const CC_REVERB = 91;
-const CC_CHORUS = 93;     // ★ ESP32 混音:合唱/宽度(电钢/pad 厚度)
-const CC_EXPRESSION = 11; // ★ ESP32 混音:表情(静态,可选)
+const CC_EXPRESSION = 11;
 const CC_SUSTAIN = 64;
+const CC_RESET_ALL_CONTROLLERS = 121;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(本文件即 Q+N 唯一通道约定真源)
-// ★ 混音【适中均衡】(2026-06-05):lead 不再突出,与伴奏平均坐在一起(单一方案,不分风格)。
-//   CC7 推子压平 spread;comp 偏高补它较低的 velocity → lead/bass/comp 有效响度接近;pad 抬起(原太埋)。
-//   有效响度 ≈ CC7 × velocity:lead vel 高(90)→ CC7 拉低;comp vel 低(~67)→ CC7 拉高 → 二者打平。
+// Every channel returns to the documented board defaults with CC121. The
+// only score-owned controller exceptions are CC11/CC64 on Bank-0 acoustic
+// pianos, after InstrumentationPlan has explicitly authored them.
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
-  bass: { channel: 3, program: 33, volume: 61, pan: 64 },  // 中 · 与 comp【有效响度齐平】
-  comp: { channel: 2, program: 0, volume: 93, pan: 50 },   // 偏左 · 有效响度基准
-  lead: { channel: 1, program: 0, volume: 74, pan: 64 },   // 中 · 旋律主线
-  pad: { channel: 4, program: 89, volume: 96, pan: 78 },   // 偏右 · 铺底
-  drum: { channel: 9, program: 0, volume: 102, pan: 64 },  // 中(GM 鼓通道)
+  bass: { channel: 3, program: 33 },
+  comp: { channel: 2, program: 0 },
+  lead: { channel: 1, program: 0 },
+  pad: { channel: 4, program: 89 },
+  drum: { channel: 9, program: 0 },
 };
 
-const DEFAULT_VOICE: ChannelVoice = { channel: 0, program: 0, volume: 100, pan: 64 };
-
-// ★ 混响 = 一个【共享房间】(全局混响,ESP32 Freeverb-lite 等价)。roomWet=该房间湿度(按风格)。
-//   bass/drum 给受控 room:听感靠后一点,但硬件端还有低频 safe scale,不让 kick/bass 灌满房间。
-//   lead 略干靠前(旋律清晰),comp/pad 进满房间(软+长=天然靠后)。
-function reverbSend(role: InstrumentRole, roomWet: number): number {
-  switch (role) {
-    case 'bass': return 10;                               // 小 room send:低频靠后一点但不糊
-    case 'drum': return Math.round(roomWet * 0.36);       // 鼓进一点房间,仍靠 attack/body 保清楚
-    case 'lead': return Math.round(roomWet * 0.72);       // 略干靠前(旋律清晰)
-    default: return roomWet;                              // comp / pad 进共享房间
-  }
-}
+const DEFAULT_VOICE: ChannelVoice = { channel: 0, program: 0 };
 
 /** 角色 → MIDI 通道(mute/solo 按通道操作)。 */
 export const ROLE_CHANNEL: Record<InstrumentRole, number> = {
@@ -58,21 +41,6 @@ export const ROLE_CHANNEL: Record<InstrumentRole, number> = {
 };
 
 const clampCC = (v: number): number => Math.max(0, Math.min(127, Math.round(v)));
-const clampPitchBend = (v: number): number => Math.max(0, Math.min(16383, Math.round(v)));
-
-// ★ ESP32 混音:在某 tick 把一组 mix CC 写齐(CC7/10/91/93 + 可选 CC11)。器配层产的 TrackMix 优先,
-//   缺省回退角色默认(CC7/10 走 voice,CC91 走 reverbSend,CC93=0)。programChange 之后、noteOn 之前发好。
-function pushMixCC(events: MidiEvent[], channel: number, tick: number, role: InstrumentRole, mix: TrackMix | undefined, voice: ChannelVoice, roomWet: number): void {
-  const volume = mix ? clampCC(mix.volume) : voice.volume;
-  const pan = mix ? clampCC(mix.pan) : voice.pan;
-  const reverb = mix ? clampCC(mix.reverb) : reverbSend(role, roomWet);
-  const chorus = mix ? clampCC(mix.chorus) : 0;
-  events.push({ ticks: tick, type: 'cc', channel, data1: CC_VOLUME, data2: volume });
-  events.push({ ticks: tick, type: 'cc', channel, data1: CC_PAN, data2: pan });
-  events.push({ ticks: tick, type: 'cc', channel, data1: CC_REVERB, data2: reverb });
-  events.push({ ticks: tick, type: 'cc', channel, data1: CC_CHORUS, data2: chorus });
-  if (mix && mix.expression !== undefined) events.push({ ticks: tick, type: 'cc', channel, data1: CC_EXPRESSION, data2: clampCC(mix.expression) });
-}
 
 function pushProgramChange(events: MidiEvent[], tick: number, channel: number, role: InstrumentRole, program: number, bank?: number): void {
   if (role !== 'drum' && bank !== undefined) {
@@ -82,49 +50,94 @@ function pushProgramChange(events: MidiEvent[], tick: number, channel: number, r
   events.push({ ticks: tick, type: 'programChange', channel, data1: program, data2: 0 });
 }
 
-/** MusicalIR → 排序好的 MidiEvent[](喂 globalMidiScheduler.loadTrack)。保 programChanges/pedal/mix/mixChanges/ccEvents。 */
-export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] {
+/** Start every generated channel from Firm5504's documented controller defaults. */
+function pushDream5504DefaultControllerState(events: MidiEvent[], channel: number): void {
+  events.push({ ticks: 0, type: 'cc', channel, data1: CC_RESET_ALL_CONTROLLERS, data2: 0 });
+}
+
+interface ProgramAddress {
+  bank: number;
+  program: number;
+}
+
+function programAddressAtTick(track: MusicalIR['tracks'][number], fallback: number, tick: number): ProgramAddress {
+  let bank = track.bank ?? 0;
+  let program = track.program ?? fallback;
+  for (const change of track.programChanges ?? []) {
+    if ((change.atTick as number) > tick) break;
+    bank = change.bank ?? bank;
+    program = change.program;
+  }
+  return { bank, program };
+}
+
+/**
+ * MusicalIR → Dream 5504 events. Every channel starts with CC121 so Firm5504
+ * restores its documented defaults (including CC7=100 and CC11=127). The
+ * only score expression then admitted is CC11 and CC64 for concrete acoustic
+ * piano addresses (PC0/1/3); all mix, FX and non-piano gesture CC stay out.
+ */
+export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50, style?: string): MidiEvent[] {
+  void roomWet;
   const events: MidiEvent[] = [];
 
   for (const track of ir.tracks) {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
-    const program = mapProgramToDream5504(track.program ?? voice.program, track.role); // 器配优先,发声前收口到 Dream 5504
+    // The score owns its program, while the mapper needs the style entitlement
+    // to keep an ACG piano left hand from falling back to a true bass timbre.
+    const program = mapProgramToDream5504(track.program ?? voice.program, track.role, style);
+    pushDream5504DefaultControllerState(events, voice.channel);
     pushProgramChange(events, 0, voice.channel, track.role, program, track.bank);
     // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
     for (const pc of track.programChanges ?? []) {
-      pushProgramChange(events, pc.atTick, voice.channel, track.role, mapProgramToDream5504(pc.program, track.role), pc.bank);
+      const tick = pc.atTick as number;
+      const before = programAddressAtTick(track, voice.program, tick - 1);
+      const after = programAddressAtTick(track, voice.program, tick);
+      // A piano damper belongs to the outgoing voice. Release it before a
+      // handoff so a later non-piano Program Change cannot inherit sustain.
+      if (isAcousticPianoVoice(before.bank, before.program) && !isAcousticPianoVoice(after.bank, after.program)) {
+        events.push({ ticks: tick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: 0 });
+      }
+      pushProgramChange(events, pc.atTick, voice.channel, track.role, mapProgramToDream5504(pc.program, track.role, style), pc.bank);
     }
-    // ★ CC64 延音踏板:踩下(127)→ synth 持音直到抬起(0)→ 音尾 ring(comp 融合)
-    for (const ped of track.pedalEvents ?? []) {
-      events.push({ ticks: ped.atTick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: ped.down ? 127 : 0 });
+    // Do not infer piano expression from the role. A lead can be a violin and
+    // a comp can be an organ; only the resolved program address may receive it.
+    for (const pedal of track.pedalEvents ?? []) {
+      const tick = Math.max(0, Math.round(pedal.atTick as number));
+      const address = programAddressAtTick(track, voice.program, tick);
+      if (!isAcousticPianoVoice(address.bank, address.program)) continue;
+      events.push({ ticks: tick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: pedal.down ? 127 : 0 });
     }
-    // ★ 混音(ESP32):tick0 写齐 CC7/10/91/93(+可选 CC11);随后每个段落混音刷新点再写齐一组(稀疏)。
-    pushMixCC(events, voice.channel, 0, track.role, track.mix, voice, roomWet);
-    for (const mc of track.mixChanges ?? []) {
-      pushMixCC(events, voice.channel, mc.atTick, track.role, mc.mix, voice, roomWet);
-    }
-    // ★ 通用 CC 自动化(气声 lead 气口减弱=CC11 包络);在 notes 之前 push → 同 tick CC 先于 noteOn
     for (const cc of track.ccEvents ?? []) {
-      events.push({ ticks: cc.atTick, type: 'cc', channel: voice.channel, data1: cc.controller, data2: clampCC(cc.value) });
+      const tick = Math.max(0, Math.round(cc.atTick as number));
+      const address = programAddressAtTick(track, voice.program, tick);
+      if (cc.controller !== CC_EXPRESSION || !isAcousticPianoVoice(address.bank, address.program)) continue;
+      events.push({ ticks: tick, type: 'cc', channel: voice.channel, data1: CC_EXPRESSION, data2: clampCC(cc.value) });
     }
-    for (const bend of track.pitchBendEvents ?? []) {
-      events.push({ ticks: bend.atTick, type: 'pitchBend', channel: voice.channel, data1: clampPitchBend(bend.value), data2: 0 });
-    }
-
     for (const n of track.notes) {
       events.push({ ticks: n.startTick, type: 'noteOn', channel: voice.channel, data1: n.pitch, data2: n.velocity });
       events.push({ ticks: n.startTick + n.durationTicks, type: 'noteOff', channel: voice.channel, data1: n.pitch, data2: 0 });
     }
   }
 
-  return events;
+  // Several authored sources can request the same release at a program
+  // boundary. Hardware sees one state transition, so keep the MIDI stream
+  // deterministic and free of duplicate controller writes.
+  const seenControllers = new Set<string>();
+  return events.filter((event) => {
+    if (event.type !== 'cc') return true;
+    const key = `${event.ticks}:${event.channel}:${event.data1}:${event.data2}`;
+    if (seenControllers.has(key)) return false;
+    seenControllers.add(key);
+    return true;
+  });
 }
 
-// ★ 共享房间湿度(按风格);从旧 sandbox/mixProfile 提到正式层(AudioEngine 计算 roomWet 用)。
+// Retained as a compatibility API for callers. Raw-default output ignores it.
 const ROOM_WET: Record<string, number> = {
-  lofi: 72, pop: 52, rnb: 55, jazz: 30, blues: 28, modal: 60, acg: 40,
+  lofi: 0, pop: 0, rnb: 0, jazz: 0, blues: 28, modal: 60, acg: 40,
 };
-/** 风格 → 共享房间 CC91 湿度(0..127);未知风格回退 48(中等房间)。 */
+/** 兼容湿度元数据；raw-default 输出不会据此发送 CC91。 */
 export function roomWetFor(style: string): number {
   return ROOM_WET[(style ?? '').toLowerCase()] ?? 48;
 }

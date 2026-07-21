@@ -19,7 +19,7 @@ const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 
 const ROLE_CHANNEL: Record<QnRole, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
 const ROLE_ORDER: QnRole[] = ['lead', 'comp', 'bass', 'pad', 'drum'];
 
-/** PitchClass(0..11)→ 显示音名(平号体系,与旧 MgKeyStore 一致)。 */
+/** PitchClass(0..11)→ 显示音名(平号体系)。 */
 export function pcToKey(pc: number): string { return NOTE_NAMES[((pc % 12) + 12) % 12]; }
 /** 显示音名 → PitchClass(支持升降号别名)。 */
 export function keyToPc(key: string): number {
@@ -105,7 +105,7 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
   let cursor = 0;
   const sections: UiSection[] = arrangement.sections.map((s) => {
     const startBeat = cursor;
-    const endBeat = cursor + s.bars * bpb; // ★ 段末拍(消费者:AuraBar/AuraJam 段命中/jam 定时;取代旧 GeneratedTrack 内联算)
+    const endBeat = cursor + s.bars * bpb; // ★ 段末拍(消费者:AuraBar/AuraJam 段命中/jam 定时)
     cursor = endBeat;
     return { id: String(s.id), role: String(s.role), functionTag: s.functionTag ? String(s.functionTag) : undefined, bars: s.bars, startBeat, endBeat };
   });
@@ -127,11 +127,12 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
   for (const t of ir?.tracks ?? []) {
     if (t.program !== undefined) irVoiceByRole.set(t.role, { program: t.program, bank: t.bank });
   }
+  const renderedRoles = ir ? new Set(ir.tracks.map((track) => track.role)) : undefined;
   const autoFilled = new Set<string>((band.autoFilledRoles ?? []).map(String));
   // participant 是否明确 selected(白名单态)→ roster state 标 selected;否则 auto。
   const selectedParticipant = new Set((participants ?? []).filter((p) => p.state === 'selected').map((p) => p.role));
   const roster: UiPlayer[] = ROLE_ORDER
-    .filter((role) => instrumentation.roleProgram[role] !== undefined)
+    .filter((role) => instrumentation.roleProgram[role] !== undefined && (!renderedRoles || renderedRoles.has(role)))
     .map((role) => {
       const voice = irVoiceByRole.get(role);
       const program = mapProgramToDream5504(voice?.program ?? instrumentation.roleProgram[role], role, band.style);
@@ -143,7 +144,7 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
       const isDrum = role === 'drum';
       const instrumentName = dream5504VoiceName(bank, program, role) ?? `Dream5504 PC${program}`;
       const family = isDrum ? 'percussion' : instrumentInfo(program).family;
-      return { role, program, bank: bank || undefined, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
+      return { role, program, bank: bank ?? undefined, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)
@@ -154,7 +155,7 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
       role,
       channel: ROLE_CHANNEL[role] ?? 0,
       program,
-      bank: t.bank || undefined,
+      bank: t.bank ?? undefined,
       instrumentName: dream5504VoiceName(t.bank, program, role) ?? `Dream5504 PC${program}`,
       noteCount: t.notes.length,
     };

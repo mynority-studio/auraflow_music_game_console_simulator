@@ -12,23 +12,36 @@ import { compPattern } from '../knowledge/grooves';
 import { assembleVoicing, applyArrangement, STYLE_SHELL, STYLE_FULL, STYLE_BLUES, type VoicingStylePreference } from '../knowledge/voicingStyles';
 import { placeVoicingMidi } from '../knowledge/voicingPlacement';
 import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQuality } from '../knowledge/chords';
+import { resolveBassAnchorPc } from '../knowledge/basslineRules';
 import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
 import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
-import { renderTextureChordHits, isAcgTextureCase } from './textureRenderer';
+import { renderTextureChordHits, isAcgTextureCase, type TextureChordHit } from './textureRenderer';
 import { lofiTextureClockBeat } from './textureClock';
 import { textureBehavior } from '../knowledge/textureProfiles';
 import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
-import type { SectionRole } from '../arranger/ArrangementPlan';
+import type { GrooveScorePlan, SectionRole } from '../arranger/ArrangementPlan';
+import type { CompRoleRhythmPattern } from '../knowledge/roleRhythmPatterns';
+import {
+  revoiceAcgPianoScoreVoicing,
+  type AcgPianoCompDirective,
+  type AcgPianoScorePlan,
+  type AcgPianoVoiceSelection,
+} from '../arranger/acgPianoScorePlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 import type { PadCompDecision } from './padCompPolicy';
+import type { ArrangementFoundationOwner } from '../arranger/arrangementArchetypeContract';
 
 export interface AccompContext {
   style?: string;
   anchorBeats?: Set<number>;      // 主 hook 锚点拍位(active 段在此瘦身让位)
   activeSectionIds?: Set<string>; // active 织体段
+  /** 低音地基归属是跨角色关系，必须由 Arranger 明示，不能由“Bass 缺席”猜测。 */
+  foundationRoleBySection?: Readonly<Record<string, ArrangementFoundationOwner>>;
   voicingSaferSpans?: Set<string>; // 撞音阶梯 rung1:这些 span 强制瘦身 3+7 shell
   compProgram?: number;            // ★ comp 实际乐器 GM program:钢琴家族 → 宽排列,否则通用 voiceComp
+  /** Arranger/Instrumentation 锁定的职责音区；独奏钢琴 Comp 可下探 G2，而非通用 C3 地板。 */
+  compRegister?: { lowMidi: number; highMidi: number };
   sectionRoleById?: Record<string, SectionRole>; // 段落功能 → 钢琴 spread mode 选择(pickSpreadMode)
   voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
   textureSchedule?: TextureSchedule; // ★ 中央下发的 spanId→textureCase(bass/comp/drum 共享)
@@ -37,6 +50,10 @@ export interface AccompContext {
   padCompDecisionBySection?: Record<string, PadCompDecision>; // 每段 pad↔comp 决策
   padOccupiedPitchesBySpan?: Record<string, number[]>;        // pad 各 span 已占绝对 MIDI(comp 让 pad)
   needsDownbeatCompAnchorBySection?: Record<string, boolean>; // ★ Loop I.3:no-pad comp 支撑段 → late texture 补下拍 anchor
+  /** ACG 专用前置总谱：texture/中部手区/roll 在出 NoteIR 前已决定。 */
+  pianoScorePlan?: AcgPianoScorePlan;
+  /** Arranger-materialized role cells. They own Comp attacks for their sections. */
+  grooveScorePlan?: Readonly<GrooveScorePlan>;
 }
 
 /**
@@ -82,6 +99,57 @@ export function pocketizeBeat(beatPos: number, strength = 0.6, window = 0.18): n
   return q + d * (1 - s);
 }
 
+function selectAcgScoreVoices(midis: readonly number[], selection: AcgPianoVoiceSelection, maxVoices: number): number[] {
+  const source = [...new Set(midis)].sort((a, b) => a - b).slice(0, Math.max(1, maxVoices));
+  if (source.length === 0) return [];
+  const one = (index: number) => [source[Math.max(0, Math.min(source.length - 1, index))]!];
+  if (selection === 'all') return source;
+  if (selection === 'low') return one(0);
+  if (selection === 'inner-low') return one(Math.min(1, source.length - 1));
+  if (selection === 'inner-high') return one(Math.max(0, source.length - 2));
+  if (selection === 'high') return one(source.length - 1);
+  if (selection === 'lower-dyad') return source.slice(0, Math.min(2, source.length));
+  return source.slice(Math.max(0, source.length - 2));
+}
+
+/**
+ * Score executor for ACG comp. The score already owns event timing, direction,
+ * silence and attack; this function only selects legal voices from the supplied
+ * chord voicing and turns an explicitly requested roll into individual hits.
+ */
+export function realizeAcgPianoScoreCompEvents(
+  directive: AcgPianoCompDirective,
+  voiced: readonly number[],
+  nextVoiced: readonly number[] | undefined,
+  spanDuration: number,
+): TextureChordHit[] {
+  const hits: TextureChordHit[] = [];
+  for (const event of directive.events) {
+    const source = event.harmonicTarget === 'next' && nextVoiced && nextVoiced.length > 0 ? nextVoiced : voiced;
+    const selected = selectAcgScoreVoices(source, event.voices, directive.maxVoices);
+    if (selected.length === 0 || event.atBeat >= spanDuration - 0.02) continue;
+    const duration = Math.max(0.08, Math.min(event.durationBeats, spanDuration - event.atBeat - 0.02));
+    if (event.attack === 'simultaneous' || selected.length <= 1) {
+      hits.push({ tRel: event.atBeat, dur: duration, midis: selected, vel: event.velocity });
+      continue;
+    }
+    const ordered = [...selected].sort((a, b) => a - b);
+    if (event.attack === 'roll-down') ordered.reverse();
+    ordered.forEach((midi, index) => {
+      const tRel = event.atBeat + index * directive.rollStepBeats;
+      const remaining = spanDuration - tRel - 0.02;
+      if (remaining <= 0.08) return;
+      hits.push({
+        tRel,
+        dur: Math.max(0.08, Math.min(duration - index * directive.rollStepBeats, remaining)),
+        midis: [midi],
+        vel: Math.max(0.05, event.velocity - index * 0.014),
+      });
+    });
+  }
+  return hits.sort((a, b) => a.tRel - b.tRel || a.midis[0]! - b.midis[0]!);
+}
+
 // ★ pocketize 强度【按风格】:pop/rnb 须紧实(以 POP 为主)→ 强收;lofi 的 dusty-behind / jazz 的 swung comping
 //   是【genre 性格】不是 flaw → 轻收(几乎保留)。同样的 lay-back 在 pop 是毛病、在 lofi 是味道。
 const POCKET_STRENGTH: Record<string, number> = { pop: 0.65, rnb: 0.6, jazz: 0.3, lofi: 0.2 };
@@ -97,6 +165,7 @@ const EMPTY_AVOID: ReadonlySet<number> = new Set(); // 无 pad 让位时复用(�
 //   rootless = omit root(bass 兜 root);voice-leading/clash/placement/spacing 由 mg 引擎负责。
 const COMP_ROOTLESS_CORE: VoicingStylePreference = { rootPolicy: 'omit', density: 4, addColorOnTriad: false };
 const COMP_SHELL: VoicingStylePreference = { rootPolicy: 'omit', density: 2, addColorOnTriad: false }; // 让位:3+7 guide-tone
+const COMP_ROOTED_CORE: VoicingStylePreference = { rootPolicy: 'include', density: 4, addColorOnTriad: false };
 const VOICING_PREF: Record<string, VoicingStylePreference> = {
   jazz: COMP_ROOTLESS_CORE, blues: STYLE_BLUES, pop: STYLE_FULL, rnb: COMP_ROOTLESS_CORE, lofi: COMP_ROOTLESS_CORE,
 };
@@ -140,10 +209,21 @@ export function renderAccompaniment(
   const beatsPerBar = beatsPerBarOf(timebase.meter);
   const pattern = compPattern(ctx.style ?? 'default');
   const style = ctx.style ?? 'default';
+  const styleKey = style.toLowerCase();
   const pocketStrength = POCKET_STRENGTH[style.toLowerCase()] ?? 0.45; // comp 柱式入袋强度(按风格)
-  const isLofi = style.toLowerCase() === 'lofi';                       // ★ Loop I:LOFI 走中央 texture clock
+  const isLofi = styleKey === 'lofi';                                  // ★ Loop I:LOFI 走中央 texture clock
   const tempoBpm = timebase.tempoMap[0]?.bpm ?? 78;                    // pocket ms→拍 换算用
   const inActive = (sid: string) => !ctx.activeSectionIds || ctx.activeSectionIds.has(sid);
+  const compOwnsFoundation = (span: ChordSpan): boolean =>
+    ctx.foundationRoleBySection?.[span.sectionId] === 'comp'
+    && inActive(span.sectionId);
+  const compRhythmBySection = Object.fromEntries(
+    Object.values(ctx.grooveScorePlan?.bySection ?? {}).flatMap((sectionScore) => {
+      const pattern = sectionScore.roleRhythmByRole?.comp;
+      return pattern ? [[sectionScore.sectionId, pattern] as const] : [];
+    }),
+  ) as Record<string, Readonly<CompRoleRhythmPattern>>;
+  const authoredCompSectionIds = new Set(Object.keys(compRhythmBySection));
 
   // ★ pad-comp 分工:pad active(且 avoidExactPitchOverlap)的 span,comp 让 pad —— 丢掉与 pad 同绝对
   //   MIDI 的音(消"齐奏 unison" mud 主因)+ 按 compDurationScale 缩时值。仅此最轻干预 → GM/texture/
@@ -165,7 +245,10 @@ export function renderAccompaniment(
   // ★ comp 乐器按【类型 + 音域】分流(见 feedback):键盘族(钢琴/电钢/Celesta)→ 宽排列且 voice 宽和弦色彩;
   //   其它乐器 → 通用 voiceComp。超出该乐器音域的色彩音 → 丢弃(交给旋律承载)。
   const useKeyboard = isKeyboardFamily(ctx.compProgram);
-  const compRange = instrumentInfo(ctx.compProgram ?? 0).range;
+  const instrumentCompRange = instrumentInfo(ctx.compProgram ?? 0).range;
+  const compRange: readonly [number, number] = ctx.compRegister
+    ? [ctx.compRegister.lowMidi, ctx.compRegister.highMidi]
+    : instrumentCompRange;
   const inRange = (m: number): boolean => m >= compRange[0] && m <= compRange[1];
   // ★ 非键盘 comp(吉他/弦/木琴,音域窄):超域声部【八度折入】音域而非丢弃 —— 丢弃会掏空 span 造成
   //   comp-continuity 空洞(键盘 21-108 几乎不触发,窄音域乐器才暴露)。折入后去重升序,保和声完整。
@@ -173,12 +256,39 @@ export function renderAccompaniment(
     const out = ms.map((m) => { let x = m; while (x < compRange[0]) x += 12; while (x > compRange[1]) x -= 12; return x; });
     return [...new Set(out)].sort((a, b) => a - b);
   };
-  const includeRootInComp = !/jazz/i.test(style); // jazz:rootless(bass 兜 root),其它含 root
   // ★ 让位旋律:comp 顶须 < 旋律保留区地板(契约 comp[48,67]/lead[67,84] 的边界)。
   //   越界声部转位下折(完整度优先)/ 折不下去再减法。floor 不低于 comp 区底(不折进 bass)。无 floor 信号 → 跳过(向后兼容)。
-  const compFloor = Math.max(compRange[0], 48);
+  const compFloor = Math.max(compRange[0], ctx.compRegister ? ctx.compRegister.lowMidi : 48);
   const clampUnder = (ms: number[]): number[] =>
     ctx.melodyFloorMidi === undefined ? ms : yieldUnderMelody(ms, ctx.melodyFloorMidi, compFloor);
+  const foundationPcFor = (span: ChordSpan): number => {
+    const authoredBassPc = (span as ChordSpan & { bassPc?: number }).bassPc;
+    if (typeof authoredBassPc === 'number') return mod12(authoredBassPc);
+    const intervals = [...chordTypeIntervals(span.chordType ?? span.quality)];
+    return resolveBassAnchorPc(
+      span.bassRole,
+      span.rootPc as number,
+      intervals,
+      span.bassPedalPc as number | undefined,
+    );
+  };
+  const foundationMidiFor = (span: ChordSpan): number => {
+    const pc = foundationPcFor(span);
+    const requestedCeiling = ctx.melodyFloorMidi === undefined
+      ? 60
+      : Math.max(compFloor, ctx.melodyFloorMidi - 1);
+    const ceiling = Math.min(compRange[1], requestedCeiling);
+    for (let m = compFloor; m <= ceiling; m++) if (mod12(m) === pc) return m;
+    for (let m = compFloor; m <= compRange[1]; m++) if (mod12(m) === pc) return m;
+    return compFloor;
+  };
+  const withFoundationAnchor = (span: ChordSpan, ms: number[]): number[] => {
+    if (!compOwnsFoundation(span)) return ms;
+    const anchor = foundationMidiFor(span);
+    // foundation pitch 必须真正在最低声部；低于 authored bassPc/slash/root 的旧
+    // rootless 声部会颠倒低音语义，因此上移职责留给其它声部、这里直接让出。
+    return [...new Set([anchor, ...ms.filter((m) => m >= anchor)])].sort((a, b) => a - b);
+  };
 
   // spread mode 选择信号:和声功能 + cell 角色(进度四分位)+ 段落功能 + 乐句尾
   const timeline = plan.chordTimeline;
@@ -222,21 +332,21 @@ export function renderAccompaniment(
       const hasColor = rolePcs.ninth !== undefined || rolePcs.eleventh !== undefined || rolePcs.thirteenth !== undefined || rolePcs.color !== undefined;
       const colorLevel = (hasColor ? 2 : 0) as 0 | 2;
       const bassMidi = nominalBassMidi(span.rootPc);
-      const wideOpts = { includeRootInComp, colorLevel, style };
+      const wideOpts = { includeRootInComp: styleKey !== 'jazz' || compOwnsFoundation(span), colorLevel, style };
       const spreadMode = pickPianoSpread(idx, span);
       const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
-      voicedBySpan[span.id] = clampUnder(wide.attackMidi.filter(inRange)); // 超域色彩 → 交旋律;顶 ≥ 旋律地板 → 转位/减法让位
+      voicedBySpan[span.id] = withFoundationAnchor(span, clampUnder(wide.attackMidi.filter(inRange))); // Bass 缺席 → Comp 显式接地
       airVoicedBySpan[span.id] = wide.attackMidi.filter(inRange); // ★ §2.5:未钳(保 >67 高位色音)→ ACG 织体用
       // 让位/瘦身 = close 紧排核心(colorLevel 0,让色彩给旋律),仍是真实和弦音
       const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, colorLevel: 0, spreadMode: 'close' }, prev: prevWide, rolePcs });
-      shellBySpan[span.id] = clampUnder(shellWide.attackMidi.filter(inRange));
+      shellBySpan[span.id] = withFoundationAnchor(span, clampUnder(shellWide.attackMidi.filter(inRange)));
       prevWide = wide;
     } else {
       // ★ 非键盘 comp:走 melodygenerative voicing 管线 — genre→preset → assembleVoicing(抽象 pc)
       //   → placeVoicingMidi(声部进行贴上一组) → applyArrangement(spacing)。复活 §7 voicingStyles/placement。
       //   voiceType = 窄核心品质(1-3-5-7),色彩 9/11/13 不进 comp(归旋律,铁律)。
       const voiceType = span.quality;
-      const pref = VOICING_PREF[style.toLowerCase()] ?? STYLE_SHELL;
+      const pref = compOwnsFoundation(span) ? COMP_ROOTED_CORE : (VOICING_PREF[styleKey] ?? STYLE_SHELL);
       const bassMidi = nominalBassMidi(span.rootPc);
       const prev = prevVoicing ?? [];
       const close = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, pref), prev, bassMidi, voiceType, span.rootPc);
@@ -247,19 +357,111 @@ export function renderAccompaniment(
       //   root+3rd+5th(按 span.quality,小三和弦给小三度,绝不凭空塞大三度=avoid 音)折入 comp 区,不掏空。
       const guard = (v: number[]): number[] => v.length >= 2 ? v
         : foldToRange(chordToneIntervals(span.quality).slice(0, 3).map((iv) => 48 + ((span.rootPc + iv) % 12)));
-      voicedBySpan[span.id] = guard(clampUnder(full)); // 顶 ≥ 旋律地板 → 转位/减法让位;空 → 兜底三和弦
+      voicedBySpan[span.id] = withFoundationAnchor(span, guard(clampUnder(full))); // Bass 缺席 → Comp 显式接地
       airVoicedBySpan[span.id] = voicedBySpan[span.id]; // 非键盘(ACG 不走此支)→ air = 钳后值(ACG comp 恒键盘)
-      const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
-      shellBySpan[span.id] = guard(clampUnder(foldToRange(shellClose)));
+      const shellPref = compOwnsFoundation(span) ? COMP_ROOTED_CORE : COMP_SHELL;
+      const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, shellPref), prev, bassMidi, voiceType, span.rootPc);
+      shellBySpan[span.id] = withFoundationAnchor(span, guard(clampUnder(foldToRange(shellClose))));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
     }
   }
+
+  // When the arranger assigns the harmonic foundation to Comp, guarantee an
+  // audible root/slash anchor even when a texture begins after the downbeat.
+  const ensureFoundationAttacks = (): void => {
+    for (const span of timeline) {
+      // A materialized role pattern already specifies every foundation attack.
+      // A generic span-start repair here would destroy its syncopation.
+      if (authoredCompSectionIds.has(span.sectionId)) continue;
+      if (!compOwnsFoundation(span)) continue;
+      const anchorPc = foundationPcFor(span);
+      const anchorTick = timebase.beatToTick(beats(span.startBeat as number)) as number;
+      const toleranceTicks = Math.round(timebase.ppq * 0.15);
+      const hasAnchor = compNotes.some((note) =>
+        Math.abs((note.startTick as number) - anchorTick) <= toleranceTicks
+        && mod12(note.pitch as number) === anchorPc);
+      if (hasAnchor) continue;
+      const durationBeats = Math.max(0.12, Math.min(0.9, span.durationBeats as number));
+      compNotes.push({
+        pitch: midi(foundationMidiFor(span)),
+        startTick: timebase.beatToTick(beats(span.startBeat as number)),
+        durationTicks: timebase.beatToTick(beats(durationBeats)),
+        velocity: 66,
+      });
+    }
+    compNotes.sort((a, b) =>
+      (a.startTick as number) - (b.startTick as number)
+      || (a.pitch as number) - (b.pitch as number));
+  };
+
+  /**
+   * Execute Arranger-authored Comp cells on the one global song-bar clock.
+   * `absoluteBar` is deliberately used instead of resetting phase at a role or
+   * section's first note; resetting each track is the pickup-shift bug exposed
+   * by the supplied MIDI.
+   */
+  const renderAuthoredCompRhythm = (): void => {
+    for (const sectionScore of Object.values(ctx.grooveScorePlan?.bySection ?? {})) {
+      const rhythm = sectionScore.roleRhythmByRole?.comp;
+      if (!rhythm || !inActive(sectionScore.sectionId)) continue;
+      for (const bar of sectionScore.bars) {
+        const barStart = bar.absoluteBar * beatsPerBar;
+        for (const cell of rhythm.cells) {
+          const onset = barStart + cell.phaseBeats;
+          const span = spanAtBeat(plan, onset);
+          if (!span || span.sectionId !== sectionScore.sectionId) continue;
+          const available = Math.max(0.08, (span.startBeat as number) + (span.durationBeats as number) - onset - 0.02);
+          const duration = Math.max(0.08, Math.min(cell.durationBeats, available));
+          const padAvoid = padAvoidFor(span).avoid;
+          if (cell.voiceAction === 'foundation') {
+            const foundation = foundationMidiFor(span);
+            if (!padAvoid.has(foundation)) {
+              compNotes.push({
+                pitch: midi(foundation),
+                startTick: timebase.beatToTick(beats(onset)),
+                durationTicks: timebase.beatToTick(beats(duration)),
+                velocity: Math.max(1, Math.min(127, Math.round(cell.velocity))),
+              });
+            }
+            continue;
+          }
+
+          // Chord responses occupy the middle voice. The low foundation is a
+          // separate authored hit, so do not duplicate it inside a dense block.
+          const rawVoiced = voicedBySpan[span.id] ?? [];
+          const middleFloor = Math.max(50, compRange[0]);
+          let voiced = rawVoiced.filter((value) => value >= middleFloor);
+          if (voiced.length === 0) voiced = rawVoiced;
+          if (voiced.length > 3) voiced = voiced.slice(voiced.length - 3);
+          const attackVelocity = polyVelocity(
+            Math.max(1, Math.min(127, Math.round(cell.velocity))),
+            voiced.length,
+          );
+          for (const [voiceIndex, value] of voiced.entries()) {
+            if (padAvoid.has(value)) continue;
+            const voiceDurationBeats = cell.voiceDurationBeats?.[voiceIndex] ?? cell.durationBeats;
+            const voiceDuration = Math.max(0.08, Math.min(voiceDurationBeats, available));
+            compNotes.push({
+              pitch: midi(value),
+              startTick: timebase.beatToTick(beats(onset)),
+              durationTicks: timebase.beatToTick(beats(voiceDuration)),
+              velocity: attackVelocity,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  renderAuthoredCompRhythm();
 
   // ★ rich texture 渲染:消费中央下发的 textureSchedule(bass/comp/drum 共享同一 textureCase →
   //   同一时钟对拍/复调)。voicing 仍是上面那套真 voicing,只【节奏/articulation】走 texture。
   //   schedule 内无该 span(BLUES/default 或 floating 段)→ 落下面 compPattern 老路。
   if (ctx.textureSchedule && Object.keys(ctx.textureSchedule).length > 0) {
-    for (const span of timeline) {
+    for (let timelineIndex = 0; timelineIndex < timeline.length; timelineIndex++) {
+      const span = timeline[timelineIndex]!;
+      if (authoredCompSectionIds.has(span.sectionId)) continue;
       const tc = ctx.textureSchedule[span.id];
       if (!tc) continue;
 
@@ -268,26 +470,62 @@ export function renderAccompaniment(
       //   textureRenderer 算【真上方色音】(非从已钳 voicing 顶取)。audibility 靠 register/mix 分离(soft air halo)
       //   非大音量(directive §0/§2.5:别用 velocity/reverb 掩盖结构;结构=高位软色 + 真色音)。非 ACG 织体不变。
       const acg = isAcgTextureCase(tc);
+      const scoreSpan = acg ? ctx.pianoScorePlan?.spanById[span.id] : undefined;
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
       const thin = !acg && (yieldHere || !!ctx.voicingSaferSpans?.has(span.id));
-      const voiced = acg ? (airVoicedBySpan[span.id] ?? voicedBySpan[span.id]) : (thin ? shellBySpan[span.id] : voicedBySpan[span.id]);
+      const acgVoicing = airVoicedBySpan[span.id] ?? voicedBySpan[span.id];
+      const voiced = acg
+        ? (scoreSpan ? revoiceAcgPianoScoreVoicing(acgVoicing ?? [], scoreSpan.comp) : acgVoicing)
+        : (thin ? shellBySpan[span.id] : voicedBySpan[span.id]);
       if (!voiced || voiced.length === 0) continue;
       // ★ §2.5:ACG 给 textureRenderer 真和弦语境 → 真上方色音(非从已钳 voicing 顶部取)。
-      const acgCtx = acg ? { rootPc: span.rootPc as number, chordType: (span.chordType ?? span.quality) as string } : undefined;
+      const acgCtx = acg ? {
+        rootPc: span.rootPc as number,
+        chordType: (span.chordType ?? span.quality) as string,
+        compFloorMidi: scoreSpan?.comp.floorMidi,
+        compCeilingMidi: scoreSpan?.comp.ceilingMidi,
+      } : undefined;
 
-      const { avoid: padAvoid, durScale } = padAvoidFor(span); // pad-active span 才非空,否则零干预
+      const scoreOwnsAcgEvents = acg && !!scoreSpan;
+      const padPolicy = padAvoidFor(span);
+      // ACG PianoScorePlan is already the complete hand score. Pad avoidance
+      // and duration thinning are useful generic texture policies, but would
+      // silently delete/shorten authored piano events after the arranger has
+      // committed them. Keep them for non-score paths only.
+      const padAvoid = scoreOwnsAcgEvents ? EMPTY_AVOID : padPolicy.avoid;
+      const durScale = scoreOwnsAcgEvents ? 1 : padPolicy.durScale;
       const base = span.startBeat as number;
-      for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number, acgCtx)) {
+      const nextSpan = timeline[timelineIndex + 1];
+      const nextScore = nextSpan && acg ? ctx.pianoScorePlan?.spanById[nextSpan.id] : undefined;
+      const nextAcgVoicing = nextSpan ? (airVoicedBySpan[nextSpan.id] ?? voicedBySpan[nextSpan.id]) : undefined;
+      const nextVoiced = nextScore && nextAcgVoicing
+        ? revoiceAcgPianoScoreVoicing(nextAcgVoicing, nextScore.comp)
+        : undefined;
+      // ACG events are a complete phrase score.  Texture cases remain material
+      // labels for the rest of the arrangement (for example drums/reporting),
+      // but no longer get to invent comp rhythm, direction or rests here.
+      const rawHits = acg && scoreSpan
+        ? realizeAcgPianoScoreCompEvents(
+          scoreSpan.comp,
+          voiced,
+          nextVoiced,
+          span.durationBeats as number,
+        )
+        : renderTextureChordHits(tc, voiced, span.durationBeats as number, acgCtx);
+      const scoreHits = rawHits;
+      for (const h of scoreHits) {
         // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
         //   ★ Loop I:LOFI 柱式块走【中央 texture clock】(16 分格吸附 + 毫秒 pocket,取代 0.2 强度 pocketize)
         //     → dusty chop 0.58→0.50+毫秒,与 bass/drum 同时钟;非 LOFI 仍按风格 pocketize。
         const abs = base + h.tRel;
-        let onset = h.midis.length >= 2
-          ? (isLofi ? lofiTextureClockBeat(abs, beatsPerBar, tempoBpm, 'chord', 'establish', `${tc}|${span.id}`) : pocketizeBeat(abs, pocketStrength))
-          : abs;
+        let onset = acg
+          ? abs
+          : h.midis.length >= 2
+            ? (isLofi ? lofiTextureClockBeat(abs, beatsPerBar, tempoBpm, 'chord', 'establish', `${tc}|${span.id}`) : pocketizeBeat(abs, pocketStrength))
+            : abs;
         // ★ 强拍位硬锁(2026-06-09 修「重音对拍/复调错拍」):comp【柱式块】落在整拍 ±0.06 拍内 → 锁到整拍,
         //   与 bass/drum 同拍咬合(消系统性晚 0.02-0.05=flam/错拍);offbeat(0.5/1.5…)与 arp/roll 单音不锁,保 groove。
-        if (h.midis.length >= 2) { const ni = Math.round(onset); if (Math.abs(onset - ni) < 0.06) onset = ni; }
+        if (!acg && h.midis.length >= 2) { const ni = Math.round(onset); if (Math.abs(onset - ni) < 0.06) onset = ni; }
         const startTick = timebase.beatToTick(beats(onset));
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
@@ -317,6 +555,7 @@ export function renderAccompaniment(
         }
       }
     }
+    ensureFoundationAttacks();
     return [{ role: 'comp', notes: compNotes }];
   }
 
@@ -328,7 +567,7 @@ export function renderAccompaniment(
       if (beat >= totalBeats) continue;
       const span = spanAtBeat(plan, beat);
       if (!span || !inActive(span.sectionId)) continue;
-
+      if (authoredCompSectionIds.has(span.sectionId)) continue;
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
       const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id); // 让位 或 撞音阶梯瘦身
       const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
@@ -344,5 +583,6 @@ export function renderAccompaniment(
     }
   }
 
+  ensureFoundationAttacks();
   return [{ role: 'comp', notes: compNotes }];
 }

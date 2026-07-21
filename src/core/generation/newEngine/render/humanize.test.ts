@@ -47,6 +47,27 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
     expect(out.notes.map((n) => n.velocity)).toEqual([100, 70]);
   });
 
+  it('GrooveContract.velocityHumanize controls the audible jitter amount', () => {
+    const track: TrackIR = { role: 'comp', notes: [note(0, 80), note(240, 80)] };
+    const dry = humanizeVelocity([track], PPQ, 4, createRandomContext(3).substream('humanize'), undefined, 0)[0];
+    const loose = humanizeVelocity([track], PPQ, 4, createRandomContext(3).substream('humanize'), undefined, 0.2)[0];
+    expect(loose.notes.map((entry) => entry.velocity)).not.toEqual(dry.notes.map((entry) => entry.velocity));
+  });
+
+  it('velocityHumanize resolver can consume different section amounts in one track', () => {
+    const track: TrackIR = { role: 'comp', notes: [note(0, 80), note(PPQ * 4, 80)] };
+    const out = humanizeVelocity(
+      [track],
+      PPQ,
+      4,
+      createRandomContext(5).substream('humanize'),
+      undefined,
+      (tick) => tick < PPQ * 4 ? 0 : 0.2,
+    )[0];
+    expect(out.notes[0].velocity).toBe(Math.round(80 * metricAccentScale(0, 4)));
+    expect(out.notes[1].velocity).not.toBe(Math.round(80 * metricAccentScale(0, 4)));
+  });
+
   it('★ humanizeTiming:起音偏离网格但有界;clamp ≥0', () => {
     const rng = createRandomContext(2).substream('humanize');
     const max = Math.max(2, Math.round(PPQ * 0.015));

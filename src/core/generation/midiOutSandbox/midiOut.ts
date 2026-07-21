@@ -58,6 +58,26 @@ export interface MidiOutMessage {
   data2?: number;
 }
 
+/**
+ * Firm5504 starts each generated channel at its controller defaults. CC0
+ * remains necessary for the GMBK full address. The only musical exceptions
+ * are Instrumentation-authored CC11/CC64 on the piano-capable roles; detailed
+ * program-address gating happens in musicalIRToMidiEvents before this sink.
+ */
+export const DREAM5504_RAW_DEFAULT_OUTPUT = true;
+const RAW_DEFAULT_TRANSPORT_CC = new Set([120, 121, 123]);
+const PIANO_EXPRESSION_ROLES = new Set<MidiOutRole>(['lead', 'comp', 'bass']);
+
+export function isDream5504RawDefaultMessageAllowed(message: MidiOutMessage, role?: MidiOutRole): boolean {
+  if (!DREAM5504_RAW_DEFAULT_OUTPUT) return true;
+  if (message.type === 'pitchBend') return false;
+  if (message.type !== 'cc') return true;
+  if (message.data1 === 0) return true;
+  if (message.data1 === 11) return !!role && PIANO_EXPRESSION_ROLES.has(role);
+  if (message.data1 === 64) return (message.data2 ?? 0) <= 63 || (!!role && PIANO_EXPRESSION_ROLES.has(role));
+  return RAW_DEFAULT_TRANSPORT_CC.has(message.data1) && (message.data2 ?? 0) === 0;
+}
+
 export interface RoutedMidiOutMessage {
   role: MidiOutRole;
   message: MidiOutMessage;
@@ -69,7 +89,6 @@ export interface MidiPolyphonyAudition {
   program: number;
   notes: readonly number[];
   velocity: number;
-  volume: number;
   durationMs: number;
 }
 
@@ -123,10 +142,27 @@ export function schedulerChannelToRole(channel: number): MidiOutRole | null {
 
 export function resolveOutputChannel(
   role: MidiOutRole,
+  _mode: MidiOutputMode,
+  channels: Record<MidiOutRole, number> = DEFAULT_CHANNELS,
+): number {
+  // Firm5504-EK exposes two 16-channel MIDI ports, not five isolated synths.
+  // Upstream may still use five DAW/virtual routes, but the board-facing
+  // channel identity must always remain 1/2/3/4/10 so PC/CC cannot collide.
+  return channels[role];
+}
+
+/**
+ * Formal song channels use their configured role route. Auxiliary realtime
+ * channels (for example scheduler channel 15 = MIDI channel 16 auditions)
+ * must retain their own MIDI channel and never collapse onto Lead channel 1.
+ */
+export function resolveSchedulerOutputChannel(
+  schedulerChannel: number,
   mode: MidiOutputMode,
   channels: Record<MidiOutRole, number> = DEFAULT_CHANNELS,
 ): number {
-  return mode === 'five-port' ? 1 : channels[role];
+  const role = schedulerChannelToRole(schedulerChannel);
+  return role ? resolveOutputChannel(role, mode, channels) : clampChannel(schedulerChannel + 1);
 }
 
 export function midiEventToRoutedMessage(
@@ -218,6 +254,36 @@ export function sendMidiMessage(output: MIDIOutput, message: MidiOutMessage, tim
   output.send(midiMessageToBytes(message), timestamp);
 }
 
+/** 发送 7-bit Data Entry 的标准 NRPN，并在写入后取消参数选择，避免后续 CC6 误改同一参数。 */
+export function sendNrpn7(
+  output: MIDIOutput,
+  channel: number,
+  parameter: number,
+  value: number,
+  timestamp?: number,
+): void {
+  sendMidiMessage(output, { type: 'cc', channel, data1: 99, data2: (parameter >> 8) & 0x7f }, timestamp);
+  sendMidiMessage(output, { type: 'cc', channel, data1: 98, data2: parameter & 0x7f }, timestamp);
+  sendMidiMessage(output, { type: 'cc', channel, data1: 6, data2: clamp7(value) }, timestamp);
+  sendMidiMessage(output, { type: 'cc', channel, data1: 99, data2: 0x7f }, timestamp);
+  sendMidiMessage(output, { type: 'cc', channel, data1: 98, data2: 0x7f }, timestamp);
+}
+
+/**
+ * Firm5504-EK 官方 NRPN 中性输出基线：关闭板载总 EQ，并把低/高频增益及
+ * General Front Output 明确写回 0 dB。固件默认的 EQ 双频段 +6 dB 与 Front
+ * Output 正增益会吃掉五轨叠加所需的余量。
+ */
+export function sendDream5504NeutralOutputBaseline(
+  output: MIDIOutput,
+  timestamp?: number,
+): void {
+  sendNrpn7(output, 1, 0x3755, 0, timestamp);  // Synth EQ OFF
+  sendNrpn7(output, 1, 0x3708, 0x40, timestamp); // EQ low gain 0 dB
+  sendNrpn7(output, 1, 0x370b, 0x40, timestamp); // EQ high gain 0 dB
+  sendNrpn7(output, 1, 0x375e, 0x40, timestamp); // General front output 0 dB
+}
+
 export function sendProgram(output: MIDIOutput, channel: number, program: number, timestamp?: number): void {
   sendMidiMessage(output, { type: 'programChange', channel, data1: program }, timestamp);
 }
@@ -238,8 +304,12 @@ export function sendNotes(
 
 export function sendPanic(output: MIDIOutput, timestamp = performance.now()): void {
   for (let channel = 1; channel <= 16; channel++) {
+    // Transport safety only. CC121 restores channel controllers to firmware
+    // defaults; do not impose FX, filter, envelope or expression values here.
     sendMidiMessage(output, { type: 'cc', channel, data1: 64, data2: 0 }, timestamp);
     sendMidiMessage(output, { type: 'cc', channel, data1: 120, data2: 0 }, timestamp);
     sendMidiMessage(output, { type: 'cc', channel, data1: 123, data2: 0 }, timestamp);
+    sendMidiMessage(output, { type: 'cc', channel, data1: 121, data2: 0 }, timestamp);
+    sendMidiMessage(output, { type: 'pitchBend', channel, data1: 8192 }, timestamp);
   }
 }

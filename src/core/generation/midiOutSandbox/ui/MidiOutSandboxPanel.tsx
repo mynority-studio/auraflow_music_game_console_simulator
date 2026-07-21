@@ -149,7 +149,7 @@ export const MidiOutSandboxPanel: React.FC = () => {
 
         {bridge.mode === 'five-port' && bridge.status === 'ready' && (
           <div className="mt-2 text-[11px] text-zinc-500">
-            5 ports 模式下每个端口都只发 Ch 1；默认仍建议 Dream 5504 使用 1 port / 5 ch。
+            上游可分 5 个 DAW/虚拟端口；5504 官方为 2×16 MIDI 通道，出板仍固定按 Ch 1/2/3/4/10 分轨。
           </div>
         )}
 
@@ -190,19 +190,15 @@ export const MidiOutSandboxPanel: React.FC = () => {
                     </select>
                   )
                   : <span className="truncate text-[11px] text-zinc-500">{selectedOutputName(bridge.singleOutputId)}</span>}
-                {bridge.mode === 'five-port'
-                  ? <span className="text-[11px] text-zinc-500">1</span>
-                  : (
-                    <input
-                      aria-label={`${track.label} MIDI channel`}
-                      type="number"
-                      min={1}
-                      max={16}
-                      className={numberClass}
-                      value={bridge.channels[track.role]}
-                      onChange={(event) => Dream5504MidiOutput.setChannel(track.role, Number(event.target.value) || DEFAULT_CHANNELS[track.role])}
-                    />
-                  )}
+                <input
+                  aria-label={`${track.label} MIDI channel`}
+                  type="number"
+                  min={1}
+                  max={16}
+                  className={numberClass}
+                  value={bridge.channels[track.role]}
+                  onChange={(event) => Dream5504MidiOutput.setChannel(track.role, Number(event.target.value) || DEFAULT_CHANNELS[track.role])}
+                />
                 <button type="button" onClick={() => Dream5504MidiOutput.pingRole(track.role)} className="rounded-md bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-700">
                   {track.shortLabel}
                 </button>

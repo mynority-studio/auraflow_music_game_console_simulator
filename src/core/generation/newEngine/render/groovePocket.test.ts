@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyGroovePocket, pocketedRoles, type PocketContract } from './groovePocket';
+import { applyGroovePocket, applyGroovePocketBySection, pocketedRoles, type PocketContract } from './groovePocket';
 import { ticks, midi } from '../foundation';
 import type { TrackIR } from '../ir/MusicalIR';
 
@@ -52,6 +52,42 @@ describe('render/groovePocket(MG 升级 2c-2 §7.4)', () => {
     const s1 = JSON.stringify(applyGroovePocket(tracks(), ACG, BPM, PPQ, BPB).map((t) => starts([t], t.role)));
     const s2 = JSON.stringify(applyGroovePocket(tracks(), ACG, BPM, PPQ, BPB).map((t) => starts([t], t.role)));
     expect(s1).toBe(s2);
+  });
+
+  it('★ chordPocketMs 真正移动 Comp，且同 tick 柱式和弦保持同一 onset', () => {
+    const contract: PocketContract = {
+      bassPocketMs: [0, 0],
+      chordPocketMs: [12, 12],
+      melodyStrongPocketMs: [0, 0],
+      melodyWeakPocketMs: [0, 0],
+    };
+    const input: TrackIR[] = [{
+      role: 'comp',
+      notes: [note(PPQ / 2), note(PPQ / 2, 64), note(PPQ)],
+    }];
+    const out = applyGroovePocket(input, contract, BPM, PPQ, BPB);
+    const compStarts = starts(out, 'comp');
+    expect(compStarts[0]).toBeGreaterThan(PPQ / 2);
+    expect(compStarts[0]).toBe(compStarts[1]);
+    expect(compStarts[2]).toBe(PPQ); // 整拍结构锚点不制造 flam
+    expect([...pocketedRoles(contract)]).toContain('comp');
+  });
+
+  it('★ production section path resolves pocket from GrooveScore absolute bars', () => {
+    const dry: PocketContract = { bassPocketMs: [0, 0], chordPocketMs: [0, 0], melodyStrongPocketMs: [0, 0], melodyWeakPocketMs: [0, 0] };
+    const late: PocketContract = { ...dry, chordPocketMs: [20, 20] };
+    const comp: TrackIR[] = [{ role: 'comp', notes: [note(PPQ / 2), note(PPQ * BPB + PPQ / 2)] }];
+    const scorePlan = {
+      grooveContractId: 'dry',
+      bySection: {
+        a: { sectionId: 'a', grooveContractId: 'dry', bars: [{ sectionId: 'a', barInSection: 0, absoluteBar: 0, phraseIndex: 0, phraseBarIndex: 0, role: 'base', beatStrength: [1, 1, 1, 1], subdivision: 'sixteenth', subdivisionAccent: [1, 1, 1, 1], phraseAccent: 1 }] },
+        b: { sectionId: 'b', grooveContractId: 'late', bars: [{ sectionId: 'b', barInSection: 0, absoluteBar: 1, phraseIndex: 0, phraseBarIndex: 0, role: 'base', beatStrength: [1, 1, 1, 1], subdivision: 'sixteenth', subdivisionAccent: [1, 1, 1, 1], phraseAccent: 1 }] },
+      },
+      boundaries: [],
+    } as const;
+    const out = applyGroovePocketBySection(comp, dry, { a: dry, b: late }, scorePlan, BPM, PPQ, BPB);
+    expect(starts(out, 'comp')[0]).toBe(PPQ / 2);
+    expect(starts(out, 'comp')[1]).toBeGreaterThan(PPQ * BPB + PPQ / 2);
   });
 
   it('★ 负 pocket = push(提前):melodyStrong[-4,-4] → lead 强拍起音 < 原', () => {

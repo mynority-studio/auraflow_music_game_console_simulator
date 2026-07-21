@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildHarmonicPlanFromArrangement } from './harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
-import { chordTones } from '../knowledge/chords';
+import { JAZZ_4_4_ARCHETYPE_ID } from '../arranger/jazzArchetypePlanner';
+import { chordTones, getChordPitchClasses, normalizeChordType } from '../knowledge/chords';
 import { createRandomContext, pc } from '../foundation';
 
 describe('harmony · chord-scale 集成不变量 (3.6)', () => {
@@ -21,13 +22,42 @@ describe('harmony · chord-scale 集成不变量 (3.6)', () => {
     }
   });
 
-  it('★ 不变量:和弦音 ⊆ chord-scale(含副属/借和弦离调)', () => {
+  it('★ 不变量:声明的和弦音 ⊆ chord-scale(含副属/借和弦离调)', () => {
     for (const style of ['pop', 'jazz', 'lofi']) {
       const plan = mkPlan(style);
       for (const span of plan.chordTimeline) {
         const scale = new Set<number>(plan.chordScaleMap[span.id]);
-        for (const t of chordTones(span.rootPc, span.quality)) {
-          expect(scale.has(t)).toBe(true);
+        // chordType 是作者定义的完整和弦；quality 只是旧 renderer 的窄投影。
+        const chordType = span.chordType ? normalizeChordType(span.chordType) : null;
+        const declaredChordPcs = chordType
+          ? getChordPitchClasses(span.rootPc, chordType)
+          : chordTones(span.rootPc, span.quality);
+        for (const t of declaredChordPcs) {
+          expect(
+            scale.has(t),
+            `${style}:${span.id}:${span.chordType ?? span.quality} missing pc ${t} from [${[...scale].join(',')}]`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('Jazz 4/4 跨 seed/prototype 仍保持宽和弦音 ⊆ chord-scale', () => {
+    for (let seed = 0; seed < 32; seed++) {
+      const band = buildBandSpec({ seed, styleHint: 'jazz', mood: 'x', targetDuration: 120, key: pc(0) });
+      const arrangement = buildArrangementPlan(band, {
+        rng: createRandomContext(seed),
+        jazzArchetypeId: JAZZ_4_4_ARCHETYPE_ID,
+      });
+      const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(seed));
+      for (const span of plan.chordTimeline) {
+        const chordType = span.chordType ? normalizeChordType(span.chordType) : null;
+        const declared = chordType
+          ? getChordPitchClasses(span.rootPc, chordType)
+          : chordTones(span.rootPc, span.quality);
+        const scale = new Set<number>(plan.chordScaleMap[span.id]);
+        for (const tone of declared) {
+          expect(scale.has(tone), `seed=${seed} ${span.chordType} missing pc ${tone}`).toBe(true);
         }
       }
     }

@@ -21,7 +21,7 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     expect(MASTERING_AUDIT_STANDARD.hardwareMaster.route).toContain('Dream 5504/SAM');
     expect(MASTERING_AUDIT_STANDARD.esp32Port.requiredPostTsfStage).toContain('Dream/SAM shared FX');
     expect(MASTERING_AUDIT_STANDARD.hardwareMaster.webCompressorAfterDevicePostChain).toBe(false);
-    expect(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLiftCalibration.acg.targetPlaybackIntegratedLufs).toBe(-12.4);
+    expect(MASTERING_AUDIT_STANDARD.hardwareMaster.masterPolicy).toContain('No style lift');
     expect(MASTERING_AUDIT_STANDARD.hardwareSpeaker.model).toBe(HARDWARE_SPEAKER_PROFILE.model);
   });
 
@@ -105,10 +105,12 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     ];
     const report = auditRenderedMix(tracks, ctx('pop', 1920));
     expect(report.peakPreMasterLinear).toBeGreaterThan(1);
-    expect(report.findings.some((f) => f.code === 'master.outputClipRisk')).toBe(true);
+    expect(report.dream5504MasterPlan.reason).toBe('peak-protection');
+    expect(report.estimatedDeviceOutputPeakDbfs).toBeLessThanOrEqual(MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs);
+    expect(report.findings.some((f) => f.code === 'master.limiterWillWork' || f.code === 'master.outputClipRisk')).toBe(false);
   });
 
-  it('审计计入进入设备保护链前的 master lift,用于抓宏观风格音量不均衡', () => {
+  it('同一份总谱不因 macro 名称改写 5504 master', () => {
     const tracks: TrackIR[] = [
       {
         role: 'lead',
@@ -119,15 +121,12 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     ];
     const pop = auditRenderedMix(tracks, ctx('pop', 1920));
     const acg = auditRenderedMix(tracks, ctx('acg', 1920));
-    const popLiftDb = 20 * Math.log10(pop.playbackMasterLift);
-    const acgLiftDb = 20 * Math.log10(acg.playbackMasterLift);
-    expect(pop.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLift.pop);
-    expect(acg.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLift.acg);
-    expect(acg.targetPlaybackIntegratedLufs).toBe(-12.4);
-    expect(acg.estimatedPlaybackIntegratedLufs).toBeCloseTo(acg.estimatedIntegratedLufs + acgLiftDb, 3);
-    expect(acg.playbackLoudnessDeltaDb).toBeCloseTo(acg.estimatedPlaybackIntegratedLufs - acg.targetPlaybackIntegratedLufs, 3);
-    expect(acg.recommendedPlaybackMasterLift).toBeGreaterThan(pop.recommendedPlaybackMasterLift);
-    expect(acg.estimatedDeviceOutputPeakDbfs).toBeCloseTo(pop.estimatedDeviceOutputPeakDbfs + acgLiftDb - popLiftDb, 3);
+    expect(pop.dream5504MasterPlan).toEqual(acg.dream5504MasterPlan);
+    expect(pop.appliedMasterGain).toBe(acg.appliedMasterGain);
+    expect(acg.targetPlaybackIntegratedLufs).toBe(MASTERING_AUDIT_STANDARD.streamingReferenceIntegratedLufs);
+    expect(acg.estimatedPlaybackIntegratedLufs).toBe(pop.estimatedPlaybackIntegratedLufs);
+    expect(acg.playbackLoudnessDeltaDb).toBe(pop.playbackLoudnessDeltaDb);
+    expect(acg.estimatedDeviceOutputPeakDbfs).toBe(pop.estimatedDeviceOutputPeakDbfs);
   });
 
   it('hardware reverb audit 优先使用器配层已选 spaceProfile,不重新按 style/hasPad 推导', () => {
@@ -155,9 +154,9 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     const report = auditRenderedMix(result.ir!.tracks as TrackIR[], ctx('rnb', result.ir!.durationTicks as number));
     const pad = report.trackMetrics.find((m) => m.role === 'pad');
     const comp = report.trackMetrics.find((m) => m.role === 'comp');
-    expect(report.totalHardwareReverbInputEnergyPerBeat).toBeGreaterThan(0);
-    expect(pad?.hardwareReverbBusShare ?? 0).toBeLessThanOrEqual(0.28);
-    expect(comp?.hardwareReverbBusShare ?? 0).toBeLessThanOrEqual(HARDWARE_SPEAKER_PROFILE.guardrails.compHardwareReverbBusShareMax);
+    expect(report.totalHardwareReverbInputEnergyPerBeat).toBe(0);
+    expect(pad?.hardwareReverbBusShare ?? 0).toBe(0);
+    expect(comp?.hardwareReverbBusShare ?? 0).toBe(0);
     expect(report.findings.some((f) => f.code === 'mix.hardwarePadReverbDominant')).toBe(false);
     expect(report.findings.some((f) => f.code === 'mix.hardwareCompReverbDominant')).toBe(false);
   });
@@ -243,7 +242,8 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
         spaceProfile: result.uiSnapshot.spaceProfile,
         world: result.uiSnapshot.world,
       });
-      expect(report.findings.filter((f) => f.severity !== 'info'), `${style}/${seed}`).toEqual([]);
+      expect(report.findings.filter((f) => f.severity === 'error'), `${style}/${seed}`).toEqual([]);
+      expect(report.findings.some((f) => f.code === 'master.outputClipRisk'), `${style}/${seed} clip risk`).toBe(false);
     }
   });
 

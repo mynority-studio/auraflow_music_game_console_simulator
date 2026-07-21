@@ -23,11 +23,16 @@ import { buildChordPart } from './mgChordPart';
 // ★ MG full-parity Phase B(2026-06-28):生产 RoadMap 真源 = 当前 MG style-aware functional RoadMap(554-brick catalog DP),
 //   取代旧 parseRoadMap(无 style)。旧 parseRoadMap 留作 legacy 测试用,不再进生产。
 import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
-import { expandGrammarForRoadMap } from './mgGrammarRuntime';
-import { scheduleBrickExpansions } from './mgTokenScheduler';
+import type { RoadMap } from './mgRoadMapParser';
+import { expandGrammarForBrick, expandGrammarForRoadMap } from './mgGrammarRuntime';
+import { expandGrammarForBrickMatchingRhythm } from './mgRhythmShapeMatcher';
+import { reserveScheduledTokensForAuthoredSpans, scheduleBrickExpansions } from './mgTokenScheduler';
 import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
+import type { AcgLeadPresencePlan } from './acgLeadPresencePlan';
+import type { AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
+import { acgDynamicsNoteKey, type AcgDynamicsTaggedTrack } from './acgDynamics';
 import { fallbackTokensForBrick } from './mgAdvisor';
-import { realizeTokens } from './mgMelodyRealizer';
+import { realizeTokens, type MgNoteEvent } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
 import { renderStyleFeel, feelForStyle, feelFromGrooveContract, type ImprovisorStyleFeel } from './mgStyleRenderer';
 import { fitMidiToProgramRange } from '../knowledge/instruments';
@@ -41,17 +46,70 @@ import {
   JAZZ_SAX_DEXTER_GORDON_GRAMMAR,
   POP_ENRICHED_GRAMMAR,
   LOFI_ENRICHED_GRAMMAR,
+  ACG_PIANOSONG_GRAMMAR,
+  ACG_PIANOSONG_INTERNAL_GRAMMARS,
+  acgPianoSongGrammarForContext,
   RNB_ENRICHED_GRAMMAR,
 } from '../knowledge/melodyStyleGrammarProfiles';
 import { makeSeededRng } from './mgRng';
+import { authoredLeadSpans, type AuthoredUserMotifBrickPlan } from './userMotifBrick';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI' | 'ACG';
+type LeadGrooveContract = {
+  id?: string;
+  style: string;
+  melodySwingRatio: number;
+  articulation: ImprovisorStyleFeel['articulation'];
+  accentPattern: readonly number[];
+  pushProbability?: number;
+};
+
+/**
+ * 在旋律仍是 grammar/realizer 事件时选择最近的等音级八度。
+ * 只处理超过八度的意外寄存器跳变，不改 pitch class、节奏、力度或音符数量；
+ * JAZZ/BLUES 保留其有意的大跳，ACG 由独立 soprano realizer 负责。
+ */
+export function placeMelodyOctaveContinuously(events: readonly MgNoteEvent[], style: MgStyle): MgNoteEvent[] {
+  if (style === 'JAZZ' || style === 'BLUES' || style === 'ACG') return [...events];
+  const out: MgNoteEvent[] = [];
+  let previousPitch: number | null = null;
+  for (const event of events) {
+    let pitch = event.noteNumber;
+    if (previousPitch !== null && Math.abs(pitch - previousPitch) > 12) {
+      const candidates: number[] = [];
+      for (let octave = -4; octave <= 4; octave++) {
+        const candidate = pitch + octave * 12;
+        if (candidate >= 36 && candidate <= 96) candidates.push(candidate);
+      }
+      const closer = candidates
+        .sort((a, b) => Math.abs(a - previousPitch!) - Math.abs(b - previousPitch!) || Math.abs(a - pitch) - Math.abs(b - pitch))[0];
+      if (closer !== undefined && Math.abs(closer - previousPitch) <= 12) pitch = closer;
+    }
+    out.push(pitch === event.noteNumber ? event : { ...event, noteNumber: pitch });
+    previousPitch = pitch;
+  }
+  return out;
+}
 
 /** band.style(任意大小写)→ MG StyleName。未知 → JAZZ(base enriched,无专属 paradigm)。 */
 function toMgStyle(style: string): MgStyle {
   const s = style.toUpperCase();
   return (s === 'POP' || s === 'LOFI' || s === 'RNB' || s === 'JAZZ' || s === 'BLUES' || s === 'ACG') ? s : 'JAZZ';
+}
+
+/** Build the exact production Functional RoadMap consumed by MG lead generation. */
+export function buildMgLeadRoadMap(
+  plan: HarmonicPlan,
+  band: BandSpec,
+  timebase: Timebase,
+  acgPianoScorePlan?: AcgPianoScorePlan,
+): RoadMap {
+  if (band.style.toLowerCase() === 'acg' && acgPianoScorePlan?.roadMap) return acgPianoScorePlan.roadMap;
+  const chords = harmonicPlanToMgChordDefs(plan);
+  const part = buildChordPart(chords, [timebase.meter.numerator, timebase.meter.denominator]);
+  const songKeyPc = ((band.key as number) % 12 + 12) % 12;
+  return parseFunctionalRoadMap({ part, songKeyPc, style: toMgStyle(band.style) });
 }
 
 function isSaxLeadProgram(program?: number): boolean {
@@ -63,7 +121,8 @@ export function leadGrammarLabelForStyle(style: string, leadProgram?: number): s
   if ((s === 'JAZZ' || s === 'BLUES') && isSaxLeadProgram(leadProgram)) {
     return 'JAZZ_SAX_DEXTER_GORDON_GRAMMAR';
   }
-  return s === 'LOFI' || s === 'ACG' ? 'LOFI_ENRICHED_GRAMMAR'
+  return s === 'ACG' ? 'ACG_PIANOSONG_GRAMMAR'
+    : s === 'LOFI' ? 'LOFI_ENRICHED_GRAMMAR'
     : s === 'POP' ? 'POP_ENRICHED_GRAMMAR'
     : s === 'RNB' ? 'RNB_ENRICHED_GRAMMAR'
     : 'ENRICHED_GRAMMAR';
@@ -73,9 +132,10 @@ function grammarForStyle(s: MgStyle, leadProgram?: number) {
   if ((s === 'JAZZ' || s === 'BLUES') && isSaxLeadProgram(leadProgram)) {
     return JAZZ_SAX_DEXTER_GORDON_GRAMMAR;
   }
-  // ★ MG 升级 Phase 2c:ACG 复用 LOFI 旋律 grammar(忠实源 improvisorFunctionalGrammarForStyle('ACG')→LOFI)
-  //   —— 软、尊重约束、偏简单乐句形(无 bebop 跑动),贴电影钢琴 cantabile。
-  return s === 'LOFI' || s === 'ACG' ? LOFI_ENRICHED_GRAMMAR
+  // ACG PIANOSONG 的入口独立：长句基础 grammar + ACG return-brick scheduler 共同构成
+  // 主链，而不是由后处理去补旋律空档。
+  return s === 'ACG' ? ACG_PIANOSONG_GRAMMAR
+    : s === 'LOFI' ? LOFI_ENRICHED_GRAMMAR
     : s === 'POP' ? POP_ENRICHED_GRAMMAR
     : s === 'RNB' ? RNB_ENRICHED_GRAMMAR
     : ENRICHED_GRAMMAR;
@@ -91,7 +151,19 @@ export function renderMgMelody(
   timebase: Timebase,
   songSeed: number,
   leadProgram?: number, // ★ 2026-06-10:器配生效 lead program(单一真源);缺省回退 band.roleProgram(测试/向后兼容)
-  grooveContract?: { style: string; melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }, // ★ lead feel 真源(Phase D:全风格真消费;缺省=无 contract 时 feelForStyle 兜底)
+  grooveContract?: LeadGrooveContract, // ★ lead feel 真源(Phase D:全风格真消费;缺省=无 contract 时 feelForStyle 兜底)
+  /** ACG only: arrangement-owned top-line rests/entries, consumed before NoteIR exists. */
+  acgLeadPresencePlan?: AcgLeadPresencePlan,
+  /** ACG only: post-harmony phrase score. It overlays interpretation, never RoadMap facts. */
+  acgPianoScorePlan?: AcgPianoScorePlan,
+  /** Optional section overrides; absent keeps the legacy one-contract song path. */
+  grooveContractBySection?: Readonly<Record<string, LeadGrooveContract>>,
+  /** Arranger/Instrumentation-authored writing range; only supplied by locked ensembles. */
+  leadRegister?: { lowMidi: number; highMidi: number },
+  /** Optional precomputed production RoadMap; motif generation passes this exact shared instance. */
+  roadMapOverride?: RoadMap,
+  /** User-authored ownership already fitted to the shared production RoadMap. */
+  authoredUserMotifPlan?: AuthoredUserMotifBrickPlan,
 ): TrackIR {
   const program = leadProgram ?? band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);
@@ -111,25 +183,86 @@ export function renderMgMelody(
   const mgRng = makeSeededRng(seed);
   const part = buildChordPart(chords, meter);
   // ★ Phase B:style-aware functional RoadMap(当前 MG 真源,554-brick catalog DP cover)。
-  const roadMap = parseFunctionalRoadMap({ part, songKeyPc, style });
-  const perBrick = expandGrammarForRoadMap(grammarForStyle(style, program), roadMap.bricks, mgRng);
+  const roadMap = roadMapOverride ?? (style === 'ACG' && acgPianoScorePlan?.roadMap
+    ? acgPianoScorePlan.roadMap
+    : parseFunctionalRoadMap({ part, songKeyPc, style }));
+  const expandForRhythmIdentity = (
+    grammar: Parameters<typeof expandGrammarForBrick>[0],
+    brick: RoadMap['bricks'][number],
+  ) => authoredUserMotifPlan
+    ? expandGrammarForBrickMatchingRhythm({
+      grammar,
+      brick,
+      rng: mgRng,
+      target: authoredUserMotifPlan.rhythmShapeProfile,
+      attempts: 8,
+    }).tokens
+    : expandGrammarForBrick(grammar, { brick, rng: mgRng });
+  // ACG PIANOSONG has hidden grammar banks (intro breath / theme / lift /
+  // modal color / return), selected from RoadMap context only.  They are not
+  // UI styles and still use the same seeded grammar runtime and token chain.
+  const perBrick = style === 'ACG'
+    ? roadMap.bricks.map((brick, brickIndex) => {
+      const phrase = Object.values(acgPianoScorePlan?.phraseById ?? {}).find((candidate) =>
+        brick.startBeat >= candidate.startBeat - 1e-4 && brick.startBeat < candidate.endBeat - 1e-4,
+      );
+      const grammar = phrase
+        ? ACG_PIANOSONG_INTERNAL_GRAMMARS[phrase.lead.grammarSubset]
+        : acgPianoSongGrammarForContext({
+          startBeat: brick.startBeat,
+          durationBeats: brick.durationBeats,
+          family: brick.family,
+          name: brick.name,
+        });
+      return { brickIndex, brick, tokens: expandForRhythmIdentity(grammar, brick) };
+    })
+    : authoredUserMotifPlan
+      ? roadMap.bricks.map((brick, brickIndex) => ({
+        brickIndex,
+        brick,
+        tokens: expandForRhythmIdentity(grammarForStyle(style, program), brick),
+      }))
+      : expandGrammarForRoadMap(
+        grammarForStyle(style, program),
+        roadMap.bricks,
+        mgRng,
+      );
   for (let i = 0; i < perBrick.length; i++) {
     if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);
   }
   // ★ MG full-parity G4:ACG 走 cycle-cadence 调度(一条长句铺满和声 cycle,钢琴呼吸),非 brick-by-brick lick chain。
-  const scheduled = style === 'ACG' ? scheduleAcgCycleCadencePhrases(perBrick, part) : scheduleBrickExpansions(perBrick);
+  const generatedSchedule = style === 'ACG'
+    ? scheduleAcgCycleCadencePhrases(perBrick, part, { leadPresencePlan: acgLeadPresencePlan, pianoScorePlan: acgPianoScorePlan })
+    : scheduleBrickExpansions(perBrick);
+  const scheduled = reserveScheduledTokensForAuthoredSpans(
+    generatedSchedule,
+    authoredLeadSpans(authoredUserMotifPlan),
+  );
   // ★ MG full-parity G2(已激活,commit 29a1805):本地音阶语境(style/key/mode)穿透 guide-tone +
   //   token realization → 候选池走 orthogonal admission(结构音 = chord contract ∩ resolved local scale)。
   //   全风格 lead 走 contract∩local scale;JAZZ/RNB 真 chord-scale 色彩音。repeat-group comp off-by-1 已证
   //   = humanize-timing 边界假象(非真不一致),repeatGroupConsistency.test 已 EDGE 钳处理。
   const localScaleContext = { style, key: musicKey, mode: musicMode };
-  const guideTonePlan = buildGuideTonePlan({ chordPart: part, localScaleContext });
+  const authoredRegisterCenter = leadRegister
+    ? Math.round(leadRegister.lowMidi + (leadRegister.highMidi - leadRegister.lowMidi) * 0.4)
+    : undefined;
+  const rawGuideTonePlan = buildGuideTonePlan({
+    chordPart: part,
+    localScaleContext,
+    ...(leadRegister ? {
+      registerCenter: authoredRegisterCenter,
+      lowMidi: leadRegister.lowMidi,
+      highMidi: leadRegister.highMidi,
+    } : {}),
+  });
+  const guideTonePlan = rawGuideTonePlan;
   let melody = realizeTokens({
     scheduledTokens: scheduled,
     chordPart: part,
     rng: mgRng,
     guideTonePlan,
     preserveSlopeGrammar: style === 'LOFI' || style === 'ACG', // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)
+    registerCenter: style === 'ACG' ? 74 : authoredRegisterCenter, // ACG lead 是钢琴最高声部；locked ensemble 使用其作者音区中心
     localScaleContext,
   });
   // ★ 旋律 timing owner = MG StyleRenderer(单一所有权,Loop A 校正):lead 在此用 MG style feel 的 swing
@@ -141,33 +274,74 @@ export function renderMgMelody(
   //   arranger 选中的 GrooveContract(melodySwingRatio/articulation/accentPattern,全风格真消费,不再仅 ACG)。
   //   缺省(无 contract,如单元测试直调)→ feelForStyle 兜底。render 只消费,不重 pick。
   //   ⚠️ 输出相对零洗牌时代会变(POP/JAZZ/LOFI/RNB lead feel 漂)= 已接受,Phase F rebaseline oracle。
-  const leadFeel = grooveContract ? feelFromGrooveContract(grooveContract) : feelForStyle(style);
-  melody = renderStyleFeel({ events: melody, feel: leadFeel, rng: mgRng, protectFastRuns: style === 'JAZZ' || style === 'BLUES' });
-  // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
-  const applyLofi = style === 'LOFI';
-  melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);
-  // ★ Phase C-2(directive 3.4):post-shaper 生产链 = 当前 MG 最终 lead 整形(musicEngine 8099/8123-8125)。
-  //   shapeMelodyHarmony byte-exact ≠ final lead —— MG 在其后还跑:enforceMonophonic → applyMelodyBoundaryVoiceLeadingContract
-  //   → extendMelodyTailHolds → finalizeMelodyBoundaryVoiceLeading(grammarSlopeRole/brick 边界感知)。
-  //   ⚠️ MG 在 boundaryVL 前还有 style-specific groove/register/topvoice 整形(用 grooveContract/texture)→ Phase D/E,此处暂跳。
-  melody = enforceMonophonicMelody(melody);
-  melody = applyMelodyBoundaryVoiceLeadingContract(melody, chords, style, musicKey, musicMode, tonalCharacter);
-  melody = extendMelodyTailHolds(melody, chords, style, musicKey, musicMode);
-  melody = finalizeMelodyBoundaryVoiceLeading(melody, chords, style, musicKey, musicMode, tonalCharacter);
+  // ACG return-brick 的起止拍是和声合同的一部分。通用 StyleFeel 会把 noteOn
+  // 提前到前一和弦、使原本合法的稳定音跨界变成非法悬挂；ACG 的触键/力度在
+  // 上游 token velocity + coordinator 的非时值表达层完成，因此这里不改它的时间与时值。
+  if (style !== 'ACG') {
+    const groups: Array<{ contract: LeadGrooveContract | undefined; events: MgNoteEvent[] }> = [];
+    for (const event of melody) {
+      const span = plan.chordTimeline.find((candidate) =>
+        event.time >= (candidate.startBeat as number) - 1e-6
+        && event.time < (candidate.startBeat as number) + (candidate.durationBeats as number) - 1e-6);
+      const contract = (span ? grooveContractBySection?.[span.sectionId] : undefined) ?? grooveContract;
+      const current = groups[groups.length - 1];
+      if (!current || current.contract !== contract) groups.push({ contract, events: [event] });
+      else current.events.push(event);
+    }
+    melody = groups.flatMap((group) => renderStyleFeel({
+      events: group.events,
+      feel: group.contract
+        ? feelFromGrooveContract(group.contract, timebase.meter.numerator)
+        : { ...feelForStyle(style), beatsPerMeasure: timebase.meter.numerator },
+      rng: mgRng,
+      protectFastRuns: style === 'JAZZ' || style === 'BLUES',
+    }));
+  }
+  // ACG 的音符内容（尤其 return-brick）在 RoadMap → scheduler → realizer 一次生成完成。
+  // 不能再让通用 shaper 事后删音、加 connector 或 snap pitch，否则会破坏显式的趋近→稳定到达。
+  // StyleFeel 仍是演奏层（微时值/力度），不是再作曲；其它风格保持既有 MG shaper 链。
+  if (style !== 'ACG') {
+    const applyLofi = style === 'LOFI';
+    melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);
+    melody = enforceMonophonicMelody(melody);
+    melody = applyMelodyBoundaryVoiceLeadingContract(melody, chords, style, musicKey, musicMode, tonalCharacter);
+    melody = extendMelodyTailHolds(melody, chords, style, musicKey, musicMode);
+    melody = finalizeMelodyBoundaryVoiceLeading(melody, chords, style, musicKey, musicMode, tonalCharacter);
+  }
+  melody = placeMelodyOctaveContinuously(melody, style);
 
   // ── MgNoteEvent[](beat)→ NoteIR[](tick)──
+  let previousOutputPitch: number | null = null;
+  const quietDyadNoteKeys: string[] = [];
   const notes: NoteIR[] = melody
     .filter((e) => e.part === 'melody' && e.duration > 0)
     .map((e) => {
-      const pitch = program !== undefined
+      const rangeFittedPitch = program !== undefined
         ? fitMidiToProgramRange(e.noteNumber, 'lead', program)
         : Math.max(0, Math.min(127, Math.round(e.noteNumber)));
-      return {
+      let pitch = rangeFittedPitch;
+      if (style !== 'JAZZ' && style !== 'BLUES' && style !== 'ACG'
+          && previousOutputPitch !== null && Math.abs(pitch - previousOutputPitch) > 12) {
+        const candidates = [-24, -12, 0, 12, 24]
+          .map((offset) => rangeFittedPitch + offset)
+          .filter((candidate) => candidate >= 0 && candidate <= 127)
+          .filter((candidate) => program === undefined || fitMidiToProgramRange(candidate, 'lead', program) === candidate)
+          .sort((a, b) => Math.abs(a - previousOutputPitch!) - Math.abs(b - previousOutputPitch!)
+            || Math.abs(a - rangeFittedPitch) - Math.abs(b - rangeFittedPitch));
+        if (candidates[0] !== undefined && Math.abs(candidates[0] - previousOutputPitch) <= 12) pitch = candidates[0];
+      }
+      previousOutputPitch = pitch;
+      const note: NoteIR = {
         pitch: midi(pitch),
         startTick: timebase.beatToTick(beats(e.time)),
         durationTicks: timebase.beatToTick(beats(Math.max(0.01, e.duration))),
         velocity: Math.max(1, Math.min(127, Math.round(e.velocity))),
       };
+      // The grammar owns the distinction between an actual return dyad and an
+      // arbitrary same-onset pair. Carry only that explicit provenance to the
+      // dedicated ACG touch pass, which removes it before FinalIR.
+      if (style === 'ACG' && e.acgReturnVoice === 'dyad') quietDyadNoteKeys.push(acgDynamicsNoteKey(note));
+      return note;
     })
     .sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
 
@@ -175,8 +349,12 @@ export function renderMgMelody(
   //   一律不被 newEngine 后处理改写。收尾的"回主音"是【和声】回 T(harmony.ensureAuthenticEnding 的 V7→I),
   //   不是旋律;旋律的解决/落音交回 MG shapeMelodyHarmony(applyMelodicResolutionParadigm 等,读 effectiveFunc)。
 
-  // ★ lead 连音 legato:把同一乐句的连续音连到下一起音,消除 articulation 缩短后的"机关枪/断奏"断点。
-  //   只改 durationTicks,不动 pitch/start/数量;真正乐句空隙仍保留呼吸。
-  const legatoNotes = connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
-  return { role: 'lead', notes: legatoNotes, program };
+  // ACG 的句间边界、趋近和到达都已在主链明确写时值；不能再用通用 legato
+  // 把一颗旧音拖过下一和弦并改变其和声身份。其它风格保持原有演奏层连音。
+  const legatoNotes = style === 'ACG'
+    ? notes
+    : connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
+  const rendered: AcgDynamicsTaggedTrack = { role: 'lead', notes: legatoNotes, program };
+  if (quietDyadNoteKeys.length > 0) rendered.__acgQuietDyadNoteKeys = quietDyadNoteKeys;
+  return rendered;
 }

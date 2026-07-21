@@ -4,7 +4,6 @@ import { generateMotifWeave } from './motifWeaver';
 import { generateSampleCaptured } from './motifAnalysis';
 import { buildLeadOnlyIr } from './leadOnlyIr';
 import { fitRange, identity } from './motifTransform';
-import { quotedAt } from './jazzinessAudit';
 import type { MotifNote } from './types';
 import type { NoteIR as IRNote } from '../../newEngine/ir/MusicalIR';
 
@@ -28,6 +27,16 @@ const irSamePitchOverlap = (notes: readonly IRNote[]): number => {
     }
   }
   return c;
+};
+const quotedPrefixAt = (lead: readonly MotifNote[], ref: readonly MotifNote[], startBeat: number): boolean => {
+  let matched = 0;
+  for (const m of ref) {
+    const found = lead.find((n) => Math.abs(n.onsetBeat - (startBeat + m.onsetBeat)) < 1e-3 && n.occurrenceKind === 'quote');
+    if (!found) break;
+    if (found.midi !== m.midi) return false;
+    matched++;
+  }
+  return matched >= 1;
 };
 
 describe('motifSandbox/leadSanitizer · beat 域单声部清洗(directive Phase 3)', () => {
@@ -62,9 +71,11 @@ describe('motifSandbox/leadSanitizer · beat 域单声部清洗(directive Phase 
       for (let seed = 1; seed <= 8; seed++) {
         for (const variant of [0, 1, 2, 3]) {
           const r = generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', variant), style, keyPc: 0, mode: 'major', bpm: 96, seed });
-          // 曲首主题陈述:ref motif 在 beat0 完整 quote(不丢第一个用户音)
+          // RoadMap quote:ref motif 在最早 quote slot 出现(不丢第一个用户音),不强制 beat0。
           const ref = fitRange(identity(r.motif.notes), 60, 84).filter((x) => x.onsetBeat < r.quoteBars * 4 - 1e-6);
-          expect(quotedAt(r.lead, ref, 0), `${style} seed${seed} v${variant} 曲首陈述`).toBe(true);
+          const firstQuote = r.occurrences.filter((o) => o.kind === 'quote').sort((a, b) => a.startBeat - b.startBeat)[0];
+          expect(firstQuote, `${style} seed${seed} v${variant} 有 quote slot`).toBeDefined();
+          expect(quotedPrefixAt(r.lead, ref, firstQuote!.startBeat), `${style} seed${seed} v${variant} quote@${firstQuote!.startBeat}`).toBe(true);
           expect(sameOnsetPitch(r.lead), `${style} seed${seed} v${variant} 无同 onset+pitch`).toBe(0);
           expect(irSamePitchOverlap(buildLeadOnlyIr(r.lead, 120, style).tracks[0].notes), `${style} seed${seed} v${variant} IR 无 overlap`).toBe(0);
         }

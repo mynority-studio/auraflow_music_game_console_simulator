@@ -2,7 +2,9 @@
 // newEngine · instrumental · Sax expression MIDI CC plan
 // ------------------------------------------------------------
 // Sax 的真实感先放在器配/表演层:不改音源、不拼接样本,只给 lead sax 轨写标准 MIDI CC。
-// CC11 是主响度包络,CC2 给 breath controller 兼容实现。
+// CC11 is the documented Dream channel-expression target. CC2 is not emitted:
+// it is only a generic Breath Controller number until a concrete GMBK mapping
+// has been authored and auditioned on the target hardware.
 // 小型 SF2 在 CC1 上常把 vibrato 映射成明显音高摆动,会被听成跑调;音准优先,不自动发 CC1。
 // ============================================================
 
@@ -62,10 +64,6 @@ function sustainExpression(note: NoteIR, index: number): number {
   const pitch = note.pitch as number;
   const lowBody = pitch <= 58 ? 4 : pitch >= 70 ? -2 : 0;
   return clampCc(94 + (note.velocity - 64) * 0.34 + lowBody + stableAccent(note, index));
-}
-
-function breathFromExpression(expr: number): number {
-  return clampCc(expr - 8);
 }
 
 function controllerSort(a: SaxCcEvent, b: SaxCcEvent): number {
@@ -269,18 +267,15 @@ export function buildSaxBreathCcEvents(notes: readonly NoteIR[], opts: SaxExpres
     const releaseExpr = sustain - (dur >= ppq * 0.65 ? 20 : 12);
 
     push(start, SAX_CC.expression, startExpr);
-    push(start, SAX_CC.breath, breathFromExpression(startExpr));
 
     if (!shortNote && !fromPrev) {
       const attackAt = clampInsideNote(start + attackTicks, start, end);
       push(attackAt, SAX_CC.expression, sustain);
-      push(attackAt, SAX_CC.breath, breathFromExpression(sustain));
     }
 
     if (dur >= ppq * 0.35 && !toNext) {
       const releaseAt = clampInsideNote(end - releaseTicks, start, end);
       push(releaseAt, SAX_CC.expression, releaseExpr);
-      push(releaseAt, SAX_CC.breath, breathFromExpression(releaseExpr));
     }
   });
 

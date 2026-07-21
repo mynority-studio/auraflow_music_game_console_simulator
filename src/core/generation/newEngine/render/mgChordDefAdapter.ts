@@ -88,5 +88,12 @@ export function chordSpanToMgChordDef(span: ChordSpan): ProductionChord {
 
 /** HarmonicPlan → MG-equivalent 生产和弦[]。按 chordTimeline 顺序投影(全字段,不再依赖 stableToneMap)。 */
 export function harmonicPlanToMgChordDefs(plan: HarmonicPlan): ProductionChord[] {
-  return plan.chordTimeline.map((span) => chordSpanToMgChordDef(span as ChordSpan));
+  return plan.chordTimeline.map((span) => ({
+    ...chordSpanToMgChordDef(span as ChordSpan),
+    // ACG return brick 需要和声层已经裁定的 stable / scale，而不是再按 chord type 猜一次。
+    // 这些是只读语义标签；普通 MG 旋律路径不消费时行为不变。
+    spanId: span.id,
+    stableTonePcs: [...(plan.stableToneMap[span.id] ?? [])].map(Number),
+    chordScalePcs: [...(plan.chordScaleMap[span.id] ?? [])].map(Number),
+  }));
 }

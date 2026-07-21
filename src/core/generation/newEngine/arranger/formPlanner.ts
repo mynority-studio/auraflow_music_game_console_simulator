@@ -10,6 +10,12 @@
 
 import type { Rng } from '../foundation';
 import type { Section } from './ArrangementPlan';
+import {
+  acgPianoArrangementProfileForId,
+  resolveAcgPianoArrangementProfile,
+  type AcgPianoArrangementProfile,
+  type AcgPianoArrangementProfileId,
+} from './acgPianoArrangementProfiles';
 
 export type FormTemplate = 'verse-chorus' | 'verse-chorus-bridge' | 'double-verse' | 'compact';
 
@@ -197,8 +203,8 @@ function assembleLofi(rng: Rng, requestedBars?: number): Section[] {
   return out;
 }
 
-// Jazz:[intro?] - head×2(连续记忆点)- [solo?] - head-out。head/headOut 同 'A'。
-function assembleJazz(rng: Rng, requestedBars?: number): Section[] {
+// Jazz 4/4:head 陈述/复现 → 可选 solo → head-out → tag。Bass/Comp/Lead 加 drum rhythm section。
+function assembleJazzFourFour(rng: Rng, requestedBars?: number): Section[] {
   const targetBars = requestedBars ?? TARGET_BARS;
   const durationAware = requestedBars !== undefined;
   let hasIntro = rng.next() < 0.6;
@@ -206,11 +212,9 @@ function assembleJazz(rng: Rng, requestedBars?: number): Section[] {
   if (durationAware && targetBars < 28) hasIntro = false;
   if (durationAware && targetBars < 48) hasSolo = false;
   if (durationAware && targetBars >= 64) hasSolo = true;
-  // ★ 收尾 tag【必有】(修戛然而止):headOut(recap 回归头部)后接一段终止 tag(harmonyRole 'ending' → V-I 落家 + 能量回落)。
-  //   固定 head×2 + headOut + tag = 4;intro?/solo? 砍到 ≤5(solo 优先于 intro 保留)。
-  let n = (hasIntro ? 1 : 0) + 2 + (hasSolo ? 1 : 0) + 1 + 1; // intro? + head×2 + solo? + headOut + tag
-  if (n > 6 && hasIntro) { hasIntro = false; n--; } // ≤6
-  if (n > 6 && hasSolo) { hasSolo = false; n--; }
+  let sectionCount = (hasIntro ? 1 : 0) + 2 + (hasSolo ? 1 : 0) + 1 + 1;
+  if (sectionCount > 6 && hasIntro) { hasIntro = false; sectionCount--; }
+  if (sectionCount > 6 && hasSolo) { hasSolo = false; sectionCount--; }
   const soloBars = hasSolo ? (durationAware && targetBars >= 112 ? 32 : 16) : 0;
   const tagBars = 4;
   const shortCue = durationAware && targetBars <= 16;
@@ -233,56 +237,288 @@ function assembleJazz(rng: Rng, requestedBars?: number): Section[] {
   return out;
 }
 
-// ACG PIANOSONG:短篇钢琴 cue，而不是流行歌的 verse/chorus 循环。
-// 无时长请求时保持 4+8+8+4+8+4 基线；有请求时只按 4/8-bar 句法增减段落/主题长度。
-function assembleAcgPianoSong(requestedBars?: number): Section[] {
-  if (requestedBars !== undefined && requestedBars <= 16) {
-    const out: Section[] = [];
-    if (requestedBars >= 16) out.push({ id: 'pianoIntro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' });
-    out.push({ id: 'themeA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 4, repeatGroup: 'A', hookPolicy: 'light' });
-    out.push({ id: 'themeReturn', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: 4, repeatGroup: 'A', hookPolicy: 'light' });
-    out.push({ id: 'pianoCoda', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: 4, hookPolicy: 'none' });
-    return out;
-  }
-
-  if (requestedBars !== undefined && requestedBars <= 24) {
-    const includeLift = requestedBars >= 24;
-    return [
-      { id: 'pianoIntro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' },
-      { id: 'themeA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 4, repeatGroup: 'A', hookPolicy: 'light' },
-      { id: 'themeA2', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 4, repeatGroup: 'A', hookPolicy: 'light', linkOut: 'dominantLift' },
-      ...(includeLift ? [{ id: 'pianoLift', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, hookPolicy: 'none' } as Section] : []),
-      { id: 'themeReturn', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: 4, repeatGroup: 'A', hookPolicy: 'light' },
-      { id: 'pianoCoda', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: 4, hookPolicy: 'none' },
-    ];
-  }
-
-  const includeIntro = requestedBars === undefined || requestedBars >= 32;
-  const includeLift = requestedBars === undefined || requestedBars >= 36;
-  const fixedBars = (includeIntro ? 4 : 0) + (includeLift ? 4 : 0) + 4;
-  // A/A′/return 保持同长，并只在 8-bar 单位扩展，确保 motif replay 合同不失配。
-  const themeBars = requestedBars === undefined
-    ? 8
-    : Math.max(8, Math.min(24, Math.round((requestedBars - fixedBars) / 3 / 8) * 8));
+/**
+ * Reference-quartet audition form.  Its five phrase templates are indivisible:
+ * duration requests select this complete 33-bar score rather than slicing a
+ * head/coda rhythm brick.  At the evidence tempo this is about 59 seconds.
+ * The older solo-piano handoff keeps its independent form above.
+ */
+function assembleJazzFiveFourReferenceQuartet(): Section[] {
   return [
-    ...(includeIntro ? [{ id: 'pianoIntro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' } as Section] : []),
-    { id: 'themeA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: themeBars, repeatGroup: 'A', hookPolicy: 'light' },
-    { id: 'themeA2', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: themeBars, repeatGroup: 'A', hookPolicy: 'light', linkOut: 'dominantLift' },
-    ...(includeLift ? [{ id: 'pianoLift', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, hookPolicy: 'none' } as Section] : []),
-    { id: 'themeReturn', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: themeBars, repeatGroup: 'A', hookPolicy: 'light' },
-    { id: 'pianoCoda', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: 4, hookPolicy: 'none' },
+    { id: 'pickup', role: 'intro', harmonyRole: 'loop', functionTag: 'setup', bars: 1, hookPolicy: 'none' },
+    { id: 'headA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
+    { id: 'headB', role: 'bridge', harmonyRole: 'bridge', functionTag: 'solo', bars: 8, repeatGroup: 'B', hookPolicy: 'light' },
+    { id: 'headOut', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
+    { id: 'coda', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: 8, hookPolicy: 'none' },
   ];
 }
 
+// ACG PIANOSONG 是短篇钢琴 cue，不是流行歌的 verse/chorus 循环。每次选择一条
+// 隐藏总谱 profile：都保留 A/A′/return 的可辨识主题，但开场、发展位置和 coda
+// 不是同一条固定模板。profile 只在 Arranger 内使用，不增加 UI 风格。
+function acgIntro(id: string, bars: number): Section {
+  return { id, role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars, hookPolicy: 'none' };
+}
+
+function acgThemeA(bars: number): Section {
+  return { id: 'themeA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars, repeatGroup: 'A', hookPolicy: 'light' };
+}
+
+function acgThemeA2(bars: number, linkOut: Section['linkOut'] = 'dominantLift'): Section {
+  return { id: 'themeA2', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars, repeatGroup: 'A', hookPolicy: 'light', linkOut };
+}
+
+function acgThemeReturn(bars: number): Section {
+  return { id: 'themeReturn', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars, repeatGroup: 'A', hookPolicy: 'light' };
+}
+
+function acgLift(id: string, bars: number): Section {
+  return { id, role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars, hookPolicy: 'none' };
+}
+
+function acgBreath(id: string, bars: number): Section {
+  return { id, role: 'bridge', harmonyRole: 'bridge', functionTag: 'breakdown', bars, hookPolicy: 'none' };
+}
+
+function acgCoda(id: string, bars: number): Section {
+  return { id, role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars, hookPolicy: 'none' };
+}
+
+interface AcgThemeAllocation {
+  themeBars: number;
+  /** Grows one profile-owned transition so target duration is met without breaking A/A′ parity. */
+  transitionExtensionBars: number;
+}
+
+/**
+ * Three A-group sections must stay equal for motif replay. The profile-owned
+ * transition absorbs the 4/8-bar remainder, which keeps duration fitting from
+ * silently forcing every cue back into the same 36-bar layout.
+ */
+function allocateAcgThemeBars(requestedBars: number | undefined, fixedBars: number): AcgThemeAllocation {
+  if (requestedBars === undefined) return { themeBars: 8, transitionExtensionBars: 0 };
+  const availableForThemes = Math.max(12, requestedBars - fixedBars);
+  const themeBars = Math.max(4, Math.min(24, Math.floor(availableForThemes / 12) * 4));
+  return {
+    themeBars,
+    transitionExtensionBars: Math.max(0, requestedBars - fixedBars - themeBars * 3),
+  };
+}
+
+/** The shortest cue intentionally retains the prior compact fallback. */
+function assembleShortAcgPianoCue(requestedBars: number): Section[] {
+  const out: Section[] = [];
+  if (requestedBars >= 16) out.push(acgIntro('pianoIntro', 4));
+  out.push(acgThemeA(4));
+  out.push(acgThemeReturn(4));
+  out.push(acgCoda('pianoCoda', 4));
+  return out;
+}
+
+/**
+ * Around one minute at ACG tempo there is only room for three 8-bar theme
+ * statements plus a 4-bar ending. Keep that musical minimum intact; a single
+ * profile-owned transition may occupy the remaining four bars instead of
+ * shrinking the theme to an unusable one-phrase fragment.
+ */
+function assembleMediumAcgPianoCue(profile: AcgPianoArrangementProfile, requestedBars: number): Section[] {
+  const transitionBars = Math.max(0, requestedBars - 28);
+  const codaId = profile.codaStrategy === 'echo-tag'
+    ? 'pianoEchoCoda'
+    : profile.codaStrategy === 'sigh-tag'
+      ? 'pianoSighCoda'
+      : profile.codaStrategy === 'frame-arrival'
+        ? 'pianoFrameCoda'
+        : profile.codaStrategy === 'descending-release'
+          ? 'pianoReleaseCoda'
+          : 'pianoCoda';
+  switch (profile.formShape) {
+    case 'motif-first':
+      return [
+        acgThemeA(8),
+        acgThemeA2(8),
+        ...(transitionBars > 0 ? [acgLift('pianoMotifTurn', transitionBars)] : []),
+        acgThemeReturn(8),
+        acgCoda(codaId, 4),
+      ];
+    case 'dialogue-breath':
+      return [
+        acgThemeA(8),
+        ...(transitionBars > 0 ? [acgBreath('pianoBreath', transitionBars)] : []),
+        acgThemeA2(8),
+        acgThemeReturn(8),
+        acgCoda(codaId, 4),
+      ];
+    case 'wide-cinema':
+      return [
+        ...(transitionBars > 0 ? [acgIntro('pianoWidePrelude', transitionBars)] : []),
+        acgThemeA(8),
+        acgThemeA2(8),
+        acgThemeReturn(8),
+        acgCoda(codaId, 4),
+      ];
+    case 'descending-memory':
+      return [
+        acgThemeA(8),
+        acgThemeA2(8, 'minorIvHold'),
+        ...(transitionBars > 0 ? [acgBreath('pianoReflection', transitionBars)] : []),
+        acgThemeReturn(8),
+        acgCoda(codaId, 4),
+      ];
+    case 'ripple-journey':
+      return [
+        ...(transitionBars > 0 ? [acgIntro('pianoIntro', transitionBars)] : []),
+        acgThemeA(8),
+        acgThemeA2(8),
+        acgThemeReturn(8),
+        acgCoda(codaId, 4),
+      ];
+  }
+}
+
+function assembleMotifFirstAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, 8);
+  return [
+    acgThemeA(themeBars),
+    acgThemeA2(themeBars),
+    acgLift('pianoMotifTurn', 4 + transitionExtensionBars),
+    acgThemeReturn(themeBars),
+    acgCoda(profile.codaStrategy === 'echo-tag' ? 'pianoEchoCoda' : 'pianoCoda', 4),
+  ];
+}
+
+function assembleDialogueBreathAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  const compact = requestedBars !== undefined && requestedBars < 24;
+  const fixedBars = compact ? 8 : 12;
+  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
+  if (compact) {
+    return [
+      acgIntro('pianoCallIntro', 4 + transitionExtensionBars),
+      acgThemeA(themeBars),
+      acgThemeA2(themeBars),
+      acgThemeReturn(themeBars),
+      acgCoda(profile.codaStrategy === 'sigh-tag' ? 'pianoSighCoda' : 'pianoCoda', 4),
+    ];
+  }
+  return [
+    acgIntro('pianoCallIntro', 4),
+    acgThemeA(themeBars),
+    acgBreath('pianoBreath', 4 + transitionExtensionBars),
+    acgThemeA2(themeBars),
+    acgThemeReturn(themeBars),
+    acgCoda(profile.codaStrategy === 'sigh-tag' ? 'pianoSighCoda' : 'pianoCoda', 4),
+  ];
+}
+
+function assembleRippleJourneyAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  const compact = requestedBars !== undefined && requestedBars < 24;
+  const fixedBars = compact ? 8 : 12;
+  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
+  if (compact) {
+    return [
+      acgIntro('pianoIntro', 4 + transitionExtensionBars),
+      acgThemeA(themeBars),
+      acgThemeA2(themeBars),
+      acgThemeReturn(themeBars),
+      acgCoda('pianoCoda', 4),
+    ];
+  }
+  return [
+    acgIntro('pianoIntro', 4),
+    acgThemeA(themeBars),
+    acgThemeA2(themeBars),
+    acgLift('pianoLift', 4 + transitionExtensionBars),
+    acgThemeReturn(themeBars),
+    acgCoda(profile.codaStrategy === 'pedal-dissolve' ? 'pianoCoda' : 'pianoReleaseCoda', 4),
+  ];
+}
+
+function assembleWideCinemaAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  const compact = requestedBars !== undefined && requestedBars < 32;
+  const fixedBars = compact ? 8 : 20;
+  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
+  if (compact) {
+    return [
+      acgIntro('pianoWidePrelude', 4 + transitionExtensionBars),
+      acgThemeA(themeBars),
+      acgThemeA2(themeBars),
+      acgThemeReturn(themeBars),
+      acgCoda(profile.codaStrategy === 'frame-arrival' ? 'pianoFrameCoda' : 'pianoCoda', 4),
+    ];
+  }
+  return [
+    acgIntro('pianoWidePrelude', 8 + transitionExtensionBars),
+    acgThemeA(themeBars),
+    acgThemeA2(themeBars),
+    acgLift('pianoWideLift', 8),
+    acgThemeReturn(themeBars),
+    acgCoda(profile.codaStrategy === 'frame-arrival' ? 'pianoFrameCoda' : 'pianoCoda', 4),
+  ];
+}
+
+function assembleDescendingMemoryAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  const compact = requestedBars !== undefined && requestedBars < 28;
+  const fixedBars = compact ? 12 : 16;
+  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
+  if (compact) {
+    return [
+      acgIntro('pianoFallingIntro', 4),
+      acgThemeA(themeBars),
+      acgThemeA2(themeBars, 'minorIvHold'),
+      acgBreath('pianoReflection', 4 + transitionExtensionBars),
+      acgThemeReturn(themeBars),
+      acgCoda(profile.codaStrategy === 'descending-release' ? 'pianoReleaseCoda' : 'pianoCoda', 4),
+    ];
+  }
+  return [
+    acgIntro('pianoFallingIntro', 4),
+    acgThemeA(themeBars),
+    acgThemeA2(themeBars, 'minorIvHold'),
+    acgBreath('pianoReflection', 4 + transitionExtensionBars),
+    acgLift('pianoLift', 4),
+    acgThemeReturn(themeBars),
+    acgCoda(profile.codaStrategy === 'descending-release' ? 'pianoReleaseCoda' : 'pianoCoda', 4),
+  ];
+}
+
+function assembleAcgPianoSong(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
+  if (requestedBars !== undefined && requestedBars <= 16) return assembleShortAcgPianoCue(requestedBars);
+  if (requestedBars !== undefined && requestedBars >= 28 && requestedBars <= 32) {
+    return assembleMediumAcgPianoCue(profile, requestedBars);
+  }
+  switch (profile.formShape) {
+    case 'motif-first': return assembleMotifFirstAcg(profile, requestedBars);
+    case 'dialogue-breath': return assembleDialogueBreathAcg(profile, requestedBars);
+    case 'wide-cinema': return assembleWideCinemaAcg(profile, requestedBars);
+    case 'descending-memory': return assembleDescendingMemoryAcg(profile, requestedBars);
+    case 'ripple-journey': return assembleRippleJourneyAcg(profile, requestedBars);
+  }
+}
+
 /** 程序化装配:按风格 per-seed 拼接 ≤5 段曲式(确定性)。 */
-export function assembleForm(style: string, rng: Rng, targetBars?: number): Section[] {
+export function assembleForm(
+  style: string,
+  rng: Rng,
+  targetBars?: number,
+  acgPianoArrangementProfileId?: AcgPianoArrangementProfileId,
+  jazzFormBlueprintId?: string,
+): Section[] {
   const s = style.toLowerCase();
   const normalized = targetBars !== undefined && Number.isFinite(targetBars) && targetBars > 0
     ? normalizeTargetBars(s, targetBars)
     : undefined;
-  if (s === 'acg') return assembleAcgPianoSong(normalized);
+  if (s === 'acg') {
+    const profile = acgPianoArrangementProfileId
+      ? acgPianoArrangementProfileForId(acgPianoArrangementProfileId)
+      : resolveAcgPianoArrangementProfile(rng);
+    return assembleAcgPianoSong(profile, normalized);
+  }
   if (s === 'lofi') return assembleLofi(rng, normalized);
-  if (s === 'jazz') return assembleJazz(rng, normalized);
+  if (s === 'jazz'
+      && jazzFormBlueprintId === 'jazz.reference-quartet-5-4.pickup-head-headout-coda.v1') {
+    return assembleJazzFiveFourReferenceQuartet();
+  }
+  if (s === 'jazz') return assembleJazzFourFour(rng, normalized);
   return assemblePopRnb(s === 'rnb', rng, normalized);
 }
 
@@ -291,6 +527,10 @@ export interface FormOptions {
   template?: FormTemplate; // 显式指定(测试/固定)→ 走通用模板(向后兼容)
   style?: string; // 有 + rng → 走风格曲式池(无 rng 仍回退 legacy verse-chorus)
   targetBars?: number; // actual tempo/meter 已换算的小节预算；procedural form 内再做风格钳位/4-bar 对齐
+  /** ACG only: Arranger 已选的隐藏钢琴总谱 profile；不是 UI style。 */
+  acgPianoArrangementProfileId?: AcgPianoArrangementProfileId;
+  /** Jazz only: selected by the archetype before form planning. */
+  jazzFormBlueprintId?: string;
 }
 
 /**
@@ -306,7 +546,13 @@ export function planForm(opts: FormOptions = {}): Section[] {
   if (opts.template) {
     sections = TEMPLATES[opts.template].map((s) => ({ ...s }));
   } else if (opts.rng && styleKey && PROCEDURAL_STYLES.has(styleKey)) {
-    sections = assembleForm(styleKey, opts.rng, opts.targetBars); // ★ 程序化拼接(取代写死模板池)
+    sections = assembleForm(
+      styleKey,
+      opts.rng,
+      opts.targetBars,
+      opts.acgPianoArrangementProfileId,
+      opts.jazzFormBlueprintId,
+    ); // ★ 程序化拼接(取代写死模板池)
   } else {
     const chosen = opts.rng ? opts.rng.pick(FORM_POOL) : 'verse-chorus';
     sections = TEMPLATES[chosen].map((s) => ({ ...s }));

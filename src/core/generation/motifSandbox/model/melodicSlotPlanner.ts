@@ -3,9 +3,9 @@
 // ------------------------------------------------------------
 // buildMelodicSlotPlanFromRoadMap:RoadmapBrickSlot[] → MelodicSlotPlan(纯函数,确定性)。
 //   ① brick type → 旋律 requiredFunction。
-//   ② userBrick 功能 → 偏好的 slot 功能 → 选【最佳功能匹配 slot】落 motif(mustQuote)。
+//   ② userBrick 功能 → 偏好的 slot 功能 → 选【最早最佳功能匹配 slot】落 motif(mustQuote)。
 //   ③ 结构性复现:与最佳 slot 同 recurrenceKey 的 slot 也 mustQuote(motif 在等价 brick 再现)。
-//   ④ 用户决策:无复现(through-composed)→ 回退【句头】排比(保记忆点)。
+//   ④ 无复现(through-composed)→ 只落最佳匹配 slot;不强制曲首复述。
 //   ⑤ 其余 slot:同类型→mustDevelop / 答句区→mayReference / 抵触功能→generatedOnly,带 lineage。
 //   不假设固定 bar 0/16/32/48 —— quote 落点来自 RoadMap slot。Phase 5 weaver 据此填充。
 // ============================================================
@@ -39,24 +39,6 @@ function devTransform(fn: MelodicSlotFunction): MelodicSlotTransform {
 
 interface Pair { brick: RoadmapBrickSlot; slot: MelodicSlot; }
 
-const brickCovering = (pairs: readonly Pair[], beat: number): Pair | undefined =>
-  pairs.find((p) => beat >= p.brick.startBeat - 1e-6 && beat < p.brick.startBeat + p.brick.durationBeats - 1e-6)
-  ?? [...pairs].sort((a, b) => Math.abs(a.brick.startBeat - beat) - Math.abs(b.brick.startBeat - beat))[0];
-
-/** RoadMap 无复现时的结构性再现点(directive §7:段落开头 / 后半段主和弦再确立)—— 不假设 0/16/32/48。
- *  ① form 各段落开头(默认单段 = 仅曲首)② 单段时补【后半段第一个 Tonic/Launcher 再确立点】(结构性
- *  "第二陈述",从 RoadMap brick 派生)。曲首陈述由调用方另加。 */
-function structuralRestatementBrickIds(pairs: readonly Pair[], form: MotifSandboxFormContext, totalBeats: number): Set<string> {
-  const ids = new Set<string>();
-  for (const sec of form.sections) { const p = brickCovering(pairs, sec.startBeat); if (p) ids.add(p.brick.id); }
-  if (form.sections.length <= 1) {
-    const mid = totalBeats / 2;
-    const restate = pairs.find((p) => p.brick.startBeat >= mid - 1e-6 && (p.brick.type === 'Tonic' || p.brick.type === 'Launcher'));
-    if (restate) ids.add(restate.brick.id);
-  }
-  return ids;
-}
-
 export function buildMelodicSlotPlanFromRoadMap(args: {
   form: MotifSandboxFormContext;
   roadmapBricks: readonly RoadmapBrickSlot[];
@@ -89,21 +71,18 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
   let best = pairs.find((p) => pref.includes(p.slot.requiredFunction));
   if (!best) best = pairs.find((p) => p.slot.requiredFunction === 'opening' || p.slot.requiredFunction === 'cadence') ?? pairs[0];
 
-  // ③/④ quote 集合:结构性复现(同 recurrenceKey)优先;无复现 → 回退句头(用户决策,保排比)。
+  // ③/④ quote 集合:结构性复现(同 recurrenceKey)优先;无复现 → 只落最早功能匹配 slot。
+  // 不再额外塞曲首陈述:用户 motif 要填进和声 RoadMap 的合适 brick,而不是先单轨复述一遍。
   const bestKey = best.brick.recurrenceKey;
   const recurringIds = new Set(pairs.filter((p) => p.brick.recurrenceKey === bestKey).map((p) => p.brick.id));
   let quoteIds: Set<string>;
   if (recurringIds.size >= 2) {
     quoteIds = recurringIds; // motif 落在所有结构等价 brick(结构性复现)
   } else {
-    quoteIds = structuralRestatementBrickIds(pairs, form, totalBeats); // 回退:段落开头 + 后半段再确立(非 0/16/32/48)
-    quoteIds.add(best.brick.id);                                       // 至少含最佳匹配
-    warnings.push('RoadMap 无复现 brick → motif 落段落开头 + 后半段结构再现点(保记忆点)');
+    quoteIds = new Set([best.brick.id]);
+    warnings.push('RoadMap 无复现 brick → motif 仅落最早功能匹配 brick(不强制曲首)');
   }
-  // ★ 主题陈述(exposition):motif 永远在【曲首 slot】原样出现 —— 否则听感上"动机丢了"(开头听不到主题)。
-  //   功能匹配决定 motif 还在哪里【再现】,但开头一定先【陈述】主题(Impro-Visor: state-then-develop)。
-  const openingId = pairs[0].brick.id;
-  quoteIds.add(openingId);
+  const bestId = best.brick.id;
 
   // ⑤ 逐 slot 定策略 + lineage + reason。directive:generatedOnly 是【例外】(只在 motif 会抵触
   //   RoadMap 功能时)—— 即【曲尾终止】要干净解决;其余非 quote slot 一律发展/引用 motif(续写主体)。
@@ -113,7 +92,7 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
     if (quoteIds.has(p.brick.id)) {
       p.slot.userMotifPolicy = 'mustQuote';
       p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, transform: 'quote' };
-      p.slot.reason = p.brick.id === openingId ? 'quote@exposition(曲首陈述)' : `quote@${p.brick.type}${recurringIds.size >= 2 ? '(recur)' : '(phraseHead)'}`;
+      p.slot.reason = p.brick.id === bestId ? `quote@best-fit(${p.brick.type})` : `quote@${p.brick.type}(recur)`;
     } else if (fn === 'cadence' && p.brick.id === lastBrickId) {
       // 仅【曲尾终止】不接 motif → 干净生成解决(motif 强行落最终终止会抵触收束)。
       p.slot.userMotifPolicy = 'generatedOnly';

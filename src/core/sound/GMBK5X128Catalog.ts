@@ -96,6 +96,21 @@ function parseDrumKitRows(tsv: string): MainProgramRow[] {
 const parsed = parseMainAndVariationRows(gmbk5x128MidiTsv);
 const parsedDrumKits = parseDrumKitRows(gmbk5x128MidiTsv);
 
+/**
+ * The V2.03 SDK-generated MIDI TSV says 268 variations, but both the shipped
+ * GMBK5X128.xdb and Dream's GMBK5X128 PDF contain 269. The sole TSV omission
+ * is this concrete XDB address; keep the runtime catalog faithful to the
+ * actual soundbank image rather than perpetuating the export-file omission.
+ */
+const XDB_VARIATIONS_MISSING_FROM_TSV: readonly VariationRow[] = [
+  { bank: 8, program: 25, name: '12 String Guitar' },
+];
+
+const completeVariationRows = [
+  ...parsed.variations,
+  ...XDB_VARIATIONS_MISSING_FROM_TSV,
+].sort((a, b) => a.program - b.program || a.bank - b.bank);
+
 export const GM128_MAIN_PROGRAMS: readonly GM128CatalogItem[] = parsed.main.map(row => {
   const role = gm128CatalogRoleForProgram(row.program);
   return {
@@ -110,7 +125,7 @@ export const GM128_MAIN_PROGRAMS: readonly GM128CatalogItem[] = parsed.main.map(
   };
 });
 
-export const GM128_VARIATION_PROGRAMS: readonly GM128CatalogItem[] = parsed.variations.map(row => {
+export const GM128_VARIATION_PROGRAMS: readonly GM128CatalogItem[] = completeVariationRows.map(row => {
   const role = gm128CatalogRoleForProgram(row.program);
   return {
     bank: row.bank,
@@ -177,9 +192,10 @@ function worldItemsFor(family: GMBK5X128VoiceWorldFamily): readonly GM128Catalog
 }
 
 /**
- * Complete Dream 5504 inventory consumed by the orchestration layer. It
- * holds every official keyboard, bass, dedicated-pad and drum-kit address
- * that can safely share that family's musical register and gesture rules.
+ * Legacy compact browser/compatibility grouping. It only covers four broad
+ * families and is deliberately not the NewEngine orchestration source of
+ * truth: full CC0 + Program classification now lives in
+ * `instrumental/dreamVoiceProfiles`.
  */
 export const GMBK5X128_VOICE_WORLD: Readonly<Record<GMBK5X128VoiceWorldFamily, readonly GM128CatalogItem[]>> = Object.freeze({
   keyboard: worldItemsFor('keyboard'),

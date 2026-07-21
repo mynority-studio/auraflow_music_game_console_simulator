@@ -16,6 +16,7 @@ import type { TimbreWorld } from '../knowledge/instruments';
 import type { EnsembleWorldId } from '../knowledge/gmOrchestrationChains';
 import type { RoleMix, SpaceProfile } from '../knowledge/gmMixProfile';
 import type { DrumHit } from '../knowledge/grooves';
+import type { DreamVoiceFamily, DreamVoiceProfile } from './dreamVoiceProfiles';
 
 // ★ 织体种类 / 让位类的真源在 KB(knowledge/textureProfiles);此处仅按契约名复用(用户定:织体归 KB)。
 export type TextureKind = GenericTextureKind;
@@ -39,6 +40,37 @@ export interface MelodyReservationPlan {
   reservedRegister: RegisterRange;
   densityCeiling: number;
   hookAnchorSlots: HookAnchorSlot[];
+}
+
+/** A score-owned pedal event, expressed in beats until render projects it to ticks. */
+export interface PedalBeatEvent {
+  atBeat: number;
+  down: boolean;
+  sectionId: SectionId;
+  reason: 'piano-harmony' | 'shared-piano' | 'fast-motion-bypass';
+}
+
+export interface RolePedalPlan {
+  role: InstrumentRoleName;
+  /** Several writing roles may belong to one physical piano and one pedal lane. */
+  playerGroup?: 'shared-piano';
+  events: readonly PedalBeatEvent[];
+  disabledBySection: Partial<Record<SectionId, 'non-piano-voice' | 'independent-piano-bass' | 'fast-keyboard-motion' | 'inactive'>>;
+}
+
+/** 器配层拥有的慢速控制器事件；仍以 beat 表示，由 render 统一投影为 TrackIR tick。 */
+export interface ControllerBeatEvent {
+  atBeat: number;
+  controller: number;
+  value: number;
+  sectionId: SectionId;
+  reason: 'piano-phrase-expression' | 'piano-motion-expression';
+}
+
+export interface RoleControllerPlan {
+  role: InstrumentRoleName;
+  events: readonly ControllerBeatEvent[];
+  disabledBySection: Partial<Record<SectionId, 'inactive' | 'unsupported-voice' | 'non-piano-voice'>>;
 }
 
 export type GestureExpressionKind =
@@ -87,7 +119,7 @@ export type GestureEvidenceRef =
 export type TailPolicy =
   | 'none'
   | 'keyboard-natural'    // 原声钢琴:自然衰减 + comp 可 harmonic pedal
-  | 'electric-key-tail'   // DX7/GM5 电钢:靠 note gate + CC72 release,不靠 blanket pedal / reverb 假装尾音
+  | 'electric-key-tail'   // DX7/GM5 电钢:靠 note gate；CC72 仅在该音色完成实板标定后可选
   | 'piano-pedal-comp'    // 钢琴 comp:harmonic-change pedal
   | 'pad-sustain'         // pad:长音
   | 'pluck-short'         // 拨弦/贝斯:短
@@ -120,7 +152,7 @@ export interface GestureExpressionPlan {
   maxConnectBeats?: number;
   overlapBeats?: number;
   tailPolicy?: TailPolicy;   // ★ Layer 1:乐器尾音契约(与 reverb/chorus send 分开;测试据此区分 tail vs 空间)
-  releaseCc?: number;        // ★ Layer 1:可选 release 增强(CC72,64-centered;两 synth 都响应)。电钢 tail 主机制(保 parity)
+  releaseCc?: number;        // ★ 已完成该 voice 实板标定后才可选的 release 增强，默认不自动写。
 }
 
 // ★ 收尾【乐器进出计划】(2026-06-08,器配据 arrangement.endingStyle 编写):render 据此出收尾手势。
@@ -146,6 +178,8 @@ export interface InstrumentationPlanData {
   //   无 functionTag/genre 的段 = 全 lineup(向后兼容)。lead 当前全程在场(gating 留后续)。
   activeRolesBySection: Record<SectionId, InstrumentRoleName[]>;
   registerByRole: Record<InstrumentRoleName, RegisterRange>;
+  /** 编制 archetype 明确要求执行的硬音区；未列角色继续使用通用乐器音域。 */
+  strictRegisterByRole?: Partial<Record<InstrumentRoleName, RegisterRange>>;
   textureBySection: Record<SectionId, TextureKind>; // 笼统让位类织体(active-comp/pad…),管谁让位
   // ★ rich textureCase 段级下发(2026-06-08,texture-switch 修复):非 LOFI 每段一个具体 textureCase
   //   (同 role/repeatGroup 复用、同曲 ≤2、排除 delayed-entry)→ render 按段 projection,不再逐 span 随机切。
@@ -168,6 +202,10 @@ export interface InstrumentationPlanData {
   roleBank: Partial<Record<InstrumentRoleName, number>>;
   voiceNameByRole: Partial<Record<InstrumentRoleName, string>>;
   voiceNameByRoleSection: Record<InstrumentRoleName, Record<SectionId, string>>;
+  /** Complete CC0 + Program identity classification for the selected base voice. */
+  voiceProfileByRole: Partial<Record<InstrumentRoleName, DreamVoiceProfile>>;
+  /** Per-section profile, including a same-player variation selected by the orchestration layer. */
+  voiceProfileByRoleSection: Record<InstrumentRoleName, Record<SectionId, DreamVoiceProfile>>;
   // ★ 链式协同诊断(gm128_chain_orchestration):本曲选定的音色世界/链 profile + 各角色生效 program + 决策轨迹。
   //   器配层【拥有】GM 选择:band.roleProgram 仅作 provisional 候选,链按 comp→lead→bass→pad 协同。trace/调试用。
   orchestrationChain: {
@@ -187,11 +225,15 @@ export interface InstrumentationPlanData {
     voiceNames?: Partial<Record<InstrumentRoleName, string>>;
     decisions: string[];
   };
-  // Dream 5504 hardware inventory consumed by this plan's orchestration
-  // world. Counts include main programs plus compatible CC0 variations.
+  // Dream 5504 hardware inventory available to this plan's orchestration
+  // world. This is the modern GM address space only; CC0=127 MT-32 remaps are
+  // intentionally excluded until separately classified.
   hardwareVoiceWorld: {
     targetId: string;
-    voiceCounts: Record<'keyboard' | 'bass' | 'pad' | 'drum', number>;
+    melodicVoiceCount: number;
+    drumKitCount: number;
+    excludedMt32CompatibilityVoiceCount: number;
+    familyCounts: Readonly<Partial<Record<DreamVoiceFamily, number>>>;
   };
   // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):器配层据 style+timbreWorld+role+生效 program
   //   决定 CC7/10/91/93(+可选 CC11)。随段程序变(programByRoleSection 切换 → mix 也切)。render 落 IR,irToMidi 读。
@@ -199,10 +241,19 @@ export interface InstrumentationPlanData {
   spaceProfile: SpaceProfile;
   // ★ 手势表情层(吹奏/气息模拟):器配层据最终 program 下发表情计划,render 只消费计划,不再自行按 GM 号猜。
   gestureExpressionByRole: Record<InstrumentRoleName, GestureExpressionPlan>;
+  // CC64 is score-owned: Arrangement declares keyboard motion, Instrumentation
+  // resolves a concrete voice-safe pedal plan, and render only converts beats
+  // to TrackIR ticks. No style-based pedal guess is allowed downstream.
+  pedalPlanByRole: Partial<Record<InstrumentRoleName, RolePedalPlan>>;
+  // 慢速 CC 自动化同样由器配层据完整 CC0+Program 能力下发。当前只开放原声钢琴的
+  // CC11 乐句动态；render 不按 GM program 猜控制器，MIDI adapter 也只放行该已验证路径。
+  controllerPlanByRole: Partial<Record<InstrumentRoleName, RoleControllerPlan>>;
   // ★ 每段鼓型(2026-06-08,groove 下发):Arranger 给 GrooveKind → 器配按 (style×groove) 从 KB 词汇
   //   确定性挑变体(同 groove → 同变体,repeatGroup 一致)。render 据此逐段换鼓型(取代单一 drumPattern);
   //   texturePocket 退成次要兜底(仅无此项的段)。空 = render 回退 drumPattern(style)(向后兼容)。
   drumPatternBySection: Record<SectionId, DrumHit[]>;
+  /** Concrete per-bar projection of ArrangementPlan.grooveScorePlan. */
+  drumPatternBySectionBar: Record<SectionId, DrumHit[][]>;
   // ★ 音色世界统一性(可观测;不参与避让/render):timbreWorld = 本曲音色世界分类;
   //   sameInstrumentPairs = 同乐器对(lead==comp 等,记录不拒绝)。GM program 仍由 programByRoleSection 承载。
   timbreWorld?: TimbreWorld;

@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { GrooveContract } from '../knowledge/grooveContracts';
+import { drumFeelProfileIdForContract } from '../knowledge/drumPerformanceKnowledge';
 import type {
   DrumCymbalPolicy,
   DrumEntryMode,
@@ -20,6 +21,7 @@ import type {
   DrumTimingProfile,
   DrumTomPolicy,
   DrumVelocityProfile,
+  GrooveScorePlan,
   OpeningDrumEntry,
   Section,
   SectionEntry,
@@ -111,6 +113,7 @@ function openingEntryMode(entry: OpeningDrumEntry): DrumEntryMode {
   if (entry === 'rideOnly') return 'ride-only';
   if (entry === 'fourOnFloorRamp') return 'kick-hat';
   if (entry === 'tomPickup') return 'full';
+  if (entry === 'brushLoop' || entry === 'halftimePocket') return 'full';
   return 'hat-only';
 }
 
@@ -122,6 +125,16 @@ function fillForBoundary(section: Section, next: Section | undefined, energy: nu
   if (next.functionTag === 'solo' || next.functionTag === 'headOut') return 'turnaround';
   if (lift > 0.08 || section.functionTag === 'build') return 'turnaround';
   if (section.repeatGroup && next.repeatGroup === section.repeatGroup) return 'none';
+  return 'light';
+}
+
+function fillFromGrooveScore(section: Section, score: GrooveScorePlan): DrumFillPolicy {
+  const candidates = score.boundaries.filter((candidate) => !candidate.opening && candidate.fromSectionId === section.id);
+  const boundary = candidates.find((candidate) => candidate.toSectionId !== section.id)
+    ?? candidates.at(-1);
+  if (!boundary) return 'none';
+  if (boundary.intensity >= 3) return 'big';
+  if (boundary.intensity === 2) return 'turnaround';
   return 'light';
 }
 
@@ -201,6 +214,7 @@ export function planDrumPerformance(
   energyBySection: Record<SectionId, number>,
   entryBySection: Record<SectionId, SectionEntry>,
   openingDrumEntry?: OpeningDrumEntry,
+  grooveScorePlan?: GrooveScorePlan,
 ): Record<SectionId, DrumPerformanceContract> {
   const out: Record<SectionId, DrumPerformanceContract> = {};
   for (let i = 0; i < sections.length; i++) {
@@ -211,7 +225,9 @@ export function planDrumPerformance(
     const family = baseFamily(style, contract, section, role);
     const energy = energyBySection[section.id] ?? 0.5;
     const nextEnergy = next ? (energyBySection[next.id] ?? energy) : energy;
-    const fillPolicy = fillForBoundary(section, next, energy, nextEnergy);
+    const fillPolicy = grooveScorePlan
+      ? fillFromGrooveScore(section, grooveScorePlan)
+      : fillForBoundary(section, next, energy, nextEnergy);
     const complexity = clampLevel(contract.density === 'active' ? 3 : contract.density === 'medium' ? 2 : 1);
     const intensity = clampLevel(role === 'lift' ? complexity + 1 : role === 'breakdown' ? complexity - 1 : complexity);
     const densityCeiling = densityCeilingForFamily(role, family);
@@ -222,6 +238,8 @@ export function planDrumPerformance(
     out[section.id] = {
       id: `${section.id}:${contract.id}:${family}:${role}`,
       sectionId: section.id,
+      grooveContractId: contract.id,
+      feelProfileId: drumFeelProfileIdForContract(contract),
       role,
       kitProgram: contract.drum?.kitProgram ?? 8,
       patternFamily: family,
@@ -235,11 +253,8 @@ export function planDrumPerformance(
       fillAmount: clampLevel(fillPolicy === 'none' ? 0 : fillPolicy === 'light' ? 1 : fillPolicy === 'turnaround' ? 2 : 3),
       fillComplexity: clampLevel(fillPolicy === 'big' ? 3 : fillPolicy === 'turnaround' ? 2 : fillPolicy === 'light' ? 1 : 0),
       phraseVariation: clampLevel(role === 'lift' ? 3 : role === 'breakdown' ? 1 : 2),
-      swingUnit: contract.grid === 'shuffle' || contract.grid === 'dilla' ? '16th' : '8th',
       timingProfile: timingProfileForContract(contract, family),
-      safeRangeTicks: safety.safeRangeTicks,
       maxMoveTicks: safety.maxMoveTicks,
-      preQuantizeGrid: safety.preQuantizeGrid,
       humanizeAmount: safety.humanizeAmount,
       feelOffsetMs: feelOffsetMsForContract(contract, family),
       velocityProfile: velocityProfileForFamily(family),

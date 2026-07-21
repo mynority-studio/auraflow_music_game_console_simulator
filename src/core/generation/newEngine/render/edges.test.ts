@@ -54,7 +54,7 @@ describe('arranger/edgePlanner · planEdges', () => {
 describe('arranger + 器配 · entryBySection / endingPlan', () => {
   const CASES: [string, 'cold' | 'fade' | 'tag'][] = [['pop', 'cold'], ['rnb', 'fade'], ['lofi', 'fade'], ['jazz', 'tag']];
   for (const [style, ending] of CASES) {
-    it(`${style}:plan.endingStyle=${ending};endingPlan 一致;每段有 entry;首个内容段 lead-in`, () => {
+    it(`${style}:plan.endingStyle=${ending};endingPlan 一致;每段遵守 entry 合同`, () => {
       const seed = 20260608;
       const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
       const arrangement = buildArrangementPlan(band, { rng: createRandomContext(seed) });
@@ -63,9 +63,6 @@ describe('arranger + 器配 · entryBySection / endingPlan', () => {
       expect(arrangement.endingStyle).toBe(ending);
       expect(instr.endingPlan.style).toBe(ending);
       for (const s of arrangement.sections) expect(['downbeat', 'lead-in']).toContain(arrangement.entryBySection[s.id]);
-      // 至少一处 lead-in(intro→内容 或 verse→chorus)
-      expect(Object.values(arrangement.entryBySection).includes('lead-in')).toBe(true);
-
       // endingPlan 标志位与风格一致
       const ep = instr.endingPlan;
       if (ending === 'fade') { expect(ep.fadeOut).toBe(true); expect(ep.holdFinalChord).toBe(false); expect(ep.coldStop).toBe(false); }

@@ -28,10 +28,13 @@ const contract = (style: string, melodySwingRatio: number) =>
 
 describe('render/grooveContractFeel(MG full-parity Phase D)', () => {
   it('★ feelFromGrooveContract 桥:melodySwingRatio→swingRatio、articulation/accent 直传', () => {
-    const f = feelFromGrooveContract(contract('ACG', 0.66));
+    const f = feelFromGrooveContract({ ...contract('ACG', 0.66), pushProbability: 0.25 });
     expect(f.swingRatio).toBe(0.66);
     expect(f.articulation).toBe('bebop');
     expect(f.accentPattern).toEqual([1.0, 0.85, 1.05, 0.85]);
+    expect(f.pushProbability).toBe(0.25);
+    expect(f.beatsPerMeasure).toBe(4);
+    expect(feelFromGrooveContract(contract('JAZZ', 0.6), 5).beatsPerMeasure).toBe(5);
   });
 
   it('★ Phase D:全风格 lead 真消费注入 contract 的 melodySwingRatio(0.5 直 vs 0.72 摆 → timing 不同)', () => {
@@ -56,5 +59,33 @@ describe('render/grooveContractFeel(MG full-parity Phase D)', () => {
       if (ser(withContract) !== ser(base)) sawDiff = true;
     }
     expect(sawDiff, '注入 contract 覆盖 feelForStyle 回退(至少一个直拍风格改变)').toBe(true);
+  });
+
+  it('section GrooveContract overrides change only the later Lead feel region', () => {
+    const { band, plan, timebase } = setup('rnb', 7);
+    const sectionIds = [...new Set(plan.chordTimeline.map((span) => span.sectionId))];
+    expect(sectionIds.length).toBeGreaterThan(1);
+    const secondSectionBeat = plan.chordTimeline.find((span) => span.sectionId === sectionIds[1])!.startBeat as number;
+    const straight = contract('RNB', 0.5);
+    const swung = contract('RNB', 0.78);
+    const baseline = renderMgMelody(plan, band, timebase, 7, undefined, straight);
+    const mixed = renderMgMelody(
+      plan,
+      band,
+      timebase,
+      7,
+      undefined,
+      straight,
+      undefined,
+      undefined,
+      Object.fromEntries(sectionIds.map((id, index) => [id, index === 0 ? straight : swung])),
+    );
+    const boundaryTick = secondSectionBeat * timebase.ppq;
+    const signature = (track: typeof baseline, before: boolean) => track.notes
+      .filter((note) => before ? (note.startTick as number) < boundaryTick : (note.startTick as number) >= boundaryTick)
+      .map((note) => `${note.pitch}@${note.startTick}:${note.durationTicks}:${note.velocity}`)
+      .join('|');
+    expect(signature(mixed, true)).toBe(signature(baseline, true));
+    expect(signature(mixed, false)).not.toBe(signature(baseline, false));
   });
 });

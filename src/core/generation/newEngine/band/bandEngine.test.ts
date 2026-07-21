@@ -32,6 +32,16 @@ describe('band/bandEngine', () => {
     expect(b.mode).toBe('minor');
   });
 
+  it('ACG PIANOSONG 默认偏向小调，但仍保留大调种子的多样性', () => {
+    const modes = Array.from({ length: 256 }, (_, seed) =>
+      buildBandSpec({ seed, styleHint: 'acg', mood: 'lyrical', targetDuration: 90 }).mode,
+    );
+    const minorCount = modes.filter((mode) => mode === 'minor').length;
+    const majorCount = modes.length - minorCount;
+    expect(minorCount).toBeGreaterThan(majorCount);
+    expect(majorCount).toBeGreaterThan(0);
+  });
+
   it('不同 seed 出不同 key(seed 派生 → 调性多样)', () => {
     const keys = new Set<number>();
     for (let s = 0; s < 24; s++) keys.add(buildBandSpec({ seed: s, styleHint: 'pop', mood: 'x', targetDuration: 60 }).key);
@@ -54,13 +64,20 @@ describe('band/bandEngine', () => {
     }
   });
 
-  it('POP/RNB/LOFI/JAZZ 默认都有 drum(鼓手打法交给 DrumPerformanceContract)', () => {
-    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+  it('POP/RNB/LOFI 默认都有 drum；JAZZ 固定 quartet rhythm section 且保留大小调', () => {
+    for (const style of ['pop', 'rnb', 'lofi']) {
       for (let seed = 0; seed < 32; seed++) {
         const spec = buildBandSpec({ seed, styleHint: style, mood: 'x', targetDuration: 60 });
         expect(spec.instrumentPool, `${style} seed ${seed}`).toContain('drum');
       }
     }
+    const jazzModes = new Set<string>();
+    for (let seed = 0; seed < 32; seed++) {
+      const jazz = buildBandSpec({ seed, styleHint: 'jazz', mood: 'x', targetDuration: 60 });
+      expect(jazz.instrumentPool).toEqual(['bass', 'comp', 'lead', 'drum']);
+      jazzModes.add(jazz.mode);
+    }
+    expect(jazzModes).toEqual(new Set(['major', 'minor']));
   });
 
   it('不同 style/seed → 编制大小或乐器不同(乐器要素随 seed)', () => {

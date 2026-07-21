@@ -9,6 +9,8 @@ coverage/
 scripts/*-output*.json
 scripts/output/
 scripts/*.h
+__pycache__/
+*.py[cod]
 
 # Claude Code 本地设置（机器/会话特定，不应提交）
 .claude/settings.local.json

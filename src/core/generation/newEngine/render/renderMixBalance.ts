@@ -9,6 +9,7 @@
 
 import { ticks } from '../foundation';
 import type { InstrumentRole, TrackIR, TrackMix } from '../ir/MusicalIR';
+import { DREAM5504_DEFAULT_CHANNEL_VOLUME, isDream5504DryBaselineStyle } from '../knowledge/gmMixProfile';
 
 interface LeadCompPolicy {
   targetRatio: number;
@@ -31,21 +32,42 @@ const MAX_SPLIT_SCALE = 1.38;
 const MIN_SPLIT_SCALE = 1 / MAX_SPLIT_SCALE;
 const GUITAR_COMP_VOLUME_CAP = 58;
 const GUITAR_LEAD_VOLUME_CAP = 72;
-const FM_EP_COMP_VOLUME_CAP = 80;
 const MALLET_LEAD_VOLUME_CAP = 74;
+// ACG is one scored piano, not three independently amplified instruments.
+// Keep a small fixed CC7 margin on the middle/top hands so a grammar-authored
+// return dyad can arrive over its rolled comp and left-hand root without
+// consuming the hardware drive margin.  Bass deliberately remains untouched:
+// it is the piano score's harmonic root rather than an optional backing bus.
+// This is a TrackMix/output contract only; it never rewrites PianoScorePlan
+// NoteIR (pitch, timing, count, or duration).
+// True score-authored blocks can now coincide with lead dyads.  Leave a
+// little more CC7 margin than the old all-roll arrangement so that the same
+// note score remains safe on the shared hardware output bus.
+const ACG_PIANO_UPPER_HAND_HEADROOM_SCALE = 0.92;
 
 const POLICY: Record<string, LeadCompPolicy> = {
   // YD3411 小喇叭中频效率高:让 comp+lead 做前景,利用钢琴/和声主体频段,而不是把能量交给鼓/pad。
   // 2026-07-13:Q+R 与 Q+H 同链路试听后,lead 需要再稍微站前一点。只抬前景比例和 lead 下限,
   // 不提高 CC7 上限,避免浏览器/ESP32 端进入削波;comp caps 仍在后面保护吉他和 GM5 电钢。
-  pop:  { targetRatio: 1.14, minRatio: 0.88, maxRatio: 1.85, leadRange: [84, 100], compRange: [80, 94] },
+  pop:  { targetRatio: 1.14, minRatio: 0.88, maxRatio: 1.85, leadRange: [78, 100], compRange: [72, 94] },
   jazz: { targetRatio: 1.24, minRatio: 0.95, maxRatio: 2.45, leadRange: [86, 100], compRange: [78, 94] },
-  lofi: { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.90, leadRange: [78, 98], compRange: [72, 94] },
+  lofi: { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.90, leadRange: [78, 100], compRange: [70, 94] },
   rnb:  { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.75, leadRange: [86, 100], compRange: [64, 84] },
   // ★ P2 mg fidelity:ACG = melody-first(旋律浮上,comp 是空气 pp)。旧策略 comp-forward(0.90/comp CC7 80-98)
   //   与 normalizeAcgDynamics(lead86/comp29)直接矛盾 → 会 boost comp CC7 抢回,抵消 pp 意图。改成 lead-forward:
   //   lead CC7 高、comp CC7 中(air 但仍可闻),ratio 允许强 lead-forward(velocity 秩序天然使 lead≫comp)。
-  acg:  { targetRatio: 1.40, minRatio: 1.05, maxRatio: 4.50, leadRange: [86, 100], compRange: [90, 100] },
+  // ACG phrase scoring now permits a real vertical arrival under a lead dyad;
+  // unlike the old all-roll bed, that can briefly stack several middle-hand
+  // voices at the same tick.  Reserve output headroom by keeping the middle
+  // hand below the top-line ceiling in dense sections.  This is CC7-only
+  // hardware protection, not a NoteIR carve: the authored block still sounds
+  // as a block and the lead remains the top piano hand.
+  // The lower middle-hand bound is deliberately 80 (not 82): after the
+  // shared-piano headroom trim that remains a 92/74 top/middle split.  It
+  // keeps a sustained four-note middle block from overtaking an active
+  // cantabile top line while remaining comfortably audible as the piano's
+  // inner voice.
+  acg:  { targetRatio: 1.40, minRatio: 1.05, maxRatio: 4.50, leadRange: [86, 100], compRange: [80, 92] },
 };
 
 const DEFAULT_POLICY: LeadCompPolicy = {
@@ -113,38 +135,39 @@ function isGuitarProgram(program: number | undefined): boolean {
   return program !== undefined && program >= 24 && program <= 31;
 }
 
-function isFmEpProgram(program: number | undefined): boolean {
-  return program === 5;
-}
-
 function isMalletLeadProgram(program: number | undefined): boolean {
   return program === 11 || program === 12 || program === 107 || program === 108;
 }
 
-function shouldCapFmEpComp(style: string): boolean {
-  const s = (style ?? '').toLowerCase();
-  return s === 'pop' || s === 'lofi' || s === 'rnb';
-}
-
 function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix, style: string): TrackMix {
-  if (track.role !== 'comp' && track.role !== 'lead') return mix;
+  if (isDream5504DryBaselineStyle(style)) {
+    return {
+      ...mix,
+      volume: DREAM5504_DEFAULT_CHANNEL_VOLUME,
+      reverb: 0,
+      chorus: 0,
+      ...(mix.delay === undefined ? {} : { delay: 0 }),
+    };
+  }
+  let out = mix;
+  if ((style ?? '').toLowerCase() === 'acg' && (track.role === 'comp' || track.role === 'lead')) {
+    out = { ...out, volume: clampInt(out.volume * ACG_PIANO_UPPER_HAND_HEADROOM_SCALE, 0, 127) };
+  }
+  if (track.role !== 'comp' && track.role !== 'lead') return out;
   const program = programAt(track, tick);
   if (track.role === 'lead' && isGuitarProgram(program)) {
-    const volume = Math.min(mix.volume, GUITAR_LEAD_VOLUME_CAP);
-    return volume === mix.volume ? mix : { ...mix, volume };
+    const volume = Math.min(out.volume, GUITAR_LEAD_VOLUME_CAP);
+    return volume === out.volume ? out : { ...out, volume };
   }
   if (track.role === 'lead' && isMalletLeadProgram(program)) {
-    const volume = Math.min(mix.volume, MALLET_LEAD_VOLUME_CAP);
-    return volume === mix.volume ? mix : { ...mix, volume };
+    const volume = Math.min(out.volume, MALLET_LEAD_VOLUME_CAP);
+    return volume === out.volume ? out : { ...out, volume };
   }
-  if (track.role !== 'comp') return mix;
-  const cap =
-    isGuitarProgram(program) ? GUITAR_COMP_VOLUME_CAP
-    : isFmEpProgram(program) && shouldCapFmEpComp(style) ? FM_EP_COMP_VOLUME_CAP
-    : undefined;
-  if (cap === undefined) return mix;
-  const volume = Math.min(mix.volume, cap);
-  return volume === mix.volume ? mix : { ...mix, volume };
+  if (track.role !== 'comp') return out;
+  const cap = isGuitarProgram(program) ? GUITAR_COMP_VOLUME_CAP : undefined;
+  if (cap === undefined) return out;
+  const volume = Math.min(out.volume, cap);
+  return volume === out.volume ? out : { ...out, volume };
 }
 
 function boundaryTicks(tracks: readonly TrackIR[], ctx: RenderMixBalanceContext): number[] {
@@ -241,6 +264,32 @@ export function leadCompWetEnergyRatio(tracks: readonly TrackIR[], ctx: RenderMi
 }
 
 export function applyRenderMixBalance(tracks: readonly TrackIR[], ctx: RenderMixBalanceContext): TrackIR[] {
+  // Dream 四个正式多轨风格不做音色/角色 CC7 校平：每次音色进入通道都明确
+  // 恢复 Firm5504-EK 默认 CC7=100。这里只保留 tick 0 和真正 Program Change
+  // 同拍的刷新；段落表情由力度与 CC11 承担，杜绝通道推子随段落跳变。
+  if (isDream5504DryBaselineStyle(ctx.style)) {
+    return tracks.map((track) => {
+      const initialRaw = mixAt(track, 0) ?? track.mix;
+      const initialMix = initialRaw ? capMixForTrack(track, 0, initialRaw, ctx.style) : undefined;
+      if (!initialMix) return { ...track };
+
+      const mixChanges = (track.programChanges ?? [])
+        .filter((change) => (change.atTick as number) > 0 && (change.atTick as number) < ctx.durationTicks)
+        .map((change) => {
+          const tick = change.atTick as number;
+          const exactMix = track.mixChanges?.find((mixChange) => (mixChange.atTick as number) === tick)?.mix;
+          const rawMix = exactMix ?? mixAt(track, tick) ?? initialMix;
+          return { atTick: ticks(tick), mix: capMixForTrack(track, tick, rawMix, ctx.style) };
+        });
+
+      return {
+        ...track,
+        mix: initialMix,
+        mixChanges: mixChanges.length ? mixChanges : undefined,
+      };
+    });
+  }
+
   const bounds = boundaryTicks(tracks, ctx);
   const lead = tracks.find((t) => t.role === 'lead');
   const comp = tracks.find((t) => t.role === 'comp');

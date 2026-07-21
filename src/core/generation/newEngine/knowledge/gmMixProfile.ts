@@ -41,7 +41,7 @@ const SONG_SPACE_PROFILES: Record<SpaceProfile, SongSpaceProfile> = {
   lofiTapeRoom:     { id: 'lofiTapeRoom',     reverbTime: 0.42, reverbLevel: 0.30, predelayMs: 10, damping: 0.66, chorusLfoHz: 0.4, chorusDepth: 0.18, chorusBaseDelay: 10, delayMode: 'eighth',        delayFeedback: 0.12 }, // dusty but controlled on hardware shared FX
   rnbPlateRoom:     { id: 'rnbPlateRoom',     reverbTime: 0.52, reverbLevel: 0.36, predelayMs: 20, damping: 0.58, chorusLfoHz: 0.7, chorusDepth: 0.16, chorusBaseDelay: 8, delayMode: 'dotted-eighth',  delayFeedback: 0.10 },
   jazzClub:         { id: 'jazzClub',         reverbTime: 0.38, reverbLevel: 0.26, predelayMs: 18, damping: 0.58, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
-  dryFront:         { id: 'dryFront',         reverbTime: 0.25, reverbLevel: 0.20, predelayMs: 5,  damping: 0.60, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.10 },
+  dryFront:         { id: 'dryFront',         reverbTime: 0.25, reverbLevel: 0.20, predelayMs: 5,  damping: 0.60, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
   syntheticSoftRoom:{ id: 'syntheticSoftRoom',reverbTime: 0.55, reverbLevel: 0.42, predelayMs: 10, damping: 0.50, chorusLfoHz: 0.8, chorusDepth: 0.24, chorusBaseDelay: 10, delayMode: 'quarter',       delayFeedback: 0.14 },
 };
 
@@ -53,6 +53,16 @@ export function songSpaceProfileById(id: string | undefined): SongSpaceProfile |
   return isSpaceProfile(id) ? SONG_SPACE_PROFILES[id] : undefined;
 }
 
+const DREAM5504_DRY_BASELINE_STYLES = new Set(['pop', 'lofi', 'jazz', 'rnb']);
+
+/** Firm5504-EK: MIDI Channel Volume (CC7) power-up default. */
+export const DREAM5504_DEFAULT_CHANNEL_VOLUME = 100;
+
+/** 四个正式多轨风格先走 Dream 5504 干声安全基线，空间 CC 待逐音色硬件验证后再开放。 */
+export function isDream5504DryBaselineStyle(style: string | undefined): boolean {
+  return DREAM5504_DRY_BASELINE_STYLES.has((style ?? '').toLowerCase());
+}
+
 /** ★ 一首一个完整 song space(器配-owned 真源)。render 消费 reverb/chorus send;ESP32 消费全 FX 参数。 */
 export function songSpaceProfile(style: string, world: TimbreWorld | undefined, hasPad: boolean): SongSpaceProfile {
   return SONG_SPACE_PROFILES[pickSpaceProfile(style, world, hasPad)];
@@ -60,20 +70,12 @@ export function songSpaceProfile(style: string, world: TimbreWorld | undefined, 
 
 /** ★ Layer 2 delay 策略(拍板 D):CC95 send。GM5 键盘电钢槽位的尾音交给乐器 release + shared room,不再叠 delay。 */
 export function delaySendForRole(style: string, role: InstrumentRoleName, program: number): number {
-  const s = style.toLowerCase();
-  if (role === 'bass' || role === 'drum' || role === 'pad') return 0; // 拍板:bass/drum off · pad mostly off
-  if (s === 'jazz' || s === 'blues' || s === 'acg') return 0; // club/cinematic piano 空间不走共享 echo,避免 comp/lead 尾巴糊成一团。
-  const isElectricGrandSlot = program === 5;
-  const isEP = program === 4 || isElectricGrandSlot; // GM4 Rhodes EP1 · GM5 GU Electric Grand slot
-  const isGuitar = program >= 24 && program <= 31;
-  if (role === 'comp' && isGuitar) return 0; // 吉他扫拨自身 already busy:不再进共享 delay,避免 delay + reverb 多重叠加。
-  if (isElectricGrandSlot) return 0; // 键盘电钢槽位保干,避免尾巴在 delay/reverb 中堆噪。
-  if (role === 'lead') {
-    if (s === 'rnb' || isEP) return 26;  // rnb / 非 GM5 EP lead:dotted-eighth/eighth,very low
-    if (s === 'lofi') return 22;         // lofi lead:dusty,very low
-    return 0;
-  }
-  if (role === 'comp') return s === 'lofi' ? 22 : 0; // lofi comp:dusty;其余 off
+  void style;
+  void role;
+  void program;
+  // Dream 5504 官方 GM2 MIDI 固件没有确认 CC95 song-delay send。
+  // 四个正式风格不再借风格名注入额外 CC；以后若启用 delay，必须由有官方
+  // 证据的具体音色/固件能力显式声明。
   return 0;
 }
 
@@ -82,12 +84,13 @@ const clampCC = (v: number): number => Math.max(0, Math.min(127, Math.round(v)))
 /** 一首一个空间(style + timbreWorld + 是否有 pad)。 */
 export function pickSpaceProfile(style: string, world: TimbreWorld | undefined, hasPad: boolean): SpaceProfile {
   const s = style.toLowerCase();
-  if (s === 'jazz' || s === 'blues') return 'jazzClub';
-  if (s === 'lofi') return 'lofiTapeRoom';
-  if (s === 'rnb') return 'rnbPlateRoom';
   // ★ ACG(2026-07-02):久石让/坂本电影钢琴 = 空间感(hall/room),不能 dry-front。去 pad 后靠钢琴自身混响托空间,
   //   否则落进 !hasPad→dryFront(rev×0.62,40/47→25/29 变干)—— 与 MG 空旷 cinematic piano 相反。→ ACG 恒 warmRoom。
   if (s === 'acg') return 'popWarmRoom';
+  // POP/LOFI/JAZZ/RNB 不再拥有风格总线空间。统一从 dryFront 起步，
+  // 每件乐器的 CC91/93 只由最终 Program profile 决定。
+  if (s === 'pop' || s === 'lofi' || s === 'jazz' || s === 'rnb') return 'dryFront';
+  if (s === 'blues') return 'jazzClub';
   if (world === 'syntheticSoft') return 'syntheticSoftRoom';
   if (!hasPad) return 'dryFront'; // pop/其它 无 pad → 更干靠前
   return 'popWarmRoom';
@@ -118,12 +121,11 @@ const LEAD_PRESENCE_BOOST = 14;
 const ACG_LEAD_BOOST = -6;   // piano lead 88−6=82 · 旋律仍在,但不碾 LH/comp
 const ACG_COMP_LIFT = 13;    // piano comp 90+13=103→100 · comp 高空气抬可听
 const ACG_BASS_LIFT = -4;    // 82−4=78 · bassline 可闻,但低于钢琴主体
-const LOFI_BASS_LIFT = 6;    // lofi 的 EP/质感层会遮低频主体,给 bass 小幅前移
-const JAZZ_BASS_LIFT = -11;  // trio/四重奏少轨时 upright bass bus share 天然偏大;Dexter sax 句法更留白,再收一点避免压住 lead/comp
 const MODAL_BASS_LIFT = -4;  // modal 常少轨/慢音值,稍收 bass 避免持续低频占满小腔体
 
-// 程序专属覆盖(directive 各 GM 族代表值;只填该 program 在该 role 的 reverb/chorus/volume,pan 走规则)。
-//   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
+// 非 Dream 四个正式干声风格的程序专属覆盖。POP/LOFI/JAZZ/RNB 在
+// mixForProgram 入口直接返回官方默认 CC7，不读取此表的 volume。
+// key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
 type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
 const PROGRAM_MIX: Record<number, ProgOverride> = {
   // Piano 0:YD3411 中频优势在钢琴主体区,大钢琴应是 comp/lead 前景核心。
@@ -142,8 +144,7 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 58, reverb: 18, chorus: 0 } }, // 卡林巴:轻拨弦热源,少进空间,避免小喇叭高频谐振
   107: { lead: { volume: 80, reverb: 44, chorus: 10 } }, // 古筝(拨弦,略带空间)
-  // 吉他 24/25:当前硬件链路比钢琴/电钢热约 4-8dB;先做音源级 CC7 校平,
-  // render 后平衡器还有二次 cap,避免扫拨/复音在设备按钮和整编里突然跳前、滋滋。
+  // 这些旧 profile 仅供其它风格；Dream 四个正式风格不会消费其 CC7。
   24: { comp: { volume: 56, reverb: 14, chorus: 0 }, lead: { volume: 58, reverb: 28, chorus: 0 } }, // 尼龙吉他 comp:干、短、保拨弦 attack
   25: { comp: { volume: 56, reverb: 14, chorus: 0 }, lead: { volume: 58, reverb: 30, chorus: 0 } }, // 民谣/钢弦木吉他 comp 不进厚空间,避免扫拨糊
   40: { lead: { volume: 72, reverb: 56, chorus: 8 } },  // 小提琴:留 room,音量低于 sax,避免高频顶出
@@ -185,6 +186,16 @@ export function mixForProgram(args: {
 }): RoleMix {
   const { role, program, hasPad, space } = args;
   const base = { ...ROLE_BASE[role] };
+
+  // Dream 四个正式风格完全绕过 role/program 音量表。明确重发默认值，既不
+  // 依赖板子当前通道状态，也不改变 GMBK 固化音色之间的原始响度关系。
+  if (isDream5504DryBaselineStyle(args.style)) {
+    if (role === 'lead' || role === 'bass' || role === 'drum') base.pan = 64;
+    else if (role === 'comp') base.pan = hasPad ? 52 : 60;
+    else if (role === 'pad') base.pan = 88;
+    return { volume: DREAM5504_DEFAULT_CHANNEL_VOLUME, pan: clampCC(base.pan), reverb: 0, chorus: 0 };
+  }
+
   const ov = PROGRAM_MIX[program]?.[role];
   if (ov) Object.assign(base, ov);
 
@@ -216,17 +227,15 @@ export function mixForProgram(args: {
   // ★ melody-forward:lead 抬 CC7 让旋律明显在场(放最后 → 覆盖所有 program 基底 + 覆盖值)。clampCC 兜 127。
   //   ★ ACG 例外:solo piano 的 lead 减压 + comp/bass 抬(见 ACG_* 常量),让 RH 不碾 LH(有效响度均衡)。
   const isAcg = args.style.toLowerCase() === 'acg';
-  const isLofi = args.style.toLowerCase() === 'lofi';
-  const isJazz = args.style.toLowerCase() === 'jazz' || args.style.toLowerCase() === 'blues';
+  const isJazz = args.style.toLowerCase() === 'blues';
   const isModal = args.style.toLowerCase() === 'modal';
   if (role === 'lead') base.volume = base.volume + (isAcg ? ACG_LEAD_BOOST : LEAD_PRESENCE_BOOST);
   if (isAcg && role === 'comp') base.volume = base.volume + ACG_COMP_LIFT;
   if (isAcg && role === 'bass') base.volume = base.volume + ACG_BASS_LIFT;
-  if (isLofi && role === 'bass') base.volume = base.volume + LOFI_BASS_LIFT;
-  if (isJazz && role === 'bass') base.volume = base.volume + JAZZ_BASS_LIFT;
+  if (isJazz && role === 'bass') base.volume = base.volume - 11;
   if (isModal && role === 'bass') base.volume = base.volume + MODAL_BASS_LIFT;
 
-  // ★ Layer 2:delay(CC95)send —— 极克制策略(拍板 D)。0 时省略(不发 CC95)。reverb/chorus 值不变(保浏览器平衡)。
+  // ★ Layer 2:delay(CC95)send —— 官方未确认，当前恒关闭。
   const delay = delaySendForRole(args.style, role, program);
   return { volume: clampCC(base.volume), pan: clampCC(base.pan), reverb: clampCC(base.reverb), chorus: clampCC(base.chorus), ...(delay > 0 ? { delay: clampCC(delay) } : {}) };
 }

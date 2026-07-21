@@ -4,7 +4,9 @@ import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { createRandomContext } from '../foundation';
 import { playableRangeForRole } from '../knowledge/instruments';
-import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, DREAM5504_VOICE_WORLD_COUNTS, isGMBK5X128VoiceAddressable } from '../../../sound/GMBK5X128Voices';
+import { JAZZ_4_4_ARCHETYPE_ID } from '../arranger/jazzArchetypePlanner';
+import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, isGMBK5X128VoiceAddressable } from '../../../sound/GMBK5X128Voices';
+import { DREAM5504_DRUM_KIT_COUNT, DREAM5504_MODERN_MELODIC_VOICE_COUNT, DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT, DREAM5504_VOICE_FAMILY_COUNTS } from './dreamVoiceProfiles';
 
 describe('instrumental/instrumentalPlanner', () => {
   const band = buildBandSpec({ seed: 1, styleHint: 'pop', mood: 'build', targetDuration: 120 });
@@ -33,6 +35,45 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(plan.registerByRole.lead.highMidi).toBeLessThanOrEqual(leadHi);
     expect(plan.registerByRole.lead.lowMidi).toBeLessThanOrEqual(plan.registerByRole.lead.highMidi);
     expect(plan.registerByRole.comp.highMidi as number).toBeLessThan(plan.registerByRole.lead.highMidi as number);
+  });
+
+  it('原声钢琴由器配层按段落下发低频 CC11 乐句表情；非钢琴不生成控制器计划', () => {
+    const pianoBand = buildBandSpec({ seed: 1662, styleHint: 'pop', mood: 'build', targetDuration: 120 });
+    const pianoArrangement = buildArrangementPlan(pianoBand);
+    const pianoPlan = buildInstrumentationPlan(pianoBand, pianoArrangement);
+    expect(pianoPlan.roleProgram.comp).toBe(0);
+    const events = pianoPlan.controllerPlanByRole.comp?.events ?? [];
+    expect(events.length).toBeGreaterThan(0);
+    expect(new Set(events.map((event) => event.controller))).toEqual(new Set([11]));
+    expect(events.map((event) => event.value).every((value) => [70, 80, 90, 100].includes(value))).toBe(true);
+    expect(events.map((event) => event.value)).toEqual(expect.arrayContaining([70, 90]));
+    expect(events.every((event) => ['piano-phrase-expression', 'piano-motion-expression'].includes(event.reason))).toBe(true);
+    expect(pianoPlan.controllerPlanByRole.pad).toBeUndefined();
+  });
+
+  it('JAZZ 原声钢琴 comp 消费总谱：切分演奏段禁 CC64、按小节用 CC11；抒情收束段才保留换和声踏板', () => {
+    const jazzBand = buildBandSpec({ seed: 9, styleHint: 'jazz', mood: 'build', targetDuration: 96 });
+    const jazzArrangement = buildArrangementPlan(jazzBand, { rng: createRandomContext(9) });
+    const jazzPlan = buildInstrumentationPlan(jazzBand, jazzArrangement, createRandomContext(9).substream('timbre'));
+    expect([0, 1, 3]).toContain(jazzPlan.roleProgram.comp);
+    const fastSections = jazzArrangement.sections.filter((section) =>
+      jazzArrangement.rolePerformanceBySection.comp[section.id].keyboardMotion === 'syncopated-comp');
+    const lyricalSections = jazzArrangement.sections.filter((section) =>
+      jazzArrangement.rolePerformanceBySection.comp[section.id].keyboardMotion === 'lyrical');
+    expect(fastSections.length).toBeGreaterThan(0);
+    expect(lyricalSections.length).toBeGreaterThan(0);
+    for (const section of fastSections) {
+      expect(jazzPlan.pedalPlanByRole.comp?.disabledBySection[section.id]).toBe('fast-keyboard-motion');
+    }
+    expect((jazzPlan.pedalPlanByRole.comp?.events ?? []).every((event) =>
+      lyricalSections.some((section) => section.id === event.sectionId))).toBe(true);
+    const cc11 = jazzPlan.controllerPlanByRole.comp?.events ?? [];
+    expect(cc11.length).toBe(
+      fastSections.reduce((sum, section) => sum + section.bars, 0) + lyricalSections.length,
+    );
+    expect(cc11.filter((event) => fastSections.some((section) => section.id === event.sectionId))
+      .every((event) => event.reason === 'piano-motion-expression')).toBe(true);
+    expect(cc11.every((event) => event.controller === 11 && [70, 80, 90, 100].includes(event.value))).toBe(true);
   });
 
   it('hookAnchorSlots:覆盖所有 hook 句,主 hook(chorus)anchorRequired', () => {
@@ -210,9 +251,12 @@ describe('instrumental/instrumentalPlanner', () => {
   it('器配计划消费完整 Dream 5504 硬件世界，而风格链仍保留自身的音乐性约束', () => {
     expect(plan.hardwareVoiceWorld).toEqual({
       targetId: DREAM5504_TARGET_ID,
-      voiceCounts: DREAM5504_VOICE_WORLD_COUNTS,
+      melodicVoiceCount: DREAM5504_MODERN_MELODIC_VOICE_COUNT,
+      drumKitCount: DREAM5504_DRUM_KIT_COUNT,
+      excludedMt32CompatibilityVoiceCount: DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT,
+      familyCounts: DREAM5504_VOICE_FAMILY_COUNTS,
     });
-    expect(plan.orchestrationChain.decisions.some(decision => decision.includes('Dream5504 world keyboard='))).toBe(true);
+    expect(plan.orchestrationChain.decisions.some(decision => decision.includes('Dream5504 modern-GM melodic='))).toBe(true);
   });
 
   it('★ ACG 前景空间保持键盘主导,不把 chorus 统一到 mallet/kalimba 上', () => {
@@ -240,19 +284,27 @@ describe('instrumental/instrumentalPlanner', () => {
     }
   });
 
-  it('★ 首段 planned comp delay 不再同时宣称必须有 downbeat comp anchor', () => {
-    const seed = 999;
-    const b = buildBandSpec({ seed, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(seed), targetDuration: 120 });
-    const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
-    const first = arr.sections[0];
-    const firstRoles = ip.activeRolesBySection[first.id] ?? [];
-
-    expect(arr.openingGesture.sectionId).toBe(first.id);
-    expect(arr.openingGesture.roleDelayBars.comp).toBeGreaterThan(0);
-    expect(firstRoles).toContain('comp');
-    expect(firstRoles).not.toContain('pad');
-    expect(ip.needsDownbeatCompAnchorBySection[first.id]).toBe(false);
+  it('★ ACG PIANOSONG 每个实际段落保留低根与中部琶音：允许 motif-first 直接入主题', () => {
+    const requiredTags = new Set(['setup', 'head', 'build', 'headOut', 'tag']);
+    for (const seed of [0, 7, 42, 99]) {
+      const b = buildBandSpec({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      const seen = new Set<string>();
+      for (const section of arr.sections) {
+        if (!requiredTags.has(section.functionTag ?? '')) continue;
+        seen.add(section.functionTag!);
+        const roles = ip.activeRolesBySection[section.id] ?? [];
+        expect(roles, `seed ${seed} ${section.id}=${section.functionTag} 左手低根`).toContain('bass');
+        expect(roles, `seed ${seed} ${section.id}=${section.functionTag} 中部琶音`).toContain('comp');
+      }
+      // Hidden ACG arrangement profiles may deliberately start with the motif
+      // instead of a setup prelude. The invariant is the three musical anchors
+      // and the piano-trio ownership of every section that actually exists.
+      for (const tag of ['head', 'headOut', 'tag']) {
+        expect(seen, `seed ${seed} ACG 必备段 ${tag}`).toContain(tag);
+      }
+    }
   });
 
   it('★ ACG PIANOSONG 每首只选一组官方 CC0+Program，三轨/所有段完全一致且跨 seed 有受控调色', () => {
@@ -342,20 +394,24 @@ describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
     }
   });
 
-  it('RNB/FM 电钢与 Jazz/Sax 的 bank 在器配层已经下发,不是 render 侧猜测', () => {
+  it('RNB 的 St.FM 只给 comp、lead 使用独立主音色；Jazz/Sax bank 仍由器配层下发', () => {
     const rnbBase = buildBandSpec({ seed: 0, styleHint: 'rnb', mood: 'build', targetDuration: 90 });
     const rnbBand = { ...rnbBase, roleProgram: { ...rnbBase.roleProgram, lead: 5, comp: 5, bass: 38 } };
     const rnbArr = buildArrangementPlan(rnbBand, { rng: createRandomContext(0) });
     const rnbIp = buildInstrumentationPlan(rnbBand, rnbArr, createRandomContext(0).substream('timbre'));
-    expect(rnbIp.roleProgram.lead).toBe(5);
-    expect(rnbIp.roleBank.lead).toBe(16);
+    expect(rnbIp.roleProgram.lead).toBe(0);
+    expect(rnbIp.roleBank.lead).toBe(0);
     expect(rnbIp.roleBank.comp).toBe(16);
-    expect(rnbIp.voiceNameByRole.lead).toBe('St.FM Electric Piano');
-    expect(rnbIp.bankByRoleSection.lead[rnbArr.sections[0].id]).toBe(16);
+    expect(rnbIp.voiceNameByRole.lead).toBe('Acoustic Grand Piano');
+    expect(rnbIp.voiceNameByRole.comp).toBe('St.FM Electric Piano');
+    expect(rnbIp.bankByRoleSection.lead[rnbArr.sections[0].id]).toBe(0);
 
     const jazzBase = buildBandSpec({ seed: 8, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
     const jazzBand = { ...jazzBase, roleProgram: { ...jazzBase.roleProgram, lead: 66, comp: 0, bass: 32, drum: 40 } };
-    const jazzArr = buildArrangementPlan(jazzBand, { rng: createRandomContext(8) });
+    const jazzArr = buildArrangementPlan(jazzBand, {
+      rng: createRandomContext(8),
+      jazzArchetypeId: JAZZ_4_4_ARCHETYPE_ID,
+    });
     const jazzIp = buildInstrumentationPlan(jazzBand, jazzArr, createRandomContext(8).substream('timbre'));
     expect(jazzIp.roleProgram.lead).toBe(66);
     expect(jazzIp.roleBank.lead).toBe(8);
@@ -409,7 +465,10 @@ describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
   it('吹奏手势计划由器配层随最终 program 下发,render 不再自行猜 GM 号', () => {
     const b0 = buildBandSpec({ seed: 8, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
     const b = { ...b0, roleProgram: { ...b0.roleProgram, lead: 67, comp: 4, bass: 32, drum: 40 } };
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(8) });
+    const arr = buildArrangementPlan(b, {
+      rng: createRandomContext(8),
+      jazzArchetypeId: JAZZ_4_4_ARCHETYPE_ID,
+    });
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(8).substream('timbre'));
     expect(ip.roleProgram.lead).toBe(67);
     expect(ip.gestureExpressionByRole.lead.kind).toBe('sax-breath-legato');
@@ -417,6 +476,66 @@ describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
     expect(ip.gestureExpressionByRole.comp.kind).toBe('keyboard-touch');
     expect(ip.gestureExpressionByRole.bass.kind).toBe('bass-walk');
     expect(ip.gestureExpressionByRole.drum.kind).toBe('drum-rudiment');
+  });
+
+  it('原声调试调色板在最终器配入口封住非原声音色与 808 回流', () => {
+    const band = buildBandSpec({ seed: 5, styleHint: 'rnb', mood: 'build', targetDuration: 120 });
+    const arrangement = buildArrangementPlan(band, { rng: createRandomContext(5) });
+    const plan = buildInstrumentationPlan(
+      band,
+      arrangement,
+      createRandomContext(5).substream('timbre'),
+      undefined,
+      undefined,
+      'acoustic-debug',
+    );
+
+    expect(plan.orchestrationChain.profileId).toBe('acoustic-debug');
+    expect(arrangement.acousticInstrumentationIntent?.id).toBe('rnb-piano-strings');
+    if (band.instrumentPool.includes('comp')) expect([0, 1, 3]).toContain(plan.roleProgram.comp);
+    if (band.instrumentPool.includes('lead')) expect([0, 1, 3, 40, 41, 42]).toContain(plan.roleProgram.lead);
+    if (band.instrumentPool.includes('bass')) expect([32, 43]).toContain(plan.roleProgram.bass);
+    if (band.instrumentPool.includes('pad')) expect([44, 48, 49]).toContain(plan.roleProgram.pad);
+    if (band.instrumentPool.includes('drum')) expect([0, 8, 16, 32, 40]).toContain(plan.roleProgram.drum);
+    const acousticAddressesByRole = {
+      comp: [[0, 0], [0, 1], [0, 3]],
+      lead: [[0, 0], [0, 1], [0, 3], [0, 40], [0, 41], [0, 42]],
+      bass: [[0, 32], [0, 43]],
+      pad: [[0, 44], [0, 48], [0, 49], [8, 48]],
+    } as const;
+    const melodicRoles = band.instrumentPool.filter((role): role is 'comp' | 'lead' | 'bass' | 'pad' => role !== 'drum');
+    for (const role of melodicRoles) {
+      const bank = plan.roleBank[role] ?? 0;
+      expect(acousticAddressesByRole[role]).toContainEqual([bank, plan.roleProgram[role]]);
+      for (const section of arrangement.sections) {
+        expect([plan.roleBank[role]]).toContain(plan.bankByRoleSection[role][section.id]);
+      }
+    }
+    if (band.instrumentPool.includes('pad')) {
+      expect(plan.voiceProfileByRole.pad?.expressionFamily).toBe('bowed-string');
+    }
+    for (const profile of Object.values(plan.voiceProfileByRole)) {
+      expect(profile?.performanceFamily).not.toBe('wind');
+      expect(profile?.performanceFamily).not.toBe('guitar');
+      expect(profile?.performanceFamily).not.toBe('synth');
+    }
+  });
+
+  it('ACG 原声模板重新锁成一架钢琴的三种手部职责', () => {
+    const acgBand = buildBandSpec({ seed: 17, styleHint: 'acg', mood: 'build', targetDuration: 90 });
+    const acgArrangement = buildArrangementPlan(acgBand, { rng: createRandomContext(17) });
+    const plan = buildInstrumentationPlan(
+      acgBand,
+      acgArrangement,
+      createRandomContext(17).substream('timbre'),
+      undefined,
+      undefined,
+      'acoustic-debug',
+    );
+    expect(acgArrangement.acousticInstrumentationIntent?.id).toBe('acg-piano-solo');
+    expect([0, 1, 3]).toContain(plan.roleProgram.comp);
+    expect(plan.roleProgram.lead).toBe(plan.roleProgram.comp);
+    expect(plan.roleProgram.bass).toBe(plan.roleProgram.comp);
   });
 
   it('所有在场角色都有最终 program;comp 必 canPlayComp;bass 必为 bass 家族或钢琴左手;pad 必 pad/持续', () => {
