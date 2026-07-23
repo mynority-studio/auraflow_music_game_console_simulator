@@ -10,6 +10,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as ts from 'typescript';
@@ -127,6 +128,8 @@ function extractOpeningCandidates(): Record<string, unknown>[] {
       const rdb: Record<string, number> = {};
       for (const p of candNode.properties) {
         const k = propName(p);
+        if (!['mode', 'drumEntry', 'textureEntry', 'roleDelayBars', 'pickupBars', 'intensity', 'weight'].includes(k))
+          throw new Error(`AST: OPNC 候选未知字段 '${k}'（防静默丢弃, Codex f4）`);
         const initz = (p as ts.PropertyAssignment).initializer;
         if (k === 'roleDelayBars') {
           if (!ts.isObjectLiteralExpression(initz)) throw new Error('AST: roleDelayBars 非对象');
@@ -275,6 +278,7 @@ function extractStyleIntent(): Record<string, unknown>[] {
       else if (k === 'bassTargetNotesPerBar') btnb = numArray(iz, 'bassTargetNotesPerBar');
       else if (k === 'leadTargetCoverage') ltc = numArray(iz, 'leadTargetCoverage');
       else if (k === 'leadMaxGapBeats') lmg = numLit(iz) ?? 0;
+      else if (k !== 'bassFamily') throw new Error(`AST: SINT 未知字段 '${k}'（bassFamily 死字段除外, Codex f4）`);
       // bassFamily: 删（deriveMusicIntentPlan 用 bassFamilyFromFloorBeats, 不读 prof.bassFamily）
     }
     return { style, defaultTextureFamily: dtf, bassTargetLo: btnb[0], bassTargetHi: btnb[1],
@@ -347,7 +351,26 @@ function extractNumListMap(sf: ts.SourceFile, name: string): { key: string; valu
   return init.properties.map((p) => ({ key: propName(p), values: numArray((p as ts.PropertyAssignment).initializer, `${name}[${propName(p)}]`) }));
 }
 
+// 冻结硬编码转录的真源函数 SHA（改函数体即失配 → 强制复审转录; Codex P2-0b f4）
+function fnSha(sf: ts.SourceFile, name: string): string {
+  let f: ts.FunctionDeclaration | undefined;
+  sf.forEachChild((n) => { if (ts.isFunctionDeclaration(n) && n.name?.text === name) f = n; });
+  if (!f) throw new Error(`fnSha: fn ${name} 未找到`);
+  return createHash('sha256').update(f.getText(sf), 'utf8').digest('hex');
+}
+
 describe('export afe org (v5.0 四风格五轨组织 → 声明式源, 私有)', () => {
+  it('freezes f4 硬编码转录真源函数 SHA（VBNK/PADC/ENDR/SINT-DEFAULT/FEVT-DEFAULT）', () => {
+    const frozen: [ts.SourceFile, string, string][] = [
+      [KI_SF, 'dream5504OrchestrationBank', '950178d17c2f233b585ced117b561d21d40f1fe6ea87fc98951785ebcc425bc9'], // VBNK 2 rule 逻辑
+      [PADC_SF, 'decidePadComp', 'f88f7346d96dbcb60b870c16636ac2cd51f340cb93a370f697eaf76cad1d1cf0'],           // PADC style 分支
+      [EDGE_SF, 'isLyricalMood', '256d979ac6a7b7150c797eed727b4d96788a3ae424d1395e1d220c9b983b1e04'],           // ENDR pop mood-alt
+      [SI_SF, 'styleIntentProfile', 'b9028b87d03d0a24d373a44ce01e73ce6934892eee752acd13dcd1243ce7abf0'],         // SINT DEFAULT ?? fallback
+      [FEV_SF, 'finalEventProfile', '3ddf09b22aca8f76b0b52d11fbcebbe2238be90eedb6f4a378310cb8e88dc9f7'],         // FEVT DEFAULT ?? fallback
+    ];
+    for (const [sf, name, sha] of frozen) expect(fnSha(sf, name)).toBe(sha);
+  });
+
   it('dumps org_instrumental (DARC/TXBF/OTPG/LDOP)', () => {
     mkdirSync(OUT_DIR, { recursive: true });
 
