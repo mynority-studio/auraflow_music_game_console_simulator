@@ -459,6 +459,31 @@ const CLAMP_ONE: Section[] = [
   { id: 'clampPeak', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
 ];
 
+// **pickup × intensity 1**（步5 变异测试暴露）：setup 段 → outro ⇒ pickup=true 但 fn=release、
+// intensity=1 ⇒ strong=false。此时 fillFamily 必须取 **pickup** 族而非 light 族
+// （pop: pop-tom-build vs pop-snare-pickup）——把 `pickup ? … : (strong ? …)` 的优先级写反即被抓。
+// **pickup × strong** 的 family 选择（步5 变异测试暴露）：21 合同里只有 jazz_smooth_backbeat
+// 的 pickup 族(rnb-pocket-turn) ≠ strong 族(pop-tom-build)；需要一条同时 pickup=true 且
+// strong=true 的边界（lead-in entry ⇒ pickup，fn=lift ⇒ intensity 2）才能区分二者的优先级。
+const PICKUP_STRONG: Section[] = [
+  { id: 'smoothVerse', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'smoothHook', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
+];
+
+const PICKUP_RELEASE: Section[] = [
+  { id: 'prSetup', role: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' },
+  { id: 'prOutro', role: 'outro', functionTag: 'outro', bars: 4, hookPolicy: 'none' },
+];
+
+// **turnaround 改写要重算 drumInteraction**（步5 变异测试暴露）：需要 ①段末 bar 的原 role ≠ turnaround
+// （段长非 4 的倍数）②该合同 familyForBar(turnaround)=pickup 与 timekeeper 的 halftime 标志不同。
+// ACG 族恰好满足：timekeeper=ballad-halftime(halftime) 而 pickup=pop-backbeat(无标志)
+// ⇒ structuralSnare 从 [2] 变 [1,3]。若改写后不重算 drumInteraction 即被抓。
+const ACG_REWRITE: Section[] = [
+  { id: 'acgSix', role: 'verse', functionTag: 'story', bars: 6, hookPolicy: 'light' },
+  { id: 'acgHook', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
+];
+
 const CLIMAX_CONST: Section[] = [
   { id: 'ccLead', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
   { id: 'ccPeak', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
@@ -673,6 +698,38 @@ const FIXTURES: Fixture[] = [
     entry: { clampLead: 'downbeat', clampPeak: 'lead-in' },
     opening: opening('clampLead'),
     options: { climaxMap: [{ sectionId: 'clampPeak', intensity: 1 }], fillVariantSeed: 83 },
+  },
+  {
+    name: 'jazz_smooth_pickup_strong_family',
+    note: 'jazz_smooth_backbeat 是唯一 pickup 族(rnb-pocket-turn) ≠ strong 族(pop-tom-build) 的合同；'
+      + 'lead-in entry ⇒ pickup=true 且 fn=lift ⇒ intensity 2(strong)，故 fillFamily 须取 **pickup** 族。'
+      + '把 `pickup ? … : (strong ? …)` 优先级写反即转红。',
+    sections: PICKUP_STRONG, contractId: uniformContract(PICKUP_STRONG, 'jazz_smooth_backbeat'),
+    energy: { smoothVerse: 0.5, smoothHook: 0.8 },
+    entry: { smoothVerse: 'downbeat', smoothHook: 'lead-in' },
+    opening: opening('smoothVerse'),
+    options: { climaxMap: [], fillVariantSeed: 101 },   /* 关掉回退高潮，令 fn 走 lift 而非 climax */
+  },
+  {
+    name: 'pop_setup_release_pickup_family',
+    note: 'setup 段 → outro：pickup=true 但 fn=release、intensity=1（strong=false）⇒ fillFamily 须取 '
+      + 'pickup 族(pop-tom-build)而非 light 族(pop-snare-pickup)；优先级写反即转红。',
+    sections: PICKUP_RELEASE, contractId: uniformContract(PICKUP_RELEASE, 'pop_radio_straight'),
+    energy: { prSetup: 0.4, prOutro: 0.35 },
+    entry: { prSetup: 'downbeat', prOutro: 'downbeat' },
+    opening: opening('prSetup'),
+    options: { fillVariantSeed: 89 },
+  },
+  {
+    name: 'acg_turnaround_rewrite_interaction',
+    note: 'ACG 合同（timekeeper=ballad-halftime 有 halftime 标志、pickup=pop-backbeat 无）+ 6 bar 段 ⇒ '
+      + '段末 bar 原 role=answer，被段界改写成 turnaround 后 familyForBar 换族，structuralSnare 由 [2] '
+      + '变 [1,3]。锁住「role 改写后必须重算 drumInteraction」。',
+    sections: ACG_REWRITE, contractId: uniformContract(ACG_REWRITE, 'acg_jpop_456_drive'),
+    energy: { acgSix: 0.5, acgHook: 0.8 },
+    entry: { acgSix: 'downbeat', acgHook: 'lead-in' },
+    opening: opening('acgSix'),
+    options: { fillVariantSeed: 97 },
   },
   {
     name: 'pop_climax_constant_precision',
@@ -1124,6 +1181,33 @@ describe('export afe groove score golden（P2-4c 步3）', () => {
         .toBe(FILL_FN_IDX.continuation);
       expect(trajOfSec(3).every((t) => t !== TRAJ_IDX.falling), 'ctrlFallA 不得 falling').toBe(true);
       expect(trajOfSec(5).every((t) => t !== TRAJ_IDX.rising), 'ctrlRiseA 不得 rising').toBe(true);
+    }
+    // pickup × strong：唯一 pickup≠strong 的合同上，须取 pickup 族
+    {
+      const ps = byName.get('jazz_smooth_pickup_strong_family')!;
+      const b = ps.expected.boundaries.find((x) => x.fromSectionIndex === 0 && x.toSectionIndex === 1)!;
+      expect(b.intensity, 'lift ⇒ intensity 2（strong）').toBe(2);
+      expect(b.drumFillFamily, 'pickup=true 优先 ⇒ rnb-pocket-turn（非 strong 的 pop-tom-build）')
+        .toBe(FILL_FAMILY_IDX['rnb-pocket-turn']);
+    }
+    // 步5 变异测试补缺：pickup×intensity1 的 family 选择 / turnaround 改写重算 drumInteraction
+    {
+      const pr = byName.get('pop_setup_release_pickup_family')!;
+      const b = pr.expected.boundaries.find((x) => x.fromSectionIndex === 0 && x.toSectionIndex === 1)!;
+      expect(b.fillFunction, 'next=outro ⇒ release').toBe(FILL_FN_IDX.release);
+      expect(b.intensity, 'release ⇒ intensity 1（strong=false）').toBe(1);
+      expect(b.drumFillFamily, 'pickup=true ⇒ 取 pickup 族 pop-tom-build')
+        .toBe(FILL_FAMILY_IDX['pop-tom-build']);
+      const acg = byName.get('acg_turnaround_rewrite_interaction')!;
+      const acgBars = acg.expected.bars as Array<{ sectionIndex: number; barInSection: number;
+        role: number; drumInteraction: { structuralSnareBeats: number[] } }>;
+      const last = acgBars.find((x) => x.sectionIndex === 0 && x.barInSection === 5)!;
+      const mid = acgBars.find((x) => x.sectionIndex === 0 && x.barInSection === 1)!;
+      expect(last.role, '6bar 段末被改写为 turnaround').toBe(BAR_ROLE_IDX.turnaround);
+      expect(mid.role, '同 phraseBarIndex 的未改写位仍是 answer').toBe(BAR_ROLE_IDX.answer);
+      expect(last.drumInteraction.structuralSnareBeats,
+        'turnaround 换族 ⇒ structuralSnare 与未改写位不同')
+        .not.toEqual(mid.drumInteraction.structuralSnareBeats);
     }
     // 三条判别补缺（Codex 步4 F4）：多合同 / bars=1 progress 特判 / min(1,…) 钳位
     {
