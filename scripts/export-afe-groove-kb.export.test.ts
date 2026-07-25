@@ -43,6 +43,12 @@ import {
   type GrooveDrumFillOrchestration,
 } from '../src/core/generation/newEngine/knowledge/drumFillVocabulary';
 import {
+  drumKitCapability,
+  drumKitPitchOrigin,
+  projectDrumPitchForKit,
+  type DrumKitProgram,
+} from '../src/core/generation/newEngine/knowledge/drumKitCapabilities';
+import {
   ROLE_RHYTHM_PATTERN_IDS,
   roleRhythmPattern,
 } from '../src/core/generation/newEngine/knowledge/roleRhythmPatterns';
@@ -53,7 +59,7 @@ import {
 } from '../src/core/generation/newEngine/knowledge/grooveBassPatterns';
 import { materializePopRockFill } from '../src/core/generation/newEngine/knowledge/drumFillVocabulary';
 
-const SCHEMA_VERSION = 'groove_kb_v3';  // v3: +拆步5 fill cell steps/accents + bass ref 拍号
+const SCHEMA_VERSION = 'groove_kb_v4';  // v4: +P2-10A 步2 drum kit capability（3 kit 音高位图 + 投影）
 const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e'; // Newengine_Demo-v5.0 规格锚（非工装 pin）
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -346,6 +352,68 @@ function buildDrumPatternFamilies(): DrumFamilyEntry[] {
     if (!u.has(out[k].name)) throw new Error(`合同引用的 family ${out[k].name} 不在类型域内（fail-closed）`);
   }
   return out;
+}
+
+// ---- ④b drum kit capability registry（owner=P2-10A，步2）----
+// 真源 = knowledge/drumKitCapabilities.ts 的 DRUM_KIT_CAPABILITIES（3 kit）+ projectDrumPitchForKit。
+// **直调生产 API**（drumKitCapability / drumKitPitchOrigin / projectDrumPitchForKit），不做字面提取。
+// 音高集合落 128-bit 位图：pitch p ↦ word=p>>5、bit=p&31，**LSB-first**（设计门二轮冻结）。
+interface KitCapEntry {
+  program: number; name: string;
+  nativeBits: string[];      // 4 × u32，十六进制（LSB-first）
+  inheritedBits: string[];
+}
+function pitchBitmap(pitches: Iterable<number>): string[] {
+  const w = [0, 0, 0, 0];
+  for (const p of pitches) {
+    if (!Number.isInteger(p) || p < 0 || p >= 128) throw new Error(`pitch ${p} 越 [0,128)（fail-closed）`);
+    w[p >> 5] = (w[p >> 5] | (1 << (p & 31))) >>> 0;
+  }
+  return w.map((x) => (x >>> 0).toString(16).padStart(8, '0'));
+}
+function buildKitCapabilities(): { kits: KitCapEntry[]; coreGmBits: string[]; pitchProjections: Array<{ program: number; from: number; to: number }> } {
+  const PROGRAMS: DrumKitProgram[] = [8, 25, 40];
+  const kits: KitCapEntry[] = [];
+  let coreUnion: Set<number> | undefined;
+  for (const prog of PROGRAMS) {
+    const cap = drumKitCapability(prog);
+    const native = new Set(cap.nativePitches);
+    const inherited = new Set(cap.inheritedCorePitches);
+    // ★ 派生关系断言（设计门二轮 #11：两表都物化便于 O(1) 查询，但须证明它们仍自洽）：
+    //   inherited = CORE_GM \ native ⇒ native ∩ inherited = ∅ 且 native ∪ inherited 对三 kit **恒等**
+    //   （那个恒等的并集就是 CORE_GM——无需提取私有常量即可锁死派生关系）
+    for (const p of native) {
+      if (inherited.has(p)) throw new Error(`kit ${prog}: pitch ${p} 同时在 native 与 inherited（fail-closed）`);
+    }
+    const union = new Set([...native, ...inherited]);
+    if (coreUnion === undefined) coreUnion = union;
+    else {
+      const same = union.size === coreUnion.size && [...union].every((p) => coreUnion!.has(p));
+      if (!same) throw new Error(`kit ${prog}: native∪inherited 与其它 kit 不等 ⇒ 派生关系被破坏（fail-closed）`);
+    }
+    if (cap.sampleVelocityLayers !== 1) throw new Error(`kit ${prog}: sampleVelocityLayers != 1（fail-closed）`);
+    kits.push({ program: prog, name: cap.name, nativeBits: pitchBitmap(native), inheritedBits: pitchBitmap(inherited) });
+  }
+  if (!coreUnion || coreUnion.size === 0) throw new Error('CORE_GM 推导为空（fail-closed）');
+  // ★ pitch 投影：**穷举** 3 program × 128 pitch，记录所有 project(p,pitch) != pitch 的项
+  const pitchProjections: Array<{ program: number; from: number; to: number }> = [];
+  for (const prog of PROGRAMS) {
+    for (let pitch = 0; pitch < 128; pitch++) {
+      const to = projectDrumPitchForKit(prog, pitch);
+      if (to !== pitch) pitchProjections.push({ program: prog, from: pitch, to });
+    }
+  }
+  // origin 三值与位图必须一致（穷举复核，防位图与 accessor 漂移）
+  for (const prog of PROGRAMS) {
+    const cap = drumKitCapability(prog);
+    for (let pitch = 0; pitch < 128; pitch++) {
+      const o = drumKitPitchOrigin(prog, pitch);
+      const want = cap.nativePitches.has(pitch) ? 'native'
+        : cap.inheritedCorePitches.has(pitch) ? 'inherited-gm' : 'unsupported';
+      if (o !== want) throw new Error(`kit ${prog} pitch ${pitch}: origin ${o} != ${want}（fail-closed）`);
+    }
+  }
+  return { kits, coreGmBits: pitchBitmap(coreUnion), pitchProjections };
 }
 
 // ---- ④ texture-case registry（owner=P2-8a）----
@@ -764,6 +832,7 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     const drumFamByName = new Map(drumPatternFamilies.map((f) => [f.name, f.id]));
     const texByName = new Map(textureCases.map((t) => [t.name, t.id]));
     const bassPatternMeter = buildBassPatternMeter();
+    const kitCapability = buildKitCapabilities();
     const contract = buildContractKb(drumFamByName, texByName);
     const rhythmProfile = buildRhythmProfiles();
 
@@ -796,6 +865,16 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
       expect(new Set(tri.planner).size, 'planner 27').toBe(27);
       expect(new Set(tri.realizer).size, 'realizer 27').toBe(27);
     }
+    // ①b kit capability：3 kit、位图非空、投影恰一条（Brush 40 的 37→39）
+    expect(kitCapability.kits.length, '3 kit').toBe(3);
+    expect(kitCapability.kits.map((k) => k.program), 'kit program 序').toEqual([8, 25, 40]);
+    for (const k of kitCapability.kits) {
+      expect(k.nativeBits.length, `${k.program} native 4 word`).toBe(4);
+      expect(k.inheritedBits.length, `${k.program} inherited 4 word`).toBe(4);
+      expect(k.nativeBits.some((w) => w !== '00000000'), `${k.program} native 非空`).toBe(true);
+    }
+    // ★ 投影穷举结果：真源只有 Brush(40) 的 side stick 37 → Brush Slap 39 这一条
+    expect(kitCapability.pitchProjections, 'pitch 投影全集').toEqual([{ program: 40, from: 37, to: 39 }]);
     // ② fill：恰 60 recipe（15 cell × 4 orch）；recipe 域合法。
     expect(fillVocabulary.recipes.length, '60 recipe').toBe(60);
     expect(fillVocabulary.orchestrations.length, '4 orch').toBe(4);
@@ -870,6 +949,17 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
       },
       fillVocabulary,
       roleRhythm,
+      drumKitCapability: {
+        ownerTask: 'P2-10A',
+        note: 'DREAM GMBK 三 kit（8=Room / 25=TR808 / 40=Brush）的音高能力：native/inherited 各一张 '
+          + '128-bit 位图（pitch p ↦ word=p>>5, bit=p&31, LSB-first）。两表都物化便于 O(1) 查询，'
+          + '派生关系 inherited = CORE_GM \\ native 由 exporter fail-closed 断言（三 kit 的 '
+          + 'native∪inherited 恒等 ⇒ 该恒等并集即 CORE_GM，无需提取私有常量）。'
+          + 'sampleVelocityLayers 恒 1 不物化。pitchProjections = 穷举 3×128 得到的全部改写项。',
+        coreGmBits: kitCapability.coreGmBits,
+        kits: kitCapability.kits,
+        pitchProjections: kitCapability.pitchProjections,
+      },
       bassPatternMeter,
       contract,
       rhythmProfile,
