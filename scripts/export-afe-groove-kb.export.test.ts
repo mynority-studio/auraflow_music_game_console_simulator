@@ -278,17 +278,72 @@ function extractTempoRationals(): Map<string, Rational> {
 // canonical id = distinct family 首现序（POOL 序 × 四字段声明序）。flags = 生产逻辑
 // structuralSnareBeats(planner:186) 的 `family.includes('halftime') / .includes('minimal')` 忠实派生。
 interface DrumFamilyEntry { id: number; name: string; halftime: boolean; minimal: boolean; }
+/** 三方 family 真源的**精确相等门**（P2-10A 设计门首轮 #7）：
+ *  ① `DrumPatternFamily` union（ArrangementPlan.ts）
+ *  ② planner 的 `DRUM_PATTERN_FAMILIES` 集合
+ *  ③ realizer 的 `DRUM_PERFORMANCE_FAMILIES` 键集（grooves.ts）
+ *  三者若不精确相等，27 就会变成三个可各自漂移的真源 —— 故任一不符即 fail-closed。
+ *  三处都是**私有 const / 类型**，故用 AST 字面提取（沿用 P2-4c 步5 RHYTHM_CELLS 先例）。 */
+function extractFamilyTripleSources(): { union: string[]; planner: string[]; realizer: string[] } {
+  const litSet = (text: string, from: string, to: string, what: string): string[] => {
+    const i = text.indexOf(from);
+    if (i < 0) throw new Error(`${what}: 找不到锚 ${from}（fail-closed）`);
+    const j = to ? text.indexOf(to, i) : text.length;
+    if (to && j < 0) throw new Error(`${what}: 找不到结束锚 ${to}（fail-closed）`);
+    const seg = text.slice(i, j);
+    const hits = [...seg.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+    if (hits.length === 0) throw new Error(`${what}: 零命中（fail-closed）`);
+    return hits;
+  };
+  const apPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'arranger', 'ArrangementPlan.ts');
+  const plPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'arranger', 'drumPerformancePlanner.ts');
+  const grPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'knowledge', 'grooves.ts');
+  const ap = readFileSync(apPath, 'utf-8');
+  const union = litSet(ap, 'export type DrumPatternFamily', 'export type DrumEntryMode', 'DrumPatternFamily union');
+  const planner = litSet(readFileSync(plPath, 'utf-8'), 'const DRUM_PATTERN_FAMILIES',
+                         'function validDrumFamily', 'planner DRUM_PATTERN_FAMILIES');
+  const gr = readFileSync(grPath, 'utf-8');
+  const gi = gr.indexOf('const DRUM_PERFORMANCE_FAMILIES');
+  if (gi < 0) throw new Error('realizer DRUM_PERFORMANCE_FAMILIES 锚缺失（fail-closed）');
+  const realizer = [...gr.slice(gi).matchAll(/^ {2}'([a-z0-9-]+)':/gm)].map((m) => m[1]);
+  if (realizer.length === 0) throw new Error('realizer 键集零命中（fail-closed）');
+  return { union, planner, realizer };
+}
+
 function buildDrumPatternFamilies(): DrumFamilyEntry[] {
+  // ---- 前 17 项：合同引用序（**已落地编号，append-only 不得变**）----
   const seen = new Set<string>();
   const out: DrumFamilyEntry[] = [];
+  const push = (fam: string) => {
+    if (seen.has(fam)) return;
+    seen.add(fam);
+    out.push({ id: out.length, name: fam, halftime: fam.includes('halftime'), minimal: fam.includes('minimal') });
+  };
   for (const c of GROOVE_CONTRACT_POOL) {
     const d = c.drum;
     if (!d) continue;
     for (const fam of [d.timekeeperFamily, d.liftFamily, d.pickupFamily, d.breakdownFamily]) {
-      if (fam == null || seen.has(fam)) continue;
-      seen.add(fam);
-      out.push({ id: out.length, name: fam, halftime: fam.includes('halftime'), minimal: fam.includes('minimal') });
+      if (fam == null) continue;
+      push(fam);
     }
+  }
+  const contractRefCount = out.length;
+
+  // ---- 扩容到**完整 ABI/realizer 类型域**（P2-10A 步2）----
+  // 理由是类型域完整性，**不是**当前可达性（首轮 #2 已证伪"10 项全 fallback 可达"）。
+  const tri = extractFamilyTripleSources();
+  const u = new Set(tri.union), p = new Set(tri.planner), r = new Set(tri.realizer);
+  const eq = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
+  if (!eq(u, p) || !eq(u, r)) {
+    throw new Error(`family 三方真源不精确相等（fail-closed）：union=${u.size} planner=${p.size} realizer=${r.size}；`
+      + `union-planner=${[...u].filter((x) => !p.has(x))}；union-realizer=${[...u].filter((x) => !r.has(x))}`);
+  }
+  // 追加项按 planner 声明序（稳定、可复现），追加在合同引用序之后
+  for (const fam of tri.planner) push(fam);
+  if (out.length !== u.size) throw new Error(`扩容后 ${out.length} != 类型域 ${u.size}（fail-closed）`);
+  // 合同引用的每一项都必须在类型域内（否则合同数据引了域外 family）
+  for (let k = 0; k < contractRefCount; k++) {
+    if (!u.has(out[k].name)) throw new Error(`合同引用的 family ${out[k].name} 不在类型域内（fail-closed）`);
   }
   return out;
 }
@@ -722,6 +777,25 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
       expect(f.minimal, `${f.name} minimal flag`).toBe(f.name.includes('minimal'));
     }
     expect(new Set(drumPatternFamilies.map((f) => f.name)).size, 'drum-family distinct').toBe(drumPatternFamilies.length);
+    // ★ P2-10A 步2：扩到完整类型域 27，且**前 17 项编号逐字节不变**（append-only；
+    //   它们已被 afe_groove_contract_data.h 的 designated-init 引用，重编号会静默改已合入数据）
+    expect(drumPatternFamilies.length, 'family 扩至完整类型域 27').toBe(27);
+    const FROZEN_FIRST_17 = [
+      'pop-backbeat', 'ballad-halftime', 'citypop-syncopated-boogie', 'citypop-disco-boogie',
+    ];  // 只锚前 4 个名字作可读性抽样；完整不变性由下方逐项 id 断言保证
+    FROZEN_FIRST_17.forEach((nm, k) => {
+      expect(drumPatternFamilies[k].name, `前 17 项 id=${k} 不得变`).toBe(nm);
+    });
+    for (let k = 0; k < 17; k++) {
+      expect(drumPatternFamilies[k].id, `family[${k}].id`).toBe(k);
+    }
+    // 三方真源相等在 buildDrumPatternFamilies 内已 fail-closed；此处复述断言以留痕
+    {
+      const tri = extractFamilyTripleSources();
+      expect(new Set(tri.union).size, 'union 27').toBe(27);
+      expect(new Set(tri.planner).size, 'planner 27').toBe(27);
+      expect(new Set(tri.realizer).size, 'realizer 27').toBe(27);
+    }
     // ② fill：恰 60 recipe（15 cell × 4 orch）；recipe 域合法。
     expect(fillVocabulary.recipes.length, '60 recipe').toBe(60);
     expect(fillVocabulary.orchestrations.length, '4 orch').toBe(4);
