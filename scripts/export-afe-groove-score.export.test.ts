@@ -413,6 +413,43 @@ const LOFI_SOFT_OPENING: Section[] = [
   { id: 'softVerse', role: 'verse', functionTag: 'story', bars: 8, hookPolicy: 'light' },
 ];
 
+// **精确相等**的阈值刀锋（步4 变异测试暴露）：步3 的反向控制只排除了"整数 permille 写成 <=/>="
+// 的补偿实现，未覆盖 **double 层把 `>` 写成 `>=`** 的实现。permille accept 集上存在 599 组
+// `next == energy+0.07` 与 576 组 `next == energy-0.06` 的**精确相等**对（binary64 意义），
+// 取音乐上合理的一组：0.35→0.42 令 `>` 假而 `>=` 真；0.35→0.29 令 `<` 假而 `<=` 真。
+// 全段 verse/story + entry=downbeat + 无 chorus ⇒ 判定只由能量比较决定。
+// **乘法结合序**锁（步4 变异测试暴露）：barEnergy 的 rising 分支是
+//   `energy + max(0, next-energy) * progress * 0.75`，binary64 下 `(d*p)*0.75` ≠ `d*(p*0.75)`。
+// bars=4 / progress=2/3 / 0.3→0.563 时两者量化后得 431 vs 432 ⇒ 改写结合序即被抓。
+// （progress=1 的末小节两者相同，故必须靠中间小节。）
+const ASSOC_ORDER: Section[] = [
+  { id: 'assocFrom', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'assocTo', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+];
+
+// falling 分支的**代数改写**锁：`energy*(1 - progress*0.1)` 与展开式 `energy - energy*progress*0.1`
+// 在 binary64 下不等；bars=4 / progress=1 / energy=0.305 时量化得 275 vs 274。
+// 用 outro 段（functionTag='outro' ⇒ 整段 falling，不依赖能量落差通道）隔离该判定。
+// **常量精度**锁（步4 变异测试暴露；直指设计文档"新写模块优先 float32"最可能诱发的改写）：
+// 若把 `climaxIntensity * 0.05` 的 0.05 写成 float32 常量（提升回 double = 0.05000000074505806），
+// energy=0.204 × climaxIntensity=0.37 时量化得 222 vs 223。显式 climaxMap 承载非 1.0 强度即可触达。
+const CLIMAX_CONST: Section[] = [
+  { id: 'ccLead', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'ccPeak', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
+];
+
+const FALL_ALGEBRA: Section[] = [
+  { id: 'fallBody', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'fallOutro', role: 'outro', functionTag: 'outro', bars: 4, hookPolicy: 'none' },
+];
+
+const THRESH_EQ: Section[] = [
+  { id: 'eqBase', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'eqUpEq', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'eqMid', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'eqDownEq', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+];
+
 const ENERGY_EDGE: Section[] = [
   { id: 'edgeHi', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
   { id: 'edgeLo', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
@@ -579,6 +616,46 @@ const FIXTURES: Fixture[] = [
     },
     opening: opening('edgeHi'),
     options: { fillVariantSeed: 31 },
+  },
+  {
+    name: 'pop_climax_constant_precision',
+    note: 'climax 系数常量精度锁：显式 climaxMap intensity=0.37 且段 energy=0.204 ⇒ arrival/peak 小节 '
+      + 'energy = 222permille（0.05 为 double 常量）；若写成 0.05f 则得 223。',
+    sections: CLIMAX_CONST, contractId: uniformContract(CLIMAX_CONST, 'pop_radio_straight'),
+    energy: { ccLead: 0.5, ccPeak: 0.204 },
+    entry: { ccLead: 'downbeat', ccPeak: 'lead-in' },
+    opening: opening('ccLead'),
+    options: { climaxMap: [{ sectionId: 'ccPeak', intensity: 0.37 }], fillVariantSeed: 71 },
+  },
+  {
+    name: 'pop_energy_falling_algebra',
+    note: "falling 分支代数形式锁：outro 段整段 falling，energy=0.305 且 bars=4 ⇒ 末小节 "
+      + '`e*(1-p*0.1)`=275permille 而展开式 `e - e*p*0.1`=274 ⇒ 改写代数形式即被抓。',
+    sections: FALL_ALGEBRA, contractId: uniformContract(FALL_ALGEBRA, 'pop_radio_straight'),
+    energy: { fallBody: 0.5, fallOutro: 0.305 },
+    entry: { fallBody: 'downbeat', fallOutro: 'downbeat' },
+    opening: opening('fallBody'),
+    options: { fillVariantSeed: 67 },
+  },
+  {
+    name: 'pop_energy_assoc_order',
+    note: 'barEnergy rising 分支的乘法结合序：0.3→0.563 且 bars=4（progress=2/3）时，'
+      + '(d*progress)*0.75 = 431permille 而 d*(progress*0.75) = 432 ⇒ 锁死与 TS 逐字一致的左结合。',
+    sections: ASSOC_ORDER, contractId: uniformContract(ASSOC_ORDER, 'pop_radio_straight'),
+    energy: { assocFrom: 0.3, assocTo: 0.563 },
+    entry: { assocFrom: 'downbeat', assocTo: 'downbeat' },
+    opening: opening('assocFrom'),
+    options: { fillVariantSeed: 61 },
+  },
+  {
+    name: 'pop_threshold_exact_equality',
+    note: '阈值**精确相等**：0.35→0.42 满足 next == energy+0.07（binary64 精确），故 `>` 为假 ⇒ '
+      + 'continuation/settled；把 `>` 写成 `>=` 的实现会判成 lift/rising。0.35→0.29 同理对 `<`。',
+    sections: THRESH_EQ, contractId: uniformContract(THRESH_EQ, 'pop_radio_straight'),
+    energy: { eqBase: 0.35, eqUpEq: 0.42, eqMid: 0.35, eqDownEq: 0.29 },
+    entry: { eqBase: 'downbeat', eqUpEq: 'downbeat', eqMid: 'downbeat', eqDownEq: 'downbeat' },
+    opening: opening('eqBase'),
+    options: { fillVariantSeed: 59 },
   },
   {
     name: 'pop_ballad_sparse_climax_downgrade',
@@ -990,6 +1067,45 @@ describe('export afe groove score golden（P2-4c 步3）', () => {
         .toBe(FILL_FN_IDX.continuation);
       expect(trajOfSec(3).every((t) => t !== TRAJ_IDX.falling), 'ctrlFallA 不得 falling').toBe(true);
       expect(trajOfSec(5).every((t) => t !== TRAJ_IDX.rising), 'ctrlRiseA 不得 rising').toBe(true);
+    }
+    // climax 常量精度：peak 段小节 energy 必须是 222（0.05f 会得 223）
+    {
+      const cc = byName.get('pop_climax_constant_precision')!;
+      const pb = (cc.expected.bars as Array<{ sectionIndex: number; energy: { q: number };
+        trajectory: number }>).filter((b) => b.sectionIndex === 1);
+      expect(pb[0].trajectory, 'climax 段首小节 arrival').toBe(TRAJ_IDX.arrival);
+      expect(new Set(pb.map((b) => b.energy.q)), 'climax 段 energy 恒 222（0.05f 会得 223）')
+        .toEqual(new Set([222]));
+    }
+    // falling 代数形式：outro 段末小节 energy 必须是 275（展开式得 274）
+    {
+      const fa = byName.get('pop_energy_falling_algebra')!;
+      const ob = (fa.expected.bars as Array<{ sectionIndex: number; energy: { q: number };
+        trajectory: number }>).filter((b) => b.sectionIndex === 1);
+      expect(ob.every((b) => b.trajectory === TRAJ_IDX.falling), 'outro 段整段 falling').toBe(true);
+      expect(ob[ob.length - 1].energy.q, 'outro 末小节 energy=275（展开式会得 274）').toBe(275);
+    }
+    // 乘法结合序：第 2 小节 energy 必须是左结合的 431（右结合得 432）
+    {
+      const ao = byName.get('pop_energy_assoc_order')!;
+      const bars0 = (ao.expected.bars as Array<{ sectionIndex: number; barInSection: number;
+        energy: { q: number }; trajectory: number }>).filter((b) => b.sectionIndex === 0);
+      expect(bars0[2].trajectory, 'assoc 第2小节须 rising').toBe(TRAJ_IDX.rising);
+      expect(bars0[2].energy.q, 'assoc 第2小节 energy=431（左结合；右结合会得 432）').toBe(431);
+    }
+    // 精确相等对：`>` vs `>=` / `<` vs `<=` 的 double 层判别（步4 变异测试暴露的盲区）
+    {
+      const eq = byName.get('pop_threshold_exact_equality')!;
+      const b01 = eq.expected.boundaries.find((b) => b.fromSectionIndex === 0 && b.toSectionIndex === 1)!;
+      const b23 = eq.expected.boundaries.find((b) => b.fromSectionIndex === 2 && b.toSectionIndex === 3)!;
+      expect(b01.fillFunction, '0.35→0.42：next == E+0.07 精确相等 ⇒ `>` 假 ⇒ continuation')
+        .toBe(FILL_FN_IDX.continuation);
+      expect(b23.fillFunction, '0.35→0.29：next == E-0.06 精确相等 ⇒ `<` 假 ⇒ continuation')
+        .toBe(FILL_FN_IDX.continuation);
+      const tr = (si: number) => (eq.expected.bars as Array<{ sectionIndex: number; trajectory: number }>)
+        .filter((b) => b.sectionIndex === si).map((b) => b.trajectory);
+      expect(tr(0).every((t) => t !== TRAJ_IDX.rising), '精确相等 ⇒ 不得 rising').toBe(true);
+      expect(tr(2).every((t) => t !== TRAJ_IDX.falling), '精确相等 ⇒ 不得 falling').toBe(true);
     }
     // 密度/landing/sparse-降级 三组补缺的判别锚
     {
