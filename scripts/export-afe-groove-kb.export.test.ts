@@ -321,6 +321,10 @@ function buildTextureCases(): TextureCaseEntry[] {
 const FILL_SRC = join(
   HERE, '..', 'src', 'core', 'generation', 'newEngine', 'knowledge', 'drumFillVocabulary.ts');
 
+function extractFillCells(): FillCell[] {
+  return parseFillCells(readFileSync(FILL_SRC, 'utf-8'));
+}
+
 function dbitsHex(x: number): string {
   const buf = Buffer.alloc(8);
   buf.writeDoubleLE(x, 0);
@@ -329,9 +333,12 @@ function dbitsHex(x: number): string {
 
 interface FillCell { id: string; rhythmClass: string; steps: number[]; accents: number[]; }
 
-/** AST：RHYTHM_CELLS 数组字面 → 每 cell 的 id/rhythmClass/steps/accents（fail-closed）。 */
-function extractFillCells(): FillCell[] {
-  const text = readFileSync(FILL_SRC, 'utf-8');
+/** AST：RHYTHM_CELLS 数组字面 → 每 cell 的 id/rhythmClass/steps/accents（fail-closed）。
+ *
+ * ★ 参数化成"源码文本进、结果出"的纯函数（Codex 步5 二轮 R2-2）：否则这些 fail-closed 分支
+ * 只能靠生产源恰好合法来"证明"，把 throw 退回 continue 也照样全绿 —— 属**假锁**。
+ * 下方 describe 里的负向用例直接注入非法 TypeScript，逐个分支真跑。 */
+export function parseFillCells(text: string): FillCell[] {
   const sf = ts.createSourceFile('drumFillVocabulary.ts', text, ts.ScriptTarget.ES2020, true);
   let cellsArr: ts.ArrayLiteralExpression | undefined;
   let allSteps: number[] | undefined;
@@ -796,5 +803,74 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     assertJsonSafe(out, 'root');
     writeFileSync(OUT, JSON.stringify(out, null, 1));
     expect(readFileSync(OUT, 'utf-8').length).toBeGreaterThan(0);
+  });
+});
+
+/* ============================================================
+ * AST 提取器的**负向门**（Codex 步5 二轮 R2-2）
+ * ------------------------------------------------------------
+ * 首轮把静默 `continue` 改成 `throw` 之后，若只跑合法生产源，这些分支永远走不到——
+ * 把 throw 退回 continue 也全绿，等于没锁。这里给 parseFillCells 注入非法 TypeScript，
+ * 逐个 fail-closed 分支真跑一次；每条负向都先用**合法基线**证明它确实只差那一处。
+ * ============================================================ */
+describe('parseFillCells fail-closed 负向（AST 提取器本身）', () => {
+  const LEGAL = [
+    "const ALL_STEPS = [0, 1, 2, 3, 4, 5, 6, 7];",
+    "const RHYTHM_CELLS = [",
+    "  { id: 'a', rhythmClass: 'straight', steps: [0, 4], accents: [1, 1, 1, 1, 1, 1, 1, 1] },",
+    "];",
+  ].join('\n');
+
+  it('合法基线可解析（负向用例的对照）', () => {
+    const cells = parseFillCells(LEGAL);
+    expect(cells).toHaveLength(1);
+    expect(cells[0]).toMatchObject({ id: 'a', rhythmClass: 'straight' });
+    expect(cells[0].steps).toEqual([0, 4]);
+    expect(cells[0].accents).toHaveLength(8);
+  });
+
+  /* ★每条负向都断言**具体错误消息**，而不是"抛了就算"：否则会被下游检查代打——
+   * 实证：把 PropertyAssignment/Identifier 的 throw 退回 continue，spread/computed/shorthand/
+   * method 四例仍会被"属性数不符/缺字段"拦下而"通过"，等于没锁住目标分支（Codex 步5 二轮 R2-2
+   * 的反例正是这条路径）。加消息断言后同一反例精确让 5 条负向转红。 */
+  const NEG: Array<[string, string, string | RegExp]> = [
+    ['spread 成员', LEGAL.replace("{ id: 'a',", "{ ...BASE, id: 'a',"), '含非 PropertyAssignment 成员'],
+    ['method 成员', LEGAL.replace("{ id: 'a',", "{ steps2() { return []; }, id: 'a',"),
+     '含非 PropertyAssignment 成员'],
+    ['shorthand 成员', LEGAL.replace("id: 'a',", 'id,'), '含非 PropertyAssignment 成员'],
+    ['computed key', LEGAL.replace("rhythmClass: 'straight',", "['rhythm' + 'Class']: 'straight',"),
+     '含非标识符键'],
+    ['字符串字面键', LEGAL.replace("rhythmClass: 'straight',", "'rhythmClass': 'straight',"),
+     '含非标识符键'],
+    ['未知键', LEGAL.replace("{ id: 'a',", "{ extra: 1, id: 'a',"), '含未知键 extra'],
+    ['重复键', LEGAL.replace("{ id: 'a',", "{ id: 'a', id: 'b',"), '键 id 重复'],
+    ['缺字段', LEGAL.replace("accents: [1, 1, 1, 1, 1, 1, 1, 1] ", ''), /属性数 3 != 4|缺字段 accents/],
+    ['RHYTHM_CELLS 多次声明', LEGAL + '\nconst RHYTHM_CELLS = [];', 'RHYTHM_CELLS 出现多次声明'],
+    ['ALL_STEPS 多次声明', LEGAL + '\nconst ALL_STEPS = [9];', 'ALL_STEPS 出现多次声明'],
+    ['RHYTHM_CELLS 非 ArrayLiteral',
+     LEGAL.replace('const RHYTHM_CELLS = [', 'const RHYTHM_CELLS = buildCells([').replace('];', ']);'),
+     'RHYTHM_CELLS 非 ArrayLiteral'],
+    ['cell 非 ObjectLiteral', LEGAL.replace("  { id: 'a',", "  makeCell(),\n  { id: 'a',"),
+     '非 ObjectLiteral'],
+    ['steps 元素非数字字面', LEGAL.replace('steps: [0, 4]', 'steps: [0, FOUR]'), '元素非数字字面'],
+    ['steps 引用未知标识符', LEGAL.replace('steps: [0, 4]', 'steps: OTHER_STEPS'), '未知标识符 OTHER_STEPS'],
+    ['accents 非数组字面', LEGAL.replace('accents: [1, 1, 1, 1, 1, 1, 1, 1]', 'accents: makeAccents()'),
+     '非数组字面'],
+    ['id 非字符串字面', LEGAL.replace("id: 'a',", 'id: someId,'), 'id/rhythmClass 非字符串字面'],
+    ['ALL_STEPS 元素非数字字面', LEGAL.replace('const ALL_STEPS = [0,', 'const ALL_STEPS = [ZERO,'),
+     'ALL_STEPS 非数字字面'],
+    ['缺 RHYTHM_CELLS', LEGAL.split('\n')[0], '未找到 RHYTHM_CELLS'],
+    ['缺 ALL_STEPS', LEGAL.split('\n').slice(1).join('\n'), '未找到 ALL_STEPS'],
+  ];
+
+  for (const [what, src, msg] of NEG) {
+    it(`拒绝：${what}`, () => {
+      expect(() => parseFillCells(src), what).toThrow(msg as string | RegExp);
+    });
+  }
+
+  it('ALL_STEPS 标识符引用可解析（正向：确认拒绝的是"未知"标识符而非一切标识符）', () => {
+    const cells = parseFillCells(LEGAL.replace('steps: [0, 4]', 'steps: ALL_STEPS'));
+    expect(cells[0].steps).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 });
