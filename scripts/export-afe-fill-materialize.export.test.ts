@@ -24,13 +24,15 @@ import { createHash } from 'node:crypto';
 import {
   POP_ROCK_FILL_ORCHESTRATIONS,
   materializePopRockFill,
+  materializeFunctionalPopRockFill,
+  popRockFillCombinationsForFunction,
   popRockFillRecipeDescriptors,
   type GrooveDrumFillFunction,
   type GrooveDrumFillOrchestration,
   type GrooveDrumFillRhythmClass,
 } from '../src/core/generation/newEngine/knowledge/drumFillVocabulary';
 
-const SCHEMA_VERSION = 'fill_materialize_v1';
+const SCHEMA_VERSION = 'fill_materialize_v2';   // v2: +functional selector 段
 const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e';
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -127,6 +129,52 @@ describe('export afe fill materialize golden（P2-4c 步5：60 recipe 全量）'
     expect(voicesSeen, '5 个 voice 全覆盖').toEqual(new Set([0, 1, 2, 3, 4]));
     expect(Math.min(...velSeen) >= 38 && Math.max(...velSeen) <= 118, 'velocity ∈ [38,118]').toBe(true);
 
+    // ---- functional selector 段（Codex 步5 F5）----
+    // 上面的 1080 组直调 materializePopRockFill，测的是**已选定**的 class/orch/cell；
+    // `materializeFunctionalPopRockFill` 的三段算术完全没被锁：
+    //   pick = variant % candidates.length / cellVariant = floor(variant / candidates.length)
+    //   candidates = 该 function 的候选切片及其**声明序**
+    // 这里对每个 function 的**每个候选** × 5 个 cell 取 variant = cell*nCombo + combo
+    // （⇒ pick=combo、cellVariant=cell，逐个候选精确命中），直调生产 functional API。
+    const funcCases: unknown[] = [];
+    const comboCount: Record<string, number> = {};
+    for (const fn of FILL_FUNCTIONS) {
+      const candidates = popRockFillCombinationsForFunction(fn);
+      expect(candidates.length, `${fn} 候选非空`).toBeGreaterThan(0);
+      comboCount[fn] = candidates.length;
+      for (let combo = 0; combo < candidates.length; combo++) {
+        for (let cell = 0; cell < 5; cell++) {
+          const variant = cell * candidates.length + combo;
+          for (const shape of shapes) {
+            const got = materializeFunctionalPopRockFill({ function: fn, variant, ...shape });
+            funcCases.push({
+              fn: FN_IDX[fn], combo, cell, variant,
+              durationBeats: offsetRational(shape.durationBeats), intensity: shape.intensity,
+              expectRhythmClass: RC_IDX[candidates[combo].rhythmClass],
+              expectOrchestration: ORCH_IDX[candidates[combo].orchestration],
+              recipeId: got.recipeId,
+              gotRhythmClass: RC_IDX[got.rhythmClass], gotOrchestration: ORCH_IDX[got.orchestration],
+              hits: got.hits.map((h) => ({
+                offset: offsetRational(h.offsetBeatsFromEnd),
+                voice: VOICE_IDX[h.voice], velocity: h.velocity,
+              })),
+            });
+          }
+        }
+      }
+    }
+    // 判别力自检：若某 function 只有 1 个候选，`variant % n` 恒 0 ⇒ 该 function 锁不住 pick。
+    // 至少要有一个 function 的候选数 ≥2，否则整段没有判别力，必须显式失败而非静默通过。
+    expect(Math.max(...Object.values(comboCount)), '至少一个 function 有 ≥2 候选（否则 pick 算术无判别力）')
+      .toBeGreaterThanOrEqual(2);
+    // 且每个 function 内不同 combo 必须真的产出不同 (class,orch)，否则 pick 变异不可观测
+    for (const fn of FILL_FUNCTIONS) {
+      const seen = new Set(
+        funcCases.filter((c) => (c as { fn: number }).fn === FN_IDX[fn])
+          .map((c) => `${(c as { gotRhythmClass: number }).gotRhythmClass}:${(c as { gotOrchestration: number }).gotOrchestration}`));
+      expect(seen.size, `${fn} 的候选须产出 ${comboCount[fn]} 个不同 (class,orch)`).toBe(comboCount[fn]);
+    }
+
     const out = {
       meta: {
         layer: 'pop-rock-60-v1 fill materialize (全量)',
@@ -137,8 +185,11 @@ describe('export afe fill materialize golden（P2-4c 步5：60 recipe 全量）'
           + 'velocity 为 binary64 乘法链 + clamp[38,118] 的产物；offset 为 1/4 网格精确 rational。',
         clampObserved: { atLow38: clampLow, atHigh118: clampHigh },
         velocityDistinct: velSeen.size,
+        functionalNote: 'functionalCases 直调 materializeFunctionalPopRockFill，锁 pick/cellVariant/候选声明序',
+        comboCount,
       },
       cases,
+      functionalCases: funcCases,
     };
     writeFileSync(OUT, JSON.stringify(out, null, 1));
     expect(readFileSync(OUT, 'utf-8').length).toBeGreaterThan(0);

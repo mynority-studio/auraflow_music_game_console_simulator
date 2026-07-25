@@ -339,8 +339,15 @@ function extractFillCells(): FillCell[] {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
       let init: ts.Expression = n.initializer;
       while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init)) init = init.expression;
-      if (n.name.text === 'RHYTHM_CELLS' && ts.isArrayLiteralExpression(init)) cellsArr = init;
-      if (n.name.text === 'ALL_STEPS' && ts.isArrayLiteralExpression(init)) {
+      // 顶层声明须**唯一**：同名二次声明（含条件分支/重导出覆盖）会让"提取到哪一份"变得不确定
+      if (n.name.text === 'RHYTHM_CELLS') {
+        if (!ts.isArrayLiteralExpression(init)) throw new Error('RHYTHM_CELLS 非 ArrayLiteral（fail-closed）');
+        if (cellsArr) throw new Error('RHYTHM_CELLS 出现多次声明（fail-closed）');
+        cellsArr = init;
+      }
+      if (n.name.text === 'ALL_STEPS') {
+        if (!ts.isArrayLiteralExpression(init)) throw new Error('ALL_STEPS 非 ArrayLiteral（fail-closed）');
+        if (allSteps) throw new Error('ALL_STEPS 出现多次声明（fail-closed）');
         allSteps = init.elements.map((e) => {
           if (!ts.isNumericLiteral(e)) throw new Error('ALL_STEPS 非数字字面（fail-closed）');
           return Number(e.text);
@@ -365,12 +372,24 @@ function extractFillCells(): FillCell[] {
   };
   return cellsArr.elements.map((el, i) => {
     if (!ts.isObjectLiteralExpression(el)) throw new Error(`RHYTHM_CELLS[${i}] 非 ObjectLiteral`);
+    // ★属性解析必须 fail-closed（Codex 步5 F4）：spread / computed key / method / shorthand /
+    // getter 会改变对象的实际 payload，而"静默 continue"会让这些改动**不被察觉**地漏出提取。
+    const WANT = ['id', 'rhythmClass', 'steps', 'accents'] as const;
     const rec: Record<string, ts.Expression> = {};
     for (const p of el.properties) {
-      if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue;
-      rec[p.name.text] = p.initializer;
+      if (!ts.isPropertyAssignment(p))
+        throw new Error(`RHYTHM_CELLS[${i}] 含非 PropertyAssignment 成员（spread/method/shorthand，fail-closed）`);
+      if (!ts.isIdentifier(p.name))
+        throw new Error(`RHYTHM_CELLS[${i}] 含非标识符键（computed/字符串键，fail-closed）`);
+      const k = p.name.text;
+      if (!(WANT as readonly string[]).includes(k))
+        throw new Error(`RHYTHM_CELLS[${i}] 含未知键 ${k}（fail-closed）`);
+      if (k in rec) throw new Error(`RHYTHM_CELLS[${i}] 键 ${k} 重复（fail-closed）`);
+      rec[k] = p.initializer;
     }
-    for (const k of ['id', 'rhythmClass', 'steps', 'accents']) {
+    if (el.properties.length !== WANT.length)
+      throw new Error(`RHYTHM_CELLS[${i}] 属性数 ${el.properties.length} != ${WANT.length}（fail-closed）`);
+    for (const k of WANT) {
       if (!(k in rec)) throw new Error(`RHYTHM_CELLS[${i}] 缺字段 ${k}（fail-closed）`);
     }
     const idNode = rec.id, rcNode = rec.rhythmClass;
