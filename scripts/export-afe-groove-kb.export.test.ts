@@ -395,6 +395,20 @@ function buildKitCapabilities(): { kits: KitCapEntry[]; coreGmBits: string[]; pi
     kits.push({ program: prog, name: cap.name, nativeBits: pitchBitmap(native), inheritedBits: pitchBitmap(inherited) });
   }
   if (!coreUnion || coreUnion.size === 0) throw new Error('CORE_GM 推导为空（fail-closed）');
+  // ★★ **独立锚**（自查补：原判据不严密）——
+  // "互斥 + 三 kit 并集恒等" 只证明『存在某个基集 U 使 inherited_i = U \\ native_i』，
+  // **不能证明 U 就是真源的 CORE_GM_PITCHES**：若真源整体改了 CORE_GM（如加一个音高），
+  // 三 kit 的 native/inherited 会**一致地**变，该判据仍然成立、缺口不可见。
+  // 故把 canonical CORE_GM 逐值冻在这里作独立锚：任何变动都是规格变更，须显式改这一行并复审。
+  const FROZEN_CORE_GM = [
+    35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    51, 52, 53, 54, 55, 56, 57, 58, 59, 62, 63, 69, 70, 82,
+  ];
+  const got = [...coreUnion].sort((a, b) => a - b);
+  if (got.length !== FROZEN_CORE_GM.length || got.some((p, i) => p !== FROZEN_CORE_GM[i])) {
+    throw new Error(`CORE_GM 漂移（fail-closed）：冻结 ${FROZEN_CORE_GM.length} 项 ${FROZEN_CORE_GM}；`
+      + `实得 ${got.length} 项 ${got}`);
+  }
   // ★ pitch 投影：**穷举** 3 program × 128 pitch，记录所有 project(p,pitch) != pitch 的项
   const pitchProjections: Array<{ program: number; from: number; to: number }> = [];
   for (const prog of PROGRAMS) {
