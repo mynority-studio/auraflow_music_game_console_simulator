@@ -152,6 +152,9 @@ function _lk(map: Record<string, number>, key: string, what: string): number {
 // ★ tie 普查（步2 round-half-up 教训的前置防御）：x*1000 的小数部分**恰为 0.5** 时，结果完全取决于
 //   "half→+∞"这一条约定，C 侧任何等价重排（整数/有理数路径）都必须复现同一方向。这类刀锋值不是
 //   假设不存在，而是**逐条登记进 meta.quantizationTies**，让步4/5 实现者与复核者直接看到清单。
+/** 与 quant 同式的纯量化（用于 F7 的判据等价性证明） */
+const milliOf = (x: number): number => Math.round(x * 1000);
+
 interface QuantVal { q: number; rawBits: string; }
 interface TieRecord { case: string; path: string; rawBits: string; scaled: string; q: number; }
 const TIES: TieRecord[] = [];
@@ -433,6 +436,29 @@ const ASSOC_ORDER: Section[] = [
 // **常量精度**锁（步4 变异测试暴露；直指设计文档"新写模块优先 float32"最可能诱发的改写）：
 // 若把 `climaxIntensity * 0.05` 的 0.05 写成 float32 常量（提升回 double = 0.05000000074505806），
 // energy=0.204 × climaxIntensity=0.37 时量化得 222 vs 223。显式 climaxMap 承载非 1.0 强度即可触达。
+// **同曲多合同**：现有 fixture 每首只用一个合同 ⇒ "每段都复用首段 contract/profile" 的错误实现
+// 照样全绿。两段用可区分的 4/4 合同（pop_radio_straight vs rnb_gospel_triplet：accent 不同、
+// profile 不同[subdivision triplet / cadence 4 / phraseShape 含 lift]、drum family 不同）。
+const MULTI_CONTRACT: Section[] = [
+  { id: 'mixStraight', role: 'verse', functionTag: 'story', bars: 8, hookPolicy: 'light' },
+  { id: 'mixTriplet', role: 'chorus', functionTag: 'hook', bars: 8, hookPolicy: 'main' },
+];
+
+// **bars=1 段**：barEnergy 的 `bars <= 1 ? 1 : barInSection/(bars-1)` 特判无样本 ⇒ 写错或删掉不被抓。
+// obA(1bar) 因 next 高 0.2 判 rising、obB(1bar) 因 next 低判 falling，两条都走 progress=1 分支。
+const ONE_BAR: Section[] = [
+  { id: 'obRise', role: 'verse', functionTag: 'story', bars: 1, hookPolicy: 'light' },
+  { id: 'obFall', role: 'verse', functionTag: 'story', bars: 1, hookPolicy: 'light' },
+  { id: 'obTail', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+];
+
+// **min(1,…) 钳位**：现有最大输出 930，从未触发钳位 ⇒ 删掉 min 不被抓。
+// energy=0.98 + climaxIntensity=1.0 × 0.05 = 1.03 ⇒ 必须钳到 1000permille。
+const CLAMP_ONE: Section[] = [
+  { id: 'clampLead', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
+  { id: 'clampPeak', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
+];
+
 const CLIMAX_CONST: Section[] = [
   { id: 'ccLead', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'light' },
   { id: 'ccPeak', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
@@ -616,6 +642,37 @@ const FIXTURES: Fixture[] = [
     },
     opening: opening('edgeHi'),
     options: { fillVariantSeed: 31 },
+  },
+  {
+    name: 'pop_multi_contract_per_song',
+    note: '同一首用两个可区分的 4/4 合同（pop_radio_straight + rnb_gospel_triplet）⇒ '
+      + '"复用首段 contract/profile" 的错误实现在此转红（accent/subdivision/phraseShape/drum 全不同）。',
+    sections: MULTI_CONTRACT,
+    contractId: { mixStraight: 'pop_radio_straight', mixTriplet: 'rnb_gospel_triplet' },
+    energy: { mixStraight: 0.5, mixTriplet: 0.8 },
+    entry: { mixStraight: 'downbeat', mixTriplet: 'lead-in' },
+    opening: opening('mixStraight'),
+    options: { fillVariantSeed: 73 },
+  },
+  {
+    name: 'pop_one_bar_sections',
+    note: 'bars=1 段（合法 ABI 输入）⇒ barEnergy 的 progress 特判 `bars<=1 ? 1 : …` 被真正执行：'
+      + 'obRise 判 rising、obFall 判 falling，两者 progress 均为 1。',
+    sections: ONE_BAR, contractId: uniformContract(ONE_BAR, 'pop_radio_straight'),
+    energy: { obRise: 0.3, obFall: 0.5, obTail: 0.2 },
+    entry: { obRise: 'downbeat', obFall: 'downbeat', obTail: 'downbeat' },
+    opening: opening('obRise'),
+    options: { fillVariantSeed: 79 },
+  },
+  {
+    name: 'pop_climax_energy_clamp',
+    note: 'energy=0.98 且 climaxIntensity=1.0 ⇒ 0.98+0.05=1.03 触发 `min(1, …)` 钳位，'
+      + 'arrival/peak 小节 energy 必须是 1000permille；删掉钳位的实现会溢出到 1030。',
+    sections: CLAMP_ONE, contractId: uniformContract(CLAMP_ONE, 'pop_radio_straight'),
+    energy: { clampLead: 0.5, clampPeak: 0.98 },
+    entry: { clampLead: 'downbeat', clampPeak: 'lead-in' },
+    opening: opening('clampLead'),
+    options: { climaxMap: [{ sectionId: 'clampPeak', intensity: 1 }], fillVariantSeed: 83 },
   },
   {
     name: 'pop_climax_constant_precision',
@@ -1068,6 +1125,30 @@ describe('export afe groove score golden（P2-4c 步3）', () => {
       expect(trajOfSec(3).every((t) => t !== TRAJ_IDX.falling), 'ctrlFallA 不得 falling').toBe(true);
       expect(trajOfSec(5).every((t) => t !== TRAJ_IDX.rising), 'ctrlRiseA 不得 rising').toBe(true);
     }
+    // 三条判别补缺（Codex 步4 F4）：多合同 / bars=1 progress 特判 / min(1,…) 钳位
+    {
+      const mc = byName.get('pop_multi_contract_per_song')!;
+      expect(new Set(mc.input.sections.map((x) => x.contractIdEnum)).size, '同曲两个不同合同').toBe(2);
+      const bars = mc.expected.bars as Array<{ sectionIndex: number; subdivision: number;
+        beatStrength: Array<{ q: number }> }>;
+      const s0 = bars.find((b) => b.sectionIndex === 0)!, s1 = bars.find((b) => b.sectionIndex === 1)!;
+      expect(s0.subdivision !== s1.subdivision || s0.beatStrength.map((x) => x.q).join()
+        !== s1.beatStrength.map((x) => x.q).join(), '两段的 profile/accent 须可区分').toBe(true);
+
+      const ob = byName.get('pop_one_bar_sections')!;
+      expect(ob.input.sections[0].bars, 'obRise 为 1 bar 段').toBe(1);
+      const obBars = ob.expected.bars as Array<{ sectionIndex: number; trajectory: number; energy: { q: number } }>;
+      expect(obBars.find((b) => b.sectionIndex === 0)!.trajectory, '1bar 段 rising').toBe(TRAJ_IDX.rising);
+      expect(obBars.find((b) => b.sectionIndex === 0)!.energy.q, 'progress=1 ⇒ 0.3+0.2*0.75=450').toBe(450);
+      expect(obBars.find((b) => b.sectionIndex === 1)!.trajectory, '1bar 段 falling').toBe(TRAJ_IDX.falling);
+      expect(obBars.find((b) => b.sectionIndex === 1)!.energy.q, 'progress=1 ⇒ 0.5*0.9=450').toBe(450);
+
+      const cl = byName.get('pop_climax_energy_clamp')!;
+      const clPeak = (cl.expected.bars as Array<{ sectionIndex: number; energy: { q: number } }>)
+        .filter((b) => b.sectionIndex === 1);
+      expect(new Set(clPeak.map((b) => b.energy.q)), '钳位到 1000（无 min 会得 1030）')
+        .toEqual(new Set([1000]));
+    }
     // climax 常量精度：peak 段小节 energy 必须是 222（0.05f 会得 223）
     {
       const cc = byName.get('pop_climax_constant_precision')!;
@@ -1215,6 +1296,14 @@ describe('export afe groove score golden（P2-4c 步3）', () => {
     //   ① boundary kind 'break'：boundaryKind() 只产 dropout/pickup/fill，无生产路径；
     //   ② contract.drum 缺省分支：v5 GROOVE_CONTRACT_POOL 21 合同**全部**有 drum。
     // 若哪天 KB 新增无 drum 合同，本断言转红，提醒补 fixture（而非静默留缺口）。
+    // F7（Codex 步4）：C 侧用 `milli >= 1000` 代替 TS 的 `strength >= 1 - 1e-6`，等价性必须在
+    // **量化前**用原始 double 证明——只查量化后的值排除不掉 0.9996 被 round 成 1000 的情形。
+    for (const c of GROOVE_CONTRACT_POOL) {
+      for (const [i, x] of c.accentPattern.entries()) {
+        expect(x >= 1 - 1e-6, `${c.id}.accentPattern[${i}]=${x}：TS 判据与 milli>=1000 不等价`)
+          .toBe(milliOf(x) >= 1000);
+      }
+    }
     for (const c of GROOVE_CONTRACT_POOL) {
       expect(c.drum !== undefined, `合同 ${c.id} 无 drum：drum 缺省分支已可达，须补 fixture`).toBe(true);
     }
