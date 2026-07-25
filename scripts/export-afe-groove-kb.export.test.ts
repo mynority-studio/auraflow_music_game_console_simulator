@@ -284,36 +284,109 @@ function extractTempoRationals(): Map<string, Rational> {
 // canonical id = distinct family 首现序（POOL 序 × 四字段声明序）。flags = 生产逻辑
 // structuralSnareBeats(planner:186) 的 `family.includes('halftime') / .includes('minimal')` 忠实派生。
 interface DrumFamilyEntry { id: number; name: string; halftime: boolean; minimal: boolean; }
-/** 三方 family 真源的**精确相等门**（P2-10A 设计门首轮 #7）：
- *  ① `DrumPatternFamily` union（ArrangementPlan.ts）
- *  ② planner 的 `DRUM_PATTERN_FAMILIES` 集合
- *  ③ realizer 的 `DRUM_PERFORMANCE_FAMILIES` 键集（grooves.ts）
- *  三者若不精确相等，27 就会变成三个可各自漂移的真源 —— 故任一不符即 fail-closed。
- *  三处都是**私有 const / 类型**，故用 AST 字面提取（沿用 P2-4c 步5 RHYTHM_CELLS 先例）。 */
-function extractFamilyTripleSources(): { union: string[]; planner: string[]; realizer: string[] } {
-  const litSet = (text: string, from: string, to: string, what: string): string[] => {
-    const i = text.indexOf(from);
-    if (i < 0) throw new Error(`${what}: 找不到锚 ${from}（fail-closed）`);
-    const j = to ? text.indexOf(to, i) : text.length;
-    if (to && j < 0) throw new Error(`${what}: 找不到结束锚 ${to}（fail-closed）`);
-    const seg = text.slice(i, j);
-    const hits = [...seg.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
-    if (hits.length === 0) throw new Error(`${what}: 零命中（fail-closed）`);
-    return hits;
+/** 三方 family 真源的**精确相等门**（P2-10A 设计门首轮 #7；实现门首轮 #1 重写为**真 AST**）。
+ *
+ * ★ 初版用 `indexOf + slice + matchAll` 做文本匹配，却自称"AST 字面提取"——**那是假锁**：
+ *   把 planner Set 里的 `'rnb-neo-soul'` 改成注释 `/* 'rnb-neo-soul' removed *\/`，
+ *   源码依然合法、正则仍数出 27，而真实类型域已变成 26，生产 validDrumFamily 已不接受该 family。
+ *   本版改用 TypeScript AST，并对每种节点形态 fail-closed（拒 spread / 非字符串字面 / 重复 /
+ *   computed / method / 多次声明），杜绝"注释替身"与任意字符串补数。
+ */
+function tsSource(rel: string[]): ts.SourceFile {
+  const fp = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', ...rel);
+  const text = readFileSync(fp, 'utf-8');
+  const sf = ts.createSourceFile(rel[rel.length - 1], text, ts.ScriptTarget.ES2020, true);
+  if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+    throw new Error(`${rel.join('/')}: ${sf.parseDiagnostics.length} 条 parse diagnostic（fail-closed）`);
+  }
+  return sf;
+}
+
+/** `export type X = 'a' | 'b' | …` 的字符串字面 union → 有序数组（拒非字符串成员）。 */
+function astUnionLiterals(sf: ts.SourceFile, typeName: string): string[] {
+  let out: string[] | undefined;
+  const visit = (n: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(n) && n.name.text === typeName) {
+      if (out) throw new Error(`${typeName}: 多次声明（fail-closed）`);
+      const t = n.type;
+      if (!ts.isUnionTypeNode(t)) throw new Error(`${typeName}: 非 union 类型（fail-closed）`);
+      out = t.types.map((m) => {
+        if (!ts.isLiteralTypeNode(m) || !ts.isStringLiteral(m.literal)) {
+          throw new Error(`${typeName}: 含非字符串字面成员（fail-closed）`);
+        }
+        return m.literal.text;
+      });
+    }
+    ts.forEachChild(n, visit);
   };
-  const apPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'arranger', 'ArrangementPlan.ts');
-  const plPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'arranger', 'drumPerformancePlanner.ts');
-  const grPath = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', 'knowledge', 'grooves.ts');
-  const ap = readFileSync(apPath, 'utf-8');
-  const union = litSet(ap, 'export type DrumPatternFamily', 'export type DrumEntryMode', 'DrumPatternFamily union');
-  const planner = litSet(readFileSync(plPath, 'utf-8'), 'const DRUM_PATTERN_FAMILIES',
-                         'function validDrumFamily', 'planner DRUM_PATTERN_FAMILIES');
-  const gr = readFileSync(grPath, 'utf-8');
-  const gi = gr.indexOf('const DRUM_PERFORMANCE_FAMILIES');
-  if (gi < 0) throw new Error('realizer DRUM_PERFORMANCE_FAMILIES 锚缺失（fail-closed）');
-  const realizer = [...gr.slice(gi).matchAll(/^ {2}'([a-z0-9-]+)':/gm)].map((m) => m[1]);
-  if (realizer.length === 0) throw new Error('realizer 键集零命中（fail-closed）');
-  return { union, planner, realizer };
+  visit(sf);
+  if (!out || out.length === 0) throw new Error(`${typeName}: 未找到或为空（fail-closed）`);
+  if (new Set(out).size !== out.length) throw new Error(`${typeName}: 成员重复（fail-closed）`);
+  return out;
+}
+
+/** `const X = new Set([...])` 的字符串字面数组 → 有序数组（拒 spread / 非字面 / 重复）。 */
+function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[] {
+  let out: string[] | undefined;
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
+      if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
+      const init = n.initializer;
+      if (!init || !ts.isNewExpression(init) || !ts.isIdentifier(init.expression)
+          || init.expression.text !== 'Set') {
+        throw new Error(`${constName}: initializer 非 new Set(...)（fail-closed）`);
+      }
+      const arg = init.arguments && init.arguments[0];
+      if (!arg || !ts.isArrayLiteralExpression(arg)) {
+        throw new Error(`${constName}: new Set 实参非数组字面（fail-closed）`);
+      }
+      out = arg.elements.map((e) => {
+        if (!ts.isStringLiteral(e)) throw new Error(`${constName}: 含非字符串字面元素（fail-closed）`);
+        return e.text;
+      });
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
+  if (new Set(out).size !== out.length) throw new Error(`${constName}: 元素重复（fail-closed）`);
+  return out;
+}
+
+/** `const X: Record<...> = { 'k': …, }` 的**顶层属性键** → 有序数组（拒 spread / computed / 重复）。 */
+function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
+  let out: string[] | undefined;
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
+      if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
+      const init = n.initializer;
+      if (!init || !ts.isObjectLiteralExpression(init)) {
+        throw new Error(`${constName}: initializer 非 ObjectLiteral（fail-closed）`);
+      }
+      out = init.properties.map((pr) => {
+        if (!ts.isPropertyAssignment(pr)) {
+          throw new Error(`${constName}: 含非 PropertyAssignment 成员（spread/method/shorthand，fail-closed）`);
+        }
+        const nm = pr.name;
+        if (ts.isStringLiteral(nm)) return nm.text;
+        if (ts.isIdentifier(nm)) return nm.text;
+        throw new Error(`${constName}: 含 computed/非字面键（fail-closed）`);
+      });
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
+  if (new Set(out).size !== out.length) throw new Error(`${constName}: 键重复（fail-closed）`);
+  return out;
+}
+
+export function extractFamilyTripleSources(): { union: string[]; planner: string[]; realizer: string[] } {
+  return {
+    union: astUnionLiterals(tsSource(['arranger', 'ArrangementPlan.ts']), 'DrumPatternFamily'),
+    planner: astNewSetLiterals(tsSource(['arranger', 'drumPerformancePlanner.ts']), 'DRUM_PATTERN_FAMILIES'),
+    realizer: astObjectKeys(tsSource(['knowledge', 'grooves.ts']), 'DRUM_PERFORMANCE_FAMILIES'),
+  };
 }
 
 function buildDrumPatternFamilies(): DrumFamilyEntry[] {
@@ -863,15 +936,26 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     // ★ P2-10A 步2：扩到完整类型域 27，且**前 17 项编号逐字节不变**（append-only；
     //   它们已被 afe_groove_contract_data.h 的 designated-init 引用，重编号会静默改已合入数据）
     expect(drumPatternFamilies.length, 'family 扩至完整类型域 27').toBe(27);
-    const FROZEN_FIRST_17 = [
-      'pop-backbeat', 'ballad-halftime', 'citypop-syncopated-boogie', 'citypop-disco-boogie',
-    ];  // 只锚前 4 个名字作可读性抽样；完整不变性由下方逐项 id 断言保证
-    FROZEN_FIRST_17.forEach((nm, k) => {
-      expect(drumPatternFamilies[k].name, `前 17 项 id=${k} 不得变`).toBe(nm);
+    // ★ 冻结**完整 17 项**（实现门首轮 #4：原先只锚 4 个名字，而 `id==k` 因 id 是
+    //   `out.length` 现场生成而**恒真**，后 13 项调序或改名照样通过 ⇒ exporter 层是弱锁）
+    const FROZEN_FIRST_17: Array<[string, boolean, boolean]> = [
+      ['pop-backbeat', false, false], ['ballad-halftime', true, false],
+      ['citypop-syncopated-boogie', false, false], ['citypop-disco-boogie', false, false],
+      ['jpop-driving-8ths', false, false], ['tr808-lofi-boombap', false, false],
+      ['tr808-lofi-minimal', false, true], ['tr808-lofi-dusty-break', false, false],
+      ['tr808-rnb-pocket', false, false], ['tr808-dilla-pocket', false, false],
+      ['rnb-gospel-triplet', false, false], ['tr808-trap-soul-halftime', true, false],
+      ['jazz-swing-ride', false, false], ['jazz-bebop-comping', false, false],
+      ['jazz-brush-ballad', false, false], ['smooth-jazz-backbeat', false, false],
+      ['jazz-bossa', false, false],
+    ];
+    FROZEN_FIRST_17.forEach(([nm, ht, mn], k) => {
+      const f = drumPatternFamilies[k];
+      expect(f.id, `family[${k}].id`).toBe(k);
+      expect(f.name, `family[${k}].name（append-only：改名/调序即红）`).toBe(nm);
+      expect(f.halftime, `family[${k}].halftime`).toBe(ht);
+      expect(f.minimal, `family[${k}].minimal`).toBe(mn);
     });
-    for (let k = 0; k < 17; k++) {
-      expect(drumPatternFamilies[k].id, `family[${k}].id`).toBe(k);
-    }
     // 三方真源相等在 buildDrumPatternFamilies 内已 fail-closed；此处复述断言以留痕
     {
       const tri = extractFamilyTripleSources();
