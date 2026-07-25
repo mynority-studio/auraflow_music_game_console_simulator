@@ -46,8 +46,14 @@ import {
   ROLE_RHYTHM_PATTERN_IDS,
   roleRhythmPattern,
 } from '../src/core/generation/newEngine/knowledge/roleRhythmPatterns';
+import {
+  GROOVE_BASS_PATTERN_IDS,
+  JAZZ_WALKING_BASS_PATTERN_ID,
+  grooveBassPattern,
+} from '../src/core/generation/newEngine/knowledge/grooveBassPatterns';
+import { materializePopRockFill } from '../src/core/generation/newEngine/knowledge/drumFillVocabulary';
 
-const SCHEMA_VERSION = 'groove_kb_v2';  // v2: +拆步2 contract KB + rhythm_profile
+const SCHEMA_VERSION = 'groove_kb_v3';  // v3: +拆步5 fill cell steps/accents + bass ref 拍号
 const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e'; // Newengine_Demo-v5.0 规格锚（非工装 pin）
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -307,6 +313,163 @@ function buildTextureCases(): TextureCaseEntry[] {
   return out;
 }
 
+// ---- ②b 拆步5 前置：fill rhythm cell 的 steps/accents（materialization 浮点链的数据源）----
+// RHYTHM_CELLS 是 drumFillVocabulary.ts 的**私有 const**（步1 明确留给步5），故用 AST 源码字面提取
+// （零触碰 src/，不为导出而改生产源）+ **运行时 API 交叉校验**：用 materializePopRockFill 反查
+// 每个 cell 的 velocity，必须与"AST accents 代入 TS 公式"逐位一致（延续步1 rational+float 双校验制度）。
+// accents 是 binary64 且直接参与 velocity 乘法链 ⇒ 存 IEEE754 位型（十六进制），不存十进制文本。
+const FILL_SRC = join(
+  HERE, '..', 'src', 'core', 'generation', 'newEngine', 'knowledge', 'drumFillVocabulary.ts');
+
+function dbitsHex(x: number): string {
+  const buf = Buffer.alloc(8);
+  buf.writeDoubleLE(x, 0);
+  return buf.readBigUInt64LE(0).toString(16).padStart(16, '0');
+}
+
+interface FillCell { id: string; rhythmClass: string; steps: number[]; accents: number[]; }
+
+/** AST：RHYTHM_CELLS 数组字面 → 每 cell 的 id/rhythmClass/steps/accents（fail-closed）。 */
+function extractFillCells(): FillCell[] {
+  const text = readFileSync(FILL_SRC, 'utf-8');
+  const sf = ts.createSourceFile('drumFillVocabulary.ts', text, ts.ScriptTarget.ES2020, true);
+  let cellsArr: ts.ArrayLiteralExpression | undefined;
+  let allSteps: number[] | undefined;
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      let init: ts.Expression = n.initializer;
+      while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init)) init = init.expression;
+      if (n.name.text === 'RHYTHM_CELLS' && ts.isArrayLiteralExpression(init)) cellsArr = init;
+      if (n.name.text === 'ALL_STEPS' && ts.isArrayLiteralExpression(init)) {
+        allSteps = init.elements.map((e) => {
+          if (!ts.isNumericLiteral(e)) throw new Error('ALL_STEPS 非数字字面（fail-closed）');
+          return Number(e.text);
+        });
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (!cellsArr) throw new Error('未找到 RHYTHM_CELLS ArrayLiteral（fail-closed）');
+  if (!allSteps) throw new Error('未找到 ALL_STEPS ArrayLiteral（fail-closed）');
+  const numArray = (e: ts.Expression, what: string): number[] => {
+    if (ts.isIdentifier(e)) {
+      if (e.text !== 'ALL_STEPS') throw new Error(`${what}: 未知标识符 ${e.text}（fail-closed）`);
+      return allSteps!.slice();
+    }
+    if (!ts.isArrayLiteralExpression(e)) throw new Error(`${what}: 非数组字面（fail-closed）`);
+    return e.elements.map((x) => {
+      if (ts.isNumericLiteral(x)) return Number(x.text);
+      throw new Error(`${what}: 元素非数字字面（fail-closed）`);
+    });
+  };
+  return cellsArr.elements.map((el, i) => {
+    if (!ts.isObjectLiteralExpression(el)) throw new Error(`RHYTHM_CELLS[${i}] 非 ObjectLiteral`);
+    const rec: Record<string, ts.Expression> = {};
+    for (const p of el.properties) {
+      if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue;
+      rec[p.name.text] = p.initializer;
+    }
+    for (const k of ['id', 'rhythmClass', 'steps', 'accents']) {
+      if (!(k in rec)) throw new Error(`RHYTHM_CELLS[${i}] 缺字段 ${k}（fail-closed）`);
+    }
+    const idNode = rec.id, rcNode = rec.rhythmClass;
+    if (!ts.isStringLiteral(idNode) || !ts.isStringLiteral(rcNode))
+      throw new Error(`RHYTHM_CELLS[${i}] id/rhythmClass 非字符串字面（fail-closed）`);
+    return {
+      id: idNode.text, rhythmClass: rcNode.text,
+      steps: numArray(rec.steps, `cell[${i}].steps`),
+      accents: numArray(rec.accents, `cell[${i}].accents`),
+    };
+  });
+}
+
+/** 运行时交叉校验：AST accents 代入 TS velocity 公式，须与生产 materialize 的 hits 逐位相同。 */
+function crossCheckFillCells(cells: readonly FillCell[]): void {
+  const clampVelocity = (v: number): number => Math.max(38, Math.min(118, Math.round(v)));
+  const voiceFor = (orch: string, index: number, total: number): string => {
+    if (orch === 'snare') return 'snare';
+    const progress = total <= 1 ? 1 : index / (total - 1);
+    if (orch === 'snare-tom-cascade') {
+      if (progress < 0.4) return 'snare';
+      if (progress < 0.64) return 'tom-high';
+      if (progress < 0.84) return 'tom-mid';
+      return 'tom-low';
+    }
+    if (orch === 'descending-toms') {
+      if (progress < 0.3) return 'tom-high';
+      if (progress < 0.64) return 'tom-mid';
+      return 'tom-low';
+    }
+    if (index === total - 1) return 'tom-low';
+    if (index % 3 === 1) return 'kick';
+    if (progress < 0.34) return 'snare';
+    if (progress < 0.67) return 'tom-high';
+    return 'tom-mid';
+  };
+  const contour = (fn: string, p: number): number => {
+    if (fn === 'climax') return 0.86 + p * 0.24;
+    if (fn === 'lift' || fn === 'setup' || fn === 'opening') return 0.92 + p * 0.16;
+    if (fn === 'release') return 1 - p * 0.08;
+    return 0.92 + p * 0.06;
+  };
+  const byClass = new Map<string, FillCell[]>();
+  for (const c of cells) {
+    if (!byClass.has(c.rhythmClass)) byClass.set(c.rhythmClass, []);
+    byClass.get(c.rhythmClass)!.push(c);
+  }
+  let checked = 0;
+  for (const [cls, group] of byClass) {
+    group.forEach((cell, variant) => {
+      for (const orch of FILL_ORCHESTRATIONS) {
+        for (const fn of FILL_FUNCTIONS) {
+          for (const [durationBeats, intensity] of [[2, 3], [1, 2], [0.5, 1]] as const) {
+            const got = materializePopRockFill({
+              rhythmClass: cls as never, orchestration: orch as never, function: fn as never,
+              variant, durationBeats, intensity: intensity as 1 | 2 | 3,
+            });
+            expect(got.recipeId, 'cell 选择须与 AST 声明序一致')
+              .toBe(`${POP_ROCK_FILL_VOCABULARY_ID}:${cell.id}:${orch}`);
+            const slotCount = Math.max(2, Math.min(8, Math.round(durationBeats * 4)));
+            const firstSlot = 8 - slotCount;
+            const selected = cell.steps.filter((st) => st >= firstSlot);
+            expect(got.hits.length, 'hit 数').toBe(selected.length);
+            selected.forEach((step, index) => {
+              const p = selected.length <= 1 ? 1 : index / (selected.length - 1);
+              const vel = clampVelocity(
+                (intensity === 3 ? 90 : intensity === 2 ? 78 : 66)
+                * (cell.accents[step] ?? 1) * contour(fn, p));
+              expect(got.hits[index].velocity, `${cell.id}/${orch}/${fn} hit${index} velocity`).toBe(vel);
+              expect(got.hits[index].voice, `${cell.id}/${orch}/${fn} hit${index} voice`)
+                .toBe(voiceFor(orch, index, selected.length));
+              expect(got.hits[index].offsetBeatsFromEnd, 'offset').toBe((step - 8) * 0.25);
+              checked++;
+            });
+          }
+        }
+      }
+    });
+  }
+  expect(checked, 'velocity 交叉校验次数（AST accents 代入公式 == 生产 materialize）')
+    .toBeGreaterThan(1000);
+}
+
+// ---- ②c 拆步5 前置：bass ref 拍号（planner.ts:532-537 的拍号一致性 fail-closed 所需）----
+// 7 值 ref 空间：0..5 = GROOVE_BASS_PATTERN_IDS（grooveBassPattern 可查），6 = jazz-walking
+// pass-through（PATTERNS 里没有该键 ⇒ TS 不做拍号检查 ⇒ 拍号记 null）。
+function buildBassPatternMeter() {
+  const refs = [...GROOVE_BASS_PATTERN_IDS, JAZZ_WALKING_BASS_PATTERN_ID];
+  return {
+    ownerTask: 'P2J-b / grooveBassPatterns',
+    note: 'resolved bass ref(7 值) → beatsPerBar；ref 6 = jazz-walking pass-through 无注册 pattern ⇒ null'
+      + '（TS grooveBassPattern 返回 undefined，故不做拍号一致性断言）。',
+    refs: refs.map((id, i) => {
+      const p = grooveBassPattern(id);
+      return { ref: i, id, beatsPerBar: p ? p.beatsPerBar : null };
+    }),
+  };
+}
+
 // ---- ② fill vocabulary（owner=P2-10A-b）----
 function buildFillVocabulary() {
   const recipes = popRockFillRecipeDescriptors().map((d, i) => ({
@@ -321,9 +484,16 @@ function buildFillVocabulary() {
       rhythmClass: x.rhythmClass, orchestration: x.orchestration,
     })),
   }));
+  const cells = extractFillCells();
+  crossCheckFillCells(cells);
   return {
     ownerTask: 'P2-10A-b',
     vocabularyId: POP_ROCK_FILL_VOCABULARY_ID,
+    // 拆步5 前置：cell steps + accents（IEEE754 位型；materialization 浮点链的唯一数据源）
+    cells: cells.map((c, i) => ({
+      id: i, cellId: c.id, rhythmClass: c.rhythmClass, steps: c.steps.slice(),
+      accents: c.accents.map((a) => dbitsHex(a)),
+    })),
     orchestrations: POP_ROCK_FILL_ORCHESTRATIONS.slice(),
     rhythmClasses: FILL_RHYTHM_CLASSES.slice(),
     functions: FILL_FUNCTIONS.slice(),
@@ -512,6 +682,7 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     const roleRhythm = buildRoleRhythm();
     const drumFamByName = new Map(drumPatternFamilies.map((f) => [f.name, f.id]));
     const texByName = new Map(textureCases.map((t) => [t.name, t.id]));
+    const bassPatternMeter = buildBassPatternMeter();
     const contract = buildContractKb(drumFamByName, texByName);
     const rhythmProfile = buildRhythmProfiles();
 
@@ -557,6 +728,25 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     expect(takeFive.phaseLanes.length, 'take-five 6 phase lanes').toBe(6);
     // ⑥ rhythm_profile：9 条。
     expect(rhythmProfile.profiles.length, '9 rhythm profile').toBe(9);
+    // ⑦ 拆步5 前置：fill cell 15 条、每条 accents 恰 8 个位型、steps 值域 [0,8)、按 class 分组数正确
+    expect(fillVocabulary.cells.length, '15 rhythm cell').toBe(15);
+    for (const c of fillVocabulary.cells) {
+      expect(c.accents.length, `${c.cellId} accents 8 个`).toBe(8);
+      for (const a of c.accents) expect(/^[0-9a-f]{16}$/.test(a), 'accent 位型 16 hex').toBe(true);
+      expect(c.steps.length, `${c.cellId} steps 非空`).toBeGreaterThan(0);
+      expect(c.steps.every((st) => Number.isInteger(st) && st >= 0 && st < 8), 'step 值域').toBe(true);
+      expect([...c.steps].sort((x, y) => x - y).join(), 'steps 须升序去重').toBe([...new Set(c.steps)].join());
+      expect(FILL_RHYTHM_CLASSES).toContain(c.rhythmClass);
+    }
+    // 每 class 5 条（15 = 3×5）；recipe 60 = 15 cell × 4 orch 的一致性
+    for (const cls of FILL_RHYTHM_CLASSES)
+      expect(fillVocabulary.cells.filter((c) => c.rhythmClass === cls).length, `${cls} 5 cell`).toBe(5);
+    expect(fillVocabulary.recipes.length, '60 = 15×4').toBe(fillVocabulary.cells.length * 4);
+    // ⑧ 拆步5 前置：bass ref 7 值，0..5 有拍号、6 = pass-through 无拍号
+    expect(bassPatternMeter.refs.length, '7 bass ref').toBe(7);
+    expect(bassPatternMeter.refs.slice(0, 6).every((r) => r.beatsPerBar !== null), 'ref 0..5 有拍号').toBe(true);
+    expect(bassPatternMeter.refs[6].beatsPerBar, 'ref 6 jazz-walking pass-through 无拍号').toBe(null);
+    expect(bassPatternMeter.refs[5].beatsPerBar, 'take-five ostinato 5 拍').toBe(5);
 
     const out = {
       meta: {
@@ -580,6 +770,7 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
       },
       fillVocabulary,
       roleRhythm,
+      bassPatternMeter,
       contract,
       rhythmProfile,
     };
