@@ -1914,30 +1914,51 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
    *
    * 故本版改为**完整正向数据流契约**（锁「唯一合法形态」，不是枚举坏形态）。
    *
-   * ★ 下面是**唯一权威清单**——六轮 Nit 4：上一版总览只列 ①–⑤，而实现还有若干条只写在
-   *   局部注释里，「完整契约」这个标题于是又制造了描述歧义（五轮 Finding 1 正是
-   *   「注释承诺 ≠ 实现」）。改动契约时**必须同步这份清单**。
+   * ★ 下面是**唯一权威清单**。八轮 Codex Minor 3 指出上一版清单又出现「实现有、清单没写」
+   *   （连续三轮同一病根，且 G6 措辞也犯过同病）。本版清单是**从实现的 56 个 throw 点
+   *   反向枚举**得出的，不凭记忆书写；改动契约时**必须同步这份清单**。
    *
-   *   ① 顶层带 body 的 `buildFeelProfiles` 声明恰 1 处；
-   *   ② 消费点 `const feelKb = <该函数符号>()` 零参直接调用；该函数符号除声明名与此调用外
-   *      **无其他引用**（禁别名/额外调用）；
-   *   ③ `const ids = Object.keys(DRUM_FEEL_PROFILES)`：`ids` 必须 const；`Object` 不得在
-   *      被验证作用域内重绑；`DRUM_FEEL_PROFILES` 按**符号**锁到顶层 import；
-   *   ④ `rows` 顶层声明恰 1 处且必须 `const`；initializer 是单参 `.map(<块体箭头>)`，
-   *      接收者按**符号** == 该 `ids`；
-   *   ⑤ callback 自身的 `return` 恰 1 条且为末尾语句（排除 early return）；
-   *      其返回对象禁 spread；
-   *   ⑥ `p` 在 callback 内唯一 `const`，initializer 为 `drumFeelProfile(id as never)`，
-   *      且 `drumFeelProfile` 按**符号**锁到顶层 import；
-   *   ⑦ `p` 的引用面：除声明名外只能作属性访问的对象；`p.physical` 只允许**直达四个已知叶**
-   *      （不得作实参/initializer/返回值/动态索引基底）；两个手型叶各恰读 1 次；
-   *   ⑧ row 对象里 `physical` 属性恰 1 处，其 initializer 是对象字面量且禁 spread；
-   *      `timekeeperHand`/`ghostHand` 各恰 1 处，initializer **就是** `HAND_ID(...)` 调用本身，
-   *      callee 按**符号**锁到文件级 `HAND_ID` 声明，三实参逐个核对
-   *      （kind 字面量 / `p.physical.<prop>` / callback 首形参 `id` 符号）；
-   *   ⑨ 函数体内不得出现手写手型字面量 `'right'|'left'|'alternating'`；
-   *   ⑩ `rows` 的全部引用只允许「声明名 + 最终 `return { … profiles: rows }`」，
-   *      且最终 `profiles` 直接引用该 `rows` 符号。 */
+   *   ── A. 被验证函数与消费链（证明「验的就是进产物的那份」）
+   *   ① 顶层**带 body** 的 `buildFeelProfiles` 声明恰 1 处；
+   *   ② 消费点 `const feelKb`（唯一声明、必须 `const`）的 initializer 是该函数**符号**的
+   *      零参直接调用；该函数符号除声明名与此调用外**无其他引用**；
+   *   ③ 结构定位**唯一**一个 initializer 含 `drumFeelProfile` 属性的产物对象声明，
+   *      其中 `drumFeelProfile` 是唯一的对象字面量属性（记作 dfpObj）；
+   *   ④ `dfpObj` 的 `knowledgeSourceOrder`/`phraseBarRoleOrder`/`profiles` 三字段
+   *      各恰 1 处、且 initializer 就是 `feelKb.sourceOrder`/`.roleOrder`/`.profiles`
+   *      （按**符号**核对，不按全文件同名属性计数——否则 decoy 对象可代打）；
+   *   ⑤ 支链：`profileIdx`（唯一）= `new Map(feelKb.profiles.map(...))`；
+   *      `profileByContract`（唯一）= `buildProfileByContract(profileIdx)`（实参按符号）；
+   *      `dfpObj.effectiveByContract`/`fallbackLeaves` 直接取自 `profileByContract.effective`/`.fallbackLeaves`；
+   *   ⑥ `feelKb` 符号的**全部引用**只允许 ④⑤ 白名单里的那几处字段读取——
+   *      字段写入 / 字段别名 / 整体逃逸 / 第二条投影链一律拒。
+   *
+   *   ── B. 函数体内的构造链
+   *   ⑦ `const ids = Object.keys(DRUM_FEEL_PROFILES)`：`ids` 必须 `const`；
+   *      `Object` 不得在**本文件任何位置**被重新声明；`DRUM_FEEL_PROFILES` 按
+   *      **精确 (模块路径, 被导入 export 名)** 二元组锁到顶层 import；
+   *   ⑧ `rows` 顶层声明恰 1 处且必须 `const`；initializer 是单参 `.map(<块体箭头>)`，
+   *      接收者按**符号** == 该 `ids`；callback 首形参名为 `id`；
+   *   ⑨ callback **自身**的 `return`（不含嵌套函数的）恰 1 条且为末尾语句；
+   *      其返回的 row 对象禁 spread，`physical` 属性恰 1 处、initializer 是对象字面量且禁 spread；
+   *   ⑩ `p` 在 callback 内唯一 `const`，initializer 为 `drumFeelProfile(id as never)`，
+   *      且 `drumFeelProfile` 按**精确二元组**锁到顶层 import；
+   *      `p` 的引用面：除声明名外只能作属性访问的对象；
+   *   ⑪ `p.physical` 四个叶 `maxHandsAtOnce`/`timekeeperHand`/`ghostHand`/`chokeOpenHatWithClosed`
+   *      **各恰 1 次**，且各自的**终端只读上下文**受限：
+   *        · 通用：拒写入 / 复合赋值 / update / delete / 作 callee / 别名逃逸 / 动态索引 / 未知叶；
+   *        · `maxHandsAtOnce`：必须是 `if (p.physical.maxHandsAtOnce !== 2) throw …` 的完整形态
+   *          （叶为 `!==` 左值、右值字面量 `2`、比较即 `if` 条件、无 else、then 分支抛错）；
+   *        · `chokeOpenHatWithClosed`：必须**就是** ⑨ 定位到的 physical 对象内那个唯一同名
+   *          属性节点（节点身份，不是名字相等）的 initializer；
+   *        · 两手型叶：必须是对应 `HAND_ID` 调用的第 2 实参；
+   *   ⑫ `physical.timekeeperHand`/`ghostHand` 各恰 1 处属性赋值，initializer **就是**
+   *      `HAND_ID(...)` 调用本身；callee 按**符号**锁到文件级 `HAND_ID` 声明；
+   *      三实参逐个核对（kind 字面量 / `p.physical.<prop>` 且根标识符按符号 == `p` /
+   *      callback 首形参 `id` 按符号）；
+   *   ⑬ 函数体内不得出现手写手型字面量 `'right'|'left'|'alternating'`；
+   *   ⑭ `rows` 的全部引用只允许「声明名 + 最终 `return { … profiles: rows }`」，
+   *      且函数最终 return 是对象字面量、其 `profiles` 直接引用该 `rows` **符号**。 */
   /** 把标识符锁到**顶层 import specifier**。`noResolve` 下 getAliasedSymbol 不可用，
    *  故直接核对符号的声明是 ImportSpecifier 且其模块说明符符合预期——
    *  这足以证明「不是局部重绑」，正是六轮 Finding 1 的三个反例（drumFeelProfile /
@@ -2229,16 +2250,39 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
               } else if (gp && (ts.isVariableDeclaration(gp) || ts.isSpreadElement(gp))) {
                 bad.push(`alias:${gp.getText(sf).slice(0, 40)}`);   // 别名逃逸
               } else if (leaf === 'maxHandsAtOnce') {
-                // 唯一允许：恒值校验比较（生产为 `p.physical.maxHandsAtOnce !== 2`）
-                if (!gp || !ts.isBinaryExpression(gp)
-                    || gp.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsEqualsToken) {
-                  bad.push(`maxHandsAtOnce 非恒值校验上下文:${gp ? gp.getText(sf).slice(0, 40) : '?'}`);
+                // 八轮 Finding 2：只查操作符是 `!==` **不够**——`const ignored =
+                // p.physical.maxHandsAtOnce !== 2;` 实测 ACCEPT，比较结果没被消费，
+                // 恒 2 断言等于没有。锁**完整形态**：叶为 `!==` 左值、右值字面量 2、
+                // 该比较就是 `if` 的条件、then 分支抛错。
+                const okCmp = gp && ts.isBinaryExpression(gp) && gp.left === par
+                  && gp.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
+                  && ts.isNumericLiteral(gp.right) && gp.right.text === '2';
+                const ifSt = okCmp ? gp!.parent : undefined;
+                const okIf = ifSt && ts.isIfStatement(ifSt) && ifSt.expression === gp
+                  && !ifSt.elseStatement;
+                let throws = false;
+                if (okIf) {
+                  const findThrow = (x: ts.Node): void => {
+                    if (ts.isThrowStatement(x)) throws = true;
+                    x.forEachChild(findThrow);
+                  };
+                  findThrow((ifSt as ts.IfStatement).thenStatement);
+                }
+                if (!okCmp || !okIf || !throws) {
+                  bad.push('maxHandsAtOnce 非「if (… !== 2) throw」恒值校验形态:'
+                    + `${gp ? gp.getText(sf).slice(0, 48) : '?'}`);
                 }
               } else if (leaf === 'chokeOpenHatWithClosed') {
-                // 唯一允许：作为最终 row 里同名属性的 initializer
-                if (!gp || !ts.isPropertyAssignment(gp) || gp.initializer !== par
-                    || !ts.isIdentifier(gp.name) || gp.name.text !== 'chokeOpenHatWithClosed') {
-                  bad.push(`chokeOpenHatWithClosed 非 row 属性 initializer:${gp ? gp.getText(sf).slice(0, 40) : '?'}`);
+                // 八轮 Finding 2：只验「父节点是同名 PropertyAssignment」**不够**——
+                // 另放一个 decoy 对象承载同名属性即可 ACCEPT。要求它**就是**此前结构定位到的
+                // physical 对象字面量（`obj`）里那个唯一同名属性节点（节点身份，不是名字相等）。
+                const inObj = obj.properties.filter(
+                  (pr): pr is ts.PropertyAssignment =>
+                    ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name)
+                    && pr.name.text === 'chokeOpenHatWithClosed');
+                if (!gp || inObj.length !== 1 || inObj[0] !== gp || gp.initializer !== par) {
+                  bad.push('chokeOpenHatWithClosed 不是 physical 对象内那个唯一同名属性:'
+                    + `${gp ? gp.getText(sf).slice(0, 48) : '?'}`);
                 }
               } else {
                 // 两个手型叶：只允许作对应 HAND_ID 调用的第 2 实参
@@ -2336,42 +2380,137 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
           + '可被别名/额外调用绕开唯一消费点，fail-closed');
       }
 
-      // feelKb 符号的**全部引用**只允许 `feelKb.<字段>` 读取（禁赋值/别名/整体逃逸）
+      // feelKb 符号的**全部引用**只允许 `feelKb.<字段>` 读取，且该读取的**终端上下文**受限。
+      // 八轮 Finding 1：上一版只查「直接父节点是 PropertyAccess」+「全 SourceFile 按属性名
+      // 计数三字段」，四例实测 ACCEPT：`feelKb.profiles = BAD` / `const alias = feelKb.profiles`
+      // / `profileIdx` 改从 `BAD_KB.profiles` 建表 / 三字段改走 BAD_KB 而另放 decoy 对象承载
+      // 三次 `feelKb.<field>`（「各恰一处」被 decoy 代打）。故本版**结构定位**唯一的
+      // `out.drumFeelProfile` 对象，三字段必须是**该对象**的直接属性，并锁 profileIdx 支链。
       const kbSym = ck.getSymbolAtLocation(feelKbDecl.name as ts.Identifier);
+
+      // 结构定位：唯一一个 initializer 含 `drumFeelProfile` 属性的对象字面量声明
+      const docDecls: ts.VariableDeclaration[] = [];
+      const findDoc = (n: ts.Node): void => {
+        if (ts.isVariableDeclaration(n) && n.initializer
+            && ts.isObjectLiteralExpression(n.initializer)
+            && n.initializer.properties.some((pr) => ts.isPropertyAssignment(pr)
+              && ts.isIdentifier(pr.name) && pr.name.text === 'drumFeelProfile')) {
+          docDecls.push(n);
+        }
+        n.forEachChild(findDoc);
+      };
+      sf.forEachChild(findDoc);
+      if (docDecls.length !== 1) {
+        throw new Error(`含 drumFeelProfile 段的产物对象声明 ${docDecls.length} 处，应恰 1 处`
+          + '——无法判定哪个进 JSON，fail-closed');
+      }
+      const dfpProps = (docDecls[0].initializer as ts.ObjectLiteralExpression).properties
+        .filter((pr): pr is ts.PropertyAssignment => ts.isPropertyAssignment(pr)
+          && ts.isIdentifier(pr.name) && pr.name.text === 'drumFeelProfile');
+      if (dfpProps.length !== 1 || !ts.isObjectLiteralExpression(dfpProps[0].initializer)) {
+        throw new Error('产物对象里的 drumFeelProfile 不是唯一的对象字面量属性（fail-closed）');
+      }
+      const dfpObj = dfpProps[0].initializer;
+      const dfpProp = (key: string): ts.PropertyAssignment | undefined => {
+        const hits = dfpObj.properties.filter((pr): pr is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name) && pr.name.text === key);
+        return hits.length === 1 ? hits[0] : undefined;
+      };
+
+      // profileIdx 支链：`const profileIdx = new Map(feelKb.profiles.map(...))`
+      let idxDecl: ts.VariableDeclaration | undefined;
+      let idxCount = 0;
+      const findIdx = (n: ts.Node): void => {
+        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === 'profileIdx') {
+          idxCount++; idxDecl = n;
+        }
+        n.forEachChild(findIdx);
+      };
+      sf.forEachChild(findIdx);
+      if (idxCount !== 1 || !idxDecl) throw new Error(`profileIdx 声明 ${idxCount} 处，应恰 1 处（fail-closed）`);
+      let idxMapRecv: ts.PropertyAccessExpression | undefined;
+      {
+        const init = idxDecl.initializer;
+        const arg = init && ts.isNewExpression(init) && ts.isIdentifier(init.expression)
+          && init.expression.text === 'Map' ? init.arguments?.[0] : undefined;
+        const mapCall2 = arg && ts.isCallExpression(arg) && ts.isPropertyAccessExpression(arg.expression)
+          && arg.expression.name.text === 'map' ? arg : undefined;
+        const recv2 = mapCall2 ? (mapCall2.expression as ts.PropertyAccessExpression).expression : undefined;
+        if (!recv2 || !ts.isPropertyAccessExpression(recv2) || recv2.name.text !== 'profiles'
+            || !ts.isIdentifier(recv2.expression) || ck.getSymbolAtLocation(recv2.expression) !== kbSym) {
+          throw new Error(`profileIdx 不是 new Map(feelKb.profiles.map(...))（实得 `
+            + `${idxDecl.initializer?.getText(sf).slice(0, 60)}）——支链可被换成第二 KB，fail-closed`);
+        }
+        idxMapRecv = recv2;
+      }
+
+      // profileByContract 支链：`buildProfileByContract(profileIdx)`，且 effective/fallback 直取
+      {
+        const idxSym = ck.getSymbolAtLocation(idxDecl.name as ts.Identifier);
+        let pbcDecl: ts.VariableDeclaration | undefined;
+        let pbcCount = 0;
+        const findPbc = (n: ts.Node): void => {
+          if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)
+              && n.name.text === 'profileByContract') { pbcCount++; pbcDecl = n; }
+          n.forEachChild(findPbc);
+        };
+        sf.forEachChild(findPbc);
+        if (pbcCount !== 1 || !pbcDecl) throw new Error(`profileByContract 声明 ${pbcCount} 处，应恰 1 处（fail-closed）`);
+        const pi = pbcDecl.initializer;
+        if (!pi || !ts.isCallExpression(pi) || !ts.isIdentifier(pi.expression)
+            || pi.expression.text !== 'buildProfileByContract' || pi.arguments.length !== 1
+            || !ts.isIdentifier(pi.arguments[0])
+            || ck.getSymbolAtLocation(pi.arguments[0]) !== idxSym) {
+          throw new Error('profileByContract 不是 buildProfileByContract(profileIdx)（fail-closed）');
+        }
+        const pbcSym = ck.getSymbolAtLocation(pbcDecl.name as ts.Identifier);
+        for (const [jsonKey, field] of [['effectiveByContract', 'effective'],
+                                       ['fallbackLeaves', 'fallbackLeaves']] as const) {
+          const pr = dfpProp(jsonKey);
+          const ini = pr?.initializer;
+          if (!ini || !ts.isPropertyAccessExpression(ini) || ini.name.text !== field
+              || !ts.isIdentifier(ini.expression)
+              || ck.getSymbolAtLocation(ini.expression) !== pbcSym) {
+            throw new Error(`drumFeelProfile.${jsonKey} 不是直接取自 profileByContract.${field}（fail-closed）`);
+          }
+        }
+      }
+
+      // 最终三字段：必须是 **dfpObj 内**那个唯一同名属性，且 initializer 就是 feelKb.<字段>
+      const WANT_JSON: Array<[string, string]> = [
+        ['knowledgeSourceOrder', 'sourceOrder'],
+        ['phraseBarRoleOrder', 'roleOrder'],
+        ['profiles', 'profiles'],
+      ];
+      const allowedKbReads = new Set<ts.Node>([idxMapRecv!]);
+      for (const [jsonKey, kbField] of WANT_JSON) {
+        const pr = dfpProp(jsonKey);
+        const ini = pr?.initializer;
+        if (!pr || !ini || !ts.isPropertyAccessExpression(ini) || ini.name.text !== kbField
+            || !ts.isIdentifier(ini.expression) || ck.getSymbolAtLocation(ini.expression) !== kbSym) {
+          throw new Error(`drumFeelProfile.${jsonKey} 不是该产物对象内直接取自 feelKb.${kbField}`
+            + '（可能被 decoy 对象代打或改走第二 KB），fail-closed');
+        }
+        allowedKbReads.add(ini);
+      }
+
+      // feelKb 的全部引用：必须是白名单里的那几处字段读取，别的（含写入/别名）一律拒
       const kbBad: string[] = [];
-      const kbFieldReads: ts.PropertyAccessExpression[] = [];
       const scanKb = (n: ts.Node): void => {
         if (ts.isIdentifier(n) && n.text === 'feelKb' && n !== feelKbDecl!.name
             && ck.getSymbolAtLocation(n) === kbSym) {
           const par = n.parent;
-          if (par && ts.isPropertyAccessExpression(par) && par.expression === n) {
-            kbFieldReads.push(par);
-          } else {
-            kbBad.push(par ? `${ts.SyntaxKind[par.kind]}:${par.getText(sf).slice(0, 40)}` : '?');
+          if (!par || !ts.isPropertyAccessExpression(par) || par.expression !== n
+              || !allowedKbReads.has(par)) {
+            kbBad.push(par ? `${ts.SyntaxKind[par.kind]}:${par.getText(sf).slice(0, 48)}` : '?');
           }
         }
         n.forEachChild(scanKb);
       };
       sf.forEachChild(scanKb);
       if (kbBad.length) {
-        throw new Error(`feelKb 存在非字段读取的引用 ${JSON.stringify(kbBad)}——`
-          + '可被重赋值或整体换成第二 KB，fail-closed');
-      }
-
-      // 最终 JSON 的三个字段必须**直接**取自该 feelKb 符号
-      const WANT_JSON: Array<[string, string]> = [
-        ['knowledgeSourceOrder', 'sourceOrder'],
-        ['phraseBarRoleOrder', 'roleOrder'],
-        ['profiles', 'profiles'],
-      ];
-      for (const [jsonKey, kbField] of WANT_JSON) {
-        const hits = kbFieldReads.filter((r) => r.name.text === kbField
-          && r.parent && ts.isPropertyAssignment(r.parent) && r.parent.initializer === r
-          && ts.isIdentifier(r.parent.name) && r.parent.name.text === jsonKey);
-        if (hits.length !== 1) {
-          throw new Error(`最终 JSON 的 ${jsonKey} 不是恰 1 处直接取自 feelKb.${kbField}`
-            + `（实得 ${hits.length} 处）——产物可能来自第二条投影链，fail-closed`);
-        }
+        throw new Error(`feelKb 存在白名单外的引用 ${JSON.stringify(kbBad)}——`
+          + '字段写入/别名/整体逃逸/第二条投影链，fail-closed');
       }
     }
 
@@ -2442,6 +2581,9 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     jsonSrc?: string; jsonRole?: string; jsonProfiles?: string;   // 最终 JSON 三字段
     importFrom?: string; importAlias?: string;                    // import 形态
     maxHands?: string;   // maxHandsAtOnce 的使用语句
+    idxInit?: string; pbcInit?: string;                 // 支链
+    docKw?: string; docExtra?: string;                  // 产物对象
+    jsonEff?: string; jsonFb?: string;                  // effective / fallback 字段
     choke?: string;      // chokeOpenHatWithClosed 的 initializer
   };
   const mkSrc = (o: Parts = {}): string =>
@@ -2465,11 +2607,15 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     + `  ${o.tail ?? ''}\n`
     + `  ${o.ret ?? 'return { profiles: rows };'}\n}\n`
     + `${o.kbKw ?? 'const'} feelKb = ${o.consume ?? 'buildFeelProfiles()'};\n`
+    + `const profileIdx = ${o.idxInit ?? 'new Map(feelKb.profiles.map((q: any) => [q.name, q.id]))'};\n`
+    + `const profileByContract = ${o.pbcInit ?? 'buildProfileByContract(profileIdx)'};\n`
     + `${o.kbTail ?? ''}\n`
-    + 'const out = { drumFeelProfile: {\n'
+    + `${o.docKw ?? 'const'} out = { ${o.docExtra ?? ''}drumFeelProfile: {\n`
     + `  knowledgeSourceOrder: ${o.jsonSrc ?? 'feelKb.sourceOrder'},\n`
     + `  phraseBarRoleOrder: ${o.jsonRole ?? 'feelKb.roleOrder'},\n`
-    + `  profiles: ${o.jsonProfiles ?? 'feelKb.profiles'},\n} };\n`;
+    + `  profiles: ${o.jsonProfiles ?? 'feelKb.profiles'},\n`
+    + `  effectiveByContract: ${o.jsonEff ?? 'profileByContract.effective'},\n`
+    + `  fallbackLeaves: ${o.jsonFb ?? 'profileByContract.fallbackLeaves'},\n} };\n`;
 
   it('生产 buildFeelProfiles 通过委托证明（完整正向数据流契约）', () => {
     const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
@@ -2526,19 +2672,48 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       /Object 在本文件内被重新声明/],
     ['feelKb 用 let', { kbKw: 'let' }, /feelKb 不是 const 声明/],
     ['feelKb 被重赋值', { kbKw: 'let', kbTail: 'feelKb = BAD_KB;' }, /feelKb 不是 const 声明/],
-    ['feelKb 整体逃逸', { kbTail: 'SEND(feelKb);' }, /feelKb 存在非字段读取的引用/],
+    ['feelKb 整体逃逸', { kbTail: 'SEND(feelKb);' }, /feelKb 存在白名单外的引用/],
     ['最终 profiles 改走第二 KB', { jsonProfiles: 'BAD_KB.profiles' },
-      /profiles 不是恰 1 处直接取自 feelKb\.profiles/],
+      /profiles 不是该产物对象内直接取自 feelKb\.profiles/],
     ['最终 knowledgeSourceOrder 改走第二 KB', { jsonSrc: 'BAD_KB.sourceOrder' },
-      /knowledgeSourceOrder 不是恰 1 处直接取自/],
+      /knowledgeSourceOrder 不是该产物对象内直接取自/],
     ['p.physical.maxHandsAtOnce 写入', { cbHead: 'p.physical.maxHandsAtOnce = 2;' },
       /终端只读上下文违例/],
     ['p.physical.chokeOpenHatWithClosed 换上下文（不落 row 属性）',
       { choke: 'NORMALIZE(p.physical.chokeOpenHatWithClosed)' },
-      /chokeOpenHatWithClosed 非 row 属性 initializer/],
+      /chokeOpenHatWithClosed 不是 physical 对象内那个唯一同名属性/],
     ['p.physical.maxHandsAtOnce 换上下文（不做恒值校验）',
       { maxHands: 'const mh = p.physical.maxHandsAtOnce;' },
       /alias:|maxHandsAtOnce 非恒值校验上下文/],
+    // ★★ 八轮 Finding 1/2
+    ['feelKb 字段被写入', { kbTail: 'feelKb.profiles = BAD_PROFILES;' },
+      /feelKb 存在白名单外的引用/],
+    ['feelKb 字段被取别名', { kbTail: 'const alias = feelKb.profiles;' },
+      /feelKb 存在白名单外的引用/],
+    ['profileIdx 改从第二 KB 建表',
+      { idxInit: 'new Map(BAD_KB.profiles.map((q: any) => [q.name, q.id]))' },
+      /profileIdx 不是 new Map\(feelKb\.profiles\.map/],
+    ['profileByContract 不吃 profileIdx', { pbcInit: 'buildProfileByContract(BAD_IDX)' },
+      /profileByContract 不是 buildProfileByContract\(profileIdx\)/],
+    ['effectiveByContract 改走别处', { jsonEff: 'BAD_PBC.effective' },
+      /effectiveByContract 不是直接取自 profileByContract\.effective/],
+    ['三字段改走第二 KB + decoy 对象承载 feelKb 读取（各恰一处被代打）',
+      { jsonSrc: 'BAD_KB.sourceOrder', jsonRole: 'BAD_KB.roleOrder', jsonProfiles: 'BAD_KB.profiles',
+        kbTail: 'const decoy = { knowledgeSourceOrder: feelKb.sourceOrder, '
+          + 'phraseBarRoleOrder: feelKb.roleOrder, profiles: feelKb.profiles };' },
+      /knowledgeSourceOrder 不是该产物对象内直接取自|feelKb 存在白名单外的引用/],
+    ['产物对象出现两处（无法判定哪个进 JSON）',
+      { kbTail: 'const other = { drumFeelProfile: {} };' },
+      /含 drumFeelProfile 段的产物对象声明 2 处/],
+    ['maxHandsAtOnce 比较结果未被消费（恒值断言形同虚设）',
+      { maxHands: 'const ignored = p.physical.maxHandsAtOnce !== 2;' },
+      /alias:|非「if \(… !== 2\) throw」恒值校验形态/],
+    ['maxHandsAtOnce 的 if 分支不抛错',
+      { maxHands: 'if (p.physical.maxHandsAtOnce !== 2) NOOP();' },
+      /非「if \(… !== 2\) throw」恒值校验形态/],
+    ['maxHandsAtOnce 右值不是字面量 2',
+      { maxHands: "if (p.physical.maxHandsAtOnce !== LIMIT) throw new Error('x');" },
+      /非「if \(… !== 2\) throw」恒值校验形态/],
     // ★★ 六轮 Finding 2：消费点绑定
     ['消费点被重定向到 BAD_BUILD()（decoy 仍在）', { consume: 'BAD_BUILD()' },
       /不是被验证的 buildFeelProfiles 零参直接调用/],
