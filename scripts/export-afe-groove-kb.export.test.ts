@@ -310,7 +310,9 @@ export function tsParse(text: string, name = 'x.ts'): ts.SourceFile {
  *   `Object.assign(X, …)` / `X['k'] ||= v` / RHS 传递 / 实参 / return / 解构 / inc-dec 因此全部被拒。
  */
 type UsageKind = 'set' | 'object';
-function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind): void {
+function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind,
+                                expectNonDeclRefs?: number): void {
+  let nonDeclRefs = 0;
   const visit = (n: ts.Node): void => {
     if (ts.isIdentifier(n) && n.text === name) {
       // 剥掉 as / 括号 / ! 后，取"实际被使用"的那个节点
@@ -348,6 +350,17 @@ function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind
           bad(`对象成员访问只允许「const 声明的 initializer」这一种生产形态，`
             + `实得父节点 ${w ? ts.SyntaxKind[w.kind] : '<none>'}`);
         }
+        // ★ 还要锁**索引表达式的形态**（六轮 #1）：仅 const-initializer 不够——
+        //   `const x = X['__proto__']` 同样命中，而 patternFamily 是可选 string，
+        //   静态排除不了 '__proto__'。生产唯一形态是 `X[expr ?? '']`（grooves.ts:383），
+        //   故索引必须是 `??` 二元表达式，字面量/裸标识符一律拒。
+        const idx = p.argumentExpression;
+        if (!idx || !ts.isBinaryExpression(idx)
+            || idx.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) {
+          bad(`索引表达式须为生产形态 \`expr ?? fallback\`，实得 `
+            + `${idx ? ts.SyntaxKind[idx.kind] : '<none>'}（字面量索引可触达 __proto__ 等继承键）`);
+        }
+        nonDeclRefs++;
       } else {
         bad(`出现在 ${ts.SyntaxKind[p.kind]} 位置（RHS 传递 / 实参 / return / 解构 / Object.assign 等均不允许）`);
       }
@@ -355,6 +368,10 @@ function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind
     ts.forEachChild(n, visit);
   };
   visit(sf);
+  // 引用计数锁：生产中该符号的**非声明引用恰 N 处**——多一处就是新增了未经审的用法
+  if (expectNonDeclRefs !== undefined && nonDeclRefs !== expectNonDeclRefs) {
+    throw new Error(`${name}: 非声明引用 ${nonDeclRefs} 处 != 冻结 ${expectNonDeclRefs}（fail-closed）`);
+  }
 }
 
 /** 声明链**精确**锁为 VariableDeclaration → VariableDeclarationList → VariableStatement → SourceFile。
@@ -469,7 +486,7 @@ export function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
   visit(sf);
   if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
   if (new Set(out).size !== out.length) throw new Error(`${constName}: 键重复（fail-closed）`);
-  assertOnlyAllowedUsage(sf, constName, 'object');
+  assertOnlyAllowedUsage(sf, constName, 'object', 1);
   return out;
 }
 
@@ -1242,7 +1259,10 @@ describe('parseFillCells fail-closed 负向（AST 提取器本身）', () => {
 describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）', () => {
   const UNION_OK = "export type DrumPatternFamily =\n  | 'a'\n  | 'b';\n";
   const SET_OK = "const DRUM_PATTERN_FAMILIES: ReadonlySet<string> = new Set([\n  'a', 'b',\n]);\n";
-  const OBJ_OK = "const DRUM_PERFORMANCE_FAMILIES: Record<string, number> = {\n  'a': 1,\n  'b': 2,\n};\n";
+  // 基线须**长得像生产**：含声明 + 唯一的生产形态引用（const initializer + `?? ` 索引）
+  const OBJ_OK = "const DRUM_PERFORMANCE_FAMILIES: Record<string, number> = {\n  'a': 1,\n  'b': 2,\n};\n"
+    + "export function useIt(p: { patternFamily?: string }) {\n"
+    + "  const variants = DRUM_PERFORMANCE_FAMILIES[p.patternFamily ?? ''];\n  return variants;\n}\n";
 
   /* ★ 注释替身（首轮的核心反例）：**parser 不该抛** —— 它的职责是报出**真实**集合。
    * 正则会把注释里的字面也数进去（假绿），AST 只看到真实成员。抓住漂移的是**下游的三方
@@ -1310,11 +1330,20 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     // ★ 五轮反例：for-in 左值同样新增 own key
     ['obj for-in 左值新增 key', () => astObjectKeys(tsParse(OBJ_OK + "for (DRUM_PERFORMANCE_FAMILIES['c'] in { z: 1 }) {}\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
+    ['obj 字面量索引 __proto__（const-initializer 也不放行）',
+     () => astObjectKeys(tsParse(OBJ_OK + "export function f(){ const x = DRUM_PERFORMANCE_FAMILIES['__proto__']; return x; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
+     /索引表达式须为生产形态/],
+    ['obj 裸标识符索引亦拒',
+     () => astObjectKeys(tsParse(OBJ_OK + "export function f(k: string){ const x = DRUM_PERFORMANCE_FAMILIES[k]; return x; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
+     /索引表达式须为生产形态/],
     ['obj for-of 左值', () => astObjectKeys(tsParse(OBJ_OK + "for (DRUM_PERFORMANCE_FAMILIES['c'] of [1]) {}\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['obj 属性读取（非下标）亦拒', () => astObjectKeys(tsParse(OBJ_OK + "export const v2 = DRUM_PERFORMANCE_FAMILIES.a;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /出现在|只允许/],
     ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['Set 合法只读 .has 应放行（白名单正向）', () => { astNewSetLiterals(tsParse(SET_OK + "export const ok = DRUM_PATTERN_FAMILIES.has('a');\n"), 'DRUM_PATTERN_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
-    ['realizer 生产形态应放行（正向契约）', () => { astObjectKeys(tsParse(OBJ_OK + "export function f(k: string){ const variants = DRUM_PERFORMANCE_FAMILIES[k]; return variants; }\n"), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
+    ['realizer 生产形态应放行（正向契约，基线即含唯一生产引用）', () => { astObjectKeys(tsParse(OBJ_OK), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
+    ['realizer 多一处生产形态引用亦拒（引用计数锁）',
+     () => astObjectKeys(tsParse(OBJ_OK + "export function g(p: { patternFamily?: string }) { const v2 = DRUM_PERFORMANCE_FAMILIES[p.patternFamily ?? '']; return v2; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
+     /非声明引用 2 处 != 冻结 1/],
   ];
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
