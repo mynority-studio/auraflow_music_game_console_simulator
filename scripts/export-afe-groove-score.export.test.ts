@@ -870,15 +870,19 @@ function buildCorpusFixtures(): Fixture[] {
   for (const c of G4_CORPUS.cases) {
     const bundle = buildSongBundle({
       seed: c.seed, styleHint: c.styleHint, mood: c.mood, targetDuration: c.targetDuration,
-    } as never);
-    const a = bundle.arrangement as unknown as {
-      sections: Section[];
-      grooveContractBySection: Record<string, { id: string }>;
-      energyBySection: Record<string, number>;
-      entryBySection: Record<string, SectionEntry>;
-      openingGesture: OpeningGesturePlan;
-      climaxMap: readonly ClimaxPoint[];
+    } as never) as unknown as {
+      seedRng: { substream: (k: string) => { int: (n: number) => number } };
+      arrangement: {
+        sections: Section[];
+        grooveContractBySection: Record<string, { id: string; bassPattern?: string }>;
+        energyBySection: Record<string, number>;
+        entryBySection: Record<string, SectionEntry>;
+        openingGesture: OpeningGesturePlan;
+        climaxMap: readonly ClimaxPoint[];
+        grooveScorePlan: unknown;
+      };
     };
+    const a = bundle.arrangement;
     if (!a.sections?.length) throw new Error(`${c.id}: 无 sections（fail-closed）`);
     const contractId: Record<string, string> = {};
     for (const s of a.sections) {
@@ -886,20 +890,55 @@ function buildCorpusFixtures(): Fixture[] {
       if (!ct?.id) throw new Error(`${c.id}/${s.id}: 无 grooveContract（fail-closed）`);
       contractId[s.id] = ct.id;
     }
-    // 固定 seed：由 case id 的字符和派生（确定性、逐例不同以覆盖更多 fill variant 分支）
-    let h = 0;
-    for (const ch of c.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    // ★★ 首轮 Blocker 修正：**生产 seed 是拿得到的**——我上一版断言「外部拿不到」是错的：
+    //   我只查了 plan 上有没有带 seed，没去看 bundle 本身暴露什么。SongBundle 明确导出
+    //   `seedRng`（头注：substream 派生不 mutate ⇒ byte-identical），故直接取生产实际值。
+    const fillVariantSeed = bundle.seedRng.substream('drumFill').int(0x7fffffff);
+    // ★★ 同时补上一版**漏传的两个生产实参**（arranger.ts:167-183）。漏传的硬证据：
+    //   上一版 57 段的 bassPatternRef **全是 65535（缺省）**，而同例生产 trace 有真实 pattern。
+    //   本仓 arrangement **不暴露 sectionPolicyById**，而 jazz 的 bass pattern 正来自它
+    //   （诊断实证：jazz-42 生产为 "bass.jazz-walking.v1"，按合同 bassPattern 重建则为 undefined）。
+    //   解法：**从生产 plan 自身读回已解析的值**——`bySection[sid].bassPatternId` 就是
+    //   planGrooveScore 对该入参的取值，读回后重放即可复现。合同 bassPattern 作兜底。
+    //   **重建是否忠实由下面的逐位相等断言证明**，而不是靠这段推理。
+    const prodPlan = a.grooveScorePlan as { bySection?: Record<string, { bassPatternId?: string }> };
+    const bassPatternIdBySection = Object.fromEntries(a.sections.map((s) => [
+      s.id,
+      prodPlan.bySection?.[s.id]?.bassPatternId ?? a.grooveContractBySection[s.id]?.bassPattern,
+    ]));
+    const rolePatternBySection = Object.fromEntries(a.sections.map((s) => [s.id, {}]));
+    const options = {
+      climaxMap: a.climaxMap, fillVariantSeed, bassPatternIdBySection, rolePatternBySection,
+    } as GrooveScoreOptions & { climaxMap?: readonly ClimaxPoint[] };
+
+    // ★★ **重建忠实性的机器证明**（Codex 首轮建议）：按重建输入重调生产 planGrooveScore，
+    //   其结果必须与 bundle 里那份**生产 plan** 逐位一致。不一致 ⇒ 重建不忠实，fail-closed。
+    //   这把「我以为我重建对了」变成可证事实——上一版正是缺了它才把错输入当成真实语料交出去。
+    const contractBySection: Record<string, GrooveContract> = {};
+    for (const s of a.sections) {
+      contractBySection[s.id] = a.grooveContractBySection[s.id] as unknown as GrooveContract;
+    }
+    const replay = planGrooveScore(a.sections, contractBySection, a.energyBySection,
+                                   a.entryBySection, a.openingGesture, options);
+    const norm = (x: unknown): string => JSON.stringify(x);
+    if (norm(replay) !== norm(a.grooveScorePlan)) {
+      throw new Error(`${c.id}: 重建输入重调所得 plan 与生产 plan **不一致** —— `
+        + `重建不忠实（seed=${fillVariantSeed}），fail-closed。`
+        + `若属 sectionPolicy 相关差异，须把该来源也投影进来`);
+    }
+
     out.push({
       name: `g4_corpus_${c.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      note: `P2-4d G4 固定语料集：${c.id}（seed=${c.seed} ${c.styleHint}/${c.mood}/${c.targetDuration}s，`
-        + `${a.sections.length} 段）。**fillVariantSeed 为 exporter 选定的固定值**，非生产 RNG 抽取值`
-        + `——本例验证真实歌曲输入组合下的逐位一致，不复现生产运行（见 exporter 头注）。`,
+      note: `P2-4d G4 固定语料集：${c.id}（seed=${c.seed} ${c.styleHint}/${c.mood}/`
+        + `${c.targetDuration}s，${a.sections.length} 段）。**输入为生产实际值**：`
+        + `fillVariantSeed 取自 bundle.seedRng.substream('drumFill')，bass/role pattern 表按生产 `
+        + `fallback 重建；并已机器断言「按此输入重调的 plan == 生产 grooveScorePlan 逐位一致」。`,
       sections: a.sections,
       contractId,
       energy: a.energyBySection,
       entry: a.entryBySection,
       opening: a.openingGesture,
-      options: { climaxMap: a.climaxMap, fillVariantSeed: h % 0x7fffffff },
+      options,
     });
   }
   return out;
