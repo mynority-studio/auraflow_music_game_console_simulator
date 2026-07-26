@@ -54,6 +54,7 @@ import {
   drumFeelProfileIdForContract,
 } from '../src/core/generation/newEngine/knowledge/drumPerformanceKnowledge';
 import { timingSafetyForContract } from '../src/core/generation/newEngine/arranger/performanceContractPlanner';
+import { rhythmSwingSourceForContract } from '../src/core/generation/newEngine/knowledge/grooveContracts';
 import { planDrumPerformance } from '../src/core/generation/newEngine/arranger/drumPerformancePlanner';
 import {
   ROLE_RHYTHM_PATTERN_IDS,
@@ -694,6 +695,25 @@ const INT_MS = (x: number, what: string): number => {
   return x;
 };
 
+/** physical 的两个二值枚举 → u8（实现门 F7）。
+ *
+ * 提为**具名函数**而非内联 IIFE，目的有二：
+ *  ① 未知值可被消息级负向直接打靶（内联 IIFE 只能靠伪造整份 profile 才够得着）；
+ *  ② 两个字段的合法值域**不同**（timekeeper: right|alternating，ghost: left|alternating），
+ *    共用一张表会把 'left' 静默当成 timekeeper 的合法值——故按 kind 分支穷举，
+ *    不用对象查表（对象查表还会被 '__proto__' / 'constructor' 之类继承属性钻空）。
+ * 未知值一律抛错：TS 类型将来加第三值时必须转红，不得静默别名为 alternating。 */
+function HAND_ID(kind: 'timekeeper' | 'ghost', v: string, id: string): number {
+  if (kind === 'timekeeper') {
+    if (v === 'right') return 0;
+    if (v === 'alternating') return 1;
+  } else {
+    if (v === 'left') return 0;
+    if (v === 'alternating') return 1;
+  }
+  throw new Error(`${id}.${kind}Hand 未知值 ${v}（fail-closed）`);
+}
+
 function buildFeelProfiles() {
   const srcOrder = extractKnowledgeSourceOrder();
   const roleOrder = extractPhraseBarRoleOrder();
@@ -753,8 +773,8 @@ function buildFeelProfiles() {
         fillCadenceMask: cadence,
       },
       physical: {
-        timekeeperHand: p.physical.timekeeperHand === 'right' ? 0 : 1,
-        ghostHand: p.physical.ghostHand === 'left' ? 0 : 1,
+        timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),
+        ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),
         chokeOpenHatWithClosed: p.physical.chokeOpenHatWithClosed,
       },
     };
@@ -765,13 +785,24 @@ function buildFeelProfiles() {
 /** profile_by_contract[21] 的 **effective 表** + **7 叶** fallback 判别矩阵（设计门 §4.3）。
  *  C 侧存"最终生效值"；fallback 逻辑只用于 codegen 期复算断言与判别矩阵。 */
 function buildProfileByContract(profileIdx: Map<string, number>) {
-  const effective = GROOVE_CONTRACT_POOL.map((c, i) => {
+  // ★★ 索引必须是**冻结的 contract enum 序**，不是 TS POOL 序（实现门 F1 Blocker）：
+  //   C API 的 contract_id 是 enum；我初版用 POOL 序落表，21 项里大部分对错了 profile，
+  //   而 digest 从同一份错数组重算 ⇒ 整体自洽而**假绿**。
+  //   （教训：digest 自洽只证明"两侧读的是同一份数据"，**证明不了那份数据的语义索引是对的**。）
+  const slots: Array<{ contract: number; contractId: string; profile: number } | undefined> =
+    new Array(21).fill(undefined);
+  for (const c of GROOVE_CONTRACT_POOL) {
+    const e = _lk(CONTRACT_ID_IDX, c.id, 'contract id');
+    if (!Number.isInteger(e) || e < 0 || e >= 21) throw new Error(`合同 ${c.id} enum ${e} 越域（fail-closed）`);
+    if (slots[e] !== undefined) throw new Error(`contract enum ${e} 被两个合同占用（非单射，fail-closed）`);
     const pid = drumFeelProfileIdForContract(c);
     const idx = profileIdx.get(pid);
     if (idx === undefined) throw new Error(`合同 ${c.id} 映射到未知 profile ${pid}（fail-closed）`);
-    return { contract: i, contractId: c.id, profile: idx };
-  });
-  if (effective.length !== 21) throw new Error(`须 21 合同，实得 ${effective.length}（fail-closed）`);
+    slots[e] = { contract: e, contractId: c.id, profile: idx };
+  }
+  const missing = slots.map((v, i) => (v === undefined ? i : -1)).filter((i) => i >= 0);
+  if (missing.length > 0) throw new Error(`contract enum 未全覆盖，缺 ${missing}（fail-closed）`);
+  const effective = slots as Array<{ contract: number; contractId: string; profile: number }>;
 
   // ★ 7 叶 fallback（4 个顶层 clause 展开）：JAZZ 2 / LOFI 1 / RNB 2 / default 2。
   //   设计门三轮 #3 更正：4 个 synthetic fixture 锁不住 sparse/dilla/active 的正反分支。
@@ -803,11 +834,13 @@ function buildProfileByContract(profileIdx: Map<string, number>) {
 /** **AST 证明**：`densityCeilingForFamily` 的 role 依赖只有 `role==='lift'` 与 `role==='breakdown'`。
  *  ⇒ 任何既非 lift 也非 breakdown 的 role（含 silent）结果**恒等于 timekeeper**。
  *  该函数私有、planner 又永不产 silent，故 silent 行**由此定理导出**，而不是猜或另写一份实现。 */
-function proveDensityRoleDependency(): void {
-  const sf = tsSource(['arranger', 'drumPerformancePlanner.ts']);
+export function proveDensityRoleDependencyOn(sf: ts.SourceFile): void {
   let fn: ts.FunctionDeclaration | undefined;
   const find = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name?.text === 'densityCeilingForFamily') fn = n;
+    if (ts.isFunctionDeclaration(n) && n.name?.text === 'densityCeilingForFamily') {
+      if (fn) throw new Error('densityCeilingForFamily 多次声明（fail-closed）');
+      fn = n;
+    }
     ts.forEachChild(n, find);
   };
   find(sf);
@@ -819,6 +852,15 @@ function proveDensityRoleDependency(): void {
   const ALLOWED = new Set(['lift', 'breakdown']);
   let refs = 0;
   const walk = (n: ts.Node): void => {
+    // ★ 首参还能经 `arguments[0]` 或动态执行读到（实现门 F3 的反例）——
+    //   只扫名为 role 的标识符会漏。这两类一律 fail-closed。
+    if (ts.isIdentifier(n) && n.text === 'arguments') {
+      throw new Error('densityCeilingForFamily 体内出现 `arguments`（可绕过 role 名字扫描，fail-closed）');
+    }
+    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && ts.isIdentifier(n.expression)
+        && ['eval', 'Function'].includes(n.expression.text)) {
+      throw new Error('densityCeilingForFamily 体内出现动态执行（fail-closed）');
+    }
     if (ts.isIdentifier(n) && n.text === 'role') {
       refs++;
       const p = n.parent;
@@ -833,6 +875,10 @@ function proveDensityRoleDependency(): void {
   };
   walk(fn.body);
   if (refs === 0) throw new Error('densityCeilingForFamily 体内零 role 引用（fail-closed）');
+}
+
+function proveDensityRoleDependency(): void {
+  proveDensityRoleDependencyOn(tsSource(['arranger', 'drumPerformancePlanner.ts']));
 }
 
 /** density 27 family × 5 role 的 permille 表。
@@ -915,12 +961,34 @@ function buildTimingSafetyGrid() {
                  maxMoveTicks: r.maxMoveTicks, humanizeAmount: r.humanizeAmount });
   }
   if (cells.length !== 45) throw new Error(`timing safety 须 45 格，实得 ${cells.length}（fail-closed）`);
+  // ★ 派生链看守（实现门 F2）：45 格都显式传 rhythmSwingSource，只走首个分支，
+  //   `rhythmSwingSourceForContract` 的**缺省派生**（dilla→straight-sixteenths / shuffle→authored /
+  //   其余→straight-eighths）完全没被看守。这里对三条派生各造一个 fixture 并断言。
+  // 顺序 = GRID 枚举序（**canonical**，非随手写序）：digest 按数组序哈希，
+  // 若这里与 gridOrder 不同序，重排会静默改 digest 而 validator 看不出（步3 density 同类教训）。
+  const DERIV_BY_GRID: Record<string, string> = {
+    straight: 'straight-eighths', swing: 'straight-eighths', shuffle: 'authored',
+    dilla: 'straight-sixteenths', rubato: 'straight-eighths',
+  };
+  const DERIV: Array<[string, string]> = GRID.map((g) => {
+    const want = DERIV_BY_GRID[g];
+    if (want === undefined) throw new Error(`grid=${g} 缺派生期望（fail-closed）`);
+    return [g, want] as [string, string];
+  });
+  const derivation = DERIV.map(([g, want]) => {
+    const got = rhythmSwingSourceForContract({ grid: g } as never);
+    if (got !== want) throw new Error(`swing 派生 grid=${g}: 实得 ${got} != ${want}（fail-closed）`);
+    // 显式字段须**压过**派生（authored + dilla 的优先级来源）
+    const forced = rhythmSwingSourceForContract({ grid: g, rhythmSwingSource: 'authored' } as never);
+    if (forced !== 'authored') throw new Error(`显式 rhythmSwingSource 未压过 grid=${g} 的派生（fail-closed）`);
+    return { grid: g, derived: want };
+  });
   // 判别力：45 格须至少出现 2 种 maxMoveTicks 与 2 种 humanizeAmount，否则整表无判别力
   if (new Set(cells.map((c) => c.maxMoveTicks)).size < 2
       || new Set(cells.map((c) => c.humanizeAmount)).size < 2) {
     throw new Error('timing safety 45 格判别力不足（fail-closed）');
   }
-  return cells;
+  return { cells, derivation };
 }
 
 // ---- ④ texture-case registry（owner=P2-8a）----
@@ -1344,7 +1412,8 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     const profileIdx = new Map(feelKb.profiles.map((p) => [p.name, p.id]));
     const profileByContract = buildProfileByContract(profileIdx);
     const densityTable = buildDensityTable(drumPatternFamilies.map((f) => f.name), makeDensityObserver());
-    const timingSafety = buildTimingSafetyGrid();
+    const timingSafetyBuilt = buildTimingSafetyGrid();
+    const timingSafety = timingSafetyBuilt.cells;
     const contract = buildContractKb(drumFamByName, texByName);
     const rhythmProfile = buildRhythmProfiles();
 
@@ -1513,6 +1582,7 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
         gridOrder: ['straight', 'swing', 'shuffle', 'dilla', 'rubato'],
         densityOrder: ['sparse', 'medium', 'active'],
         cells: timingSafety,
+        swingDerivation: timingSafetyBuilt.derivation,
       },
       bassPatternMeter,
       contract,
@@ -1711,4 +1781,128 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
   }
+});
+
+/* ============================================================
+ * silent AST 定理的**落库对抗套件**（实现门 F3）
+ * ------------------------------------------------------------
+ * 该定理是步3 里唯一一处"用证明代替观测"的地方：若它有漏洞，135 行里有 27 行是错的
+ * 且**没有任何观测能发现**（planner 永不产 silent）。故每条旁路都要有落库负向 + 精确消息。
+ * ============================================================ */
+describe('density silent 定理 fail-closed 负向（落库对抗套件）', () => {
+  const OK = "function densityCeilingForFamily(role: string, family: string): number {\n"
+    + "  const base = role === 'lift' ? 0.68 : role === 'breakdown' ? 0.26 : 0.48;\n"
+    + "  if (family === 'x') return role === 'lift' ? 0.9 : role === 'breakdown' ? 0.4 : 0.8;\n"
+    + "  return base;\n}\n";
+
+  it('合法基线可证（负向的对照）', () => {
+    expect(() => proveDensityRoleDependencyOn(tsParse(OK))).not.toThrow();
+  });
+
+  const NEG: Array<[string, string, string | RegExp]> = [
+    // ★ Codex 给的反例：arguments[0] 读到首参，绕过"只扫名为 role 的标识符"
+    ['arguments[0] 旁路',
+     OK.replace('  return base;', "  if (arguments[0] === 'silent') return 0.99;\n  return base;"),
+     /出现 `arguments`/],
+    ['eval 动态执行旁路',
+     OK.replace('  return base;', "  if (eval(\"role === 'silent'\")) return 0.99;\n  return base;"),
+     /动态执行/],
+    ['new Function 旁路',
+     OK.replace('  return base;', "  if (new Function('r', \"return r==='silent'\")(role)) return 0.99;\n  return base;"),
+     /动态执行|非 `role ===/],
+    ['role 与 silent 直接比较',
+     OK.replace('  return base;', "  if (role === 'silent') return 0.99;\n  return base;"),
+     /非 `role ===/],
+    ['role 用 switch 分派',
+     OK.replace('  return base;', "  switch (role) { case 'silent': return 0.99; }\n  return base;"),
+     /非 `role ===/],
+    ['role 被赋给别名',
+     OK.replace('  return base;', "  const r2 = role;\n  if (r2 === 'silent') return 0.99;\n  return base;"),
+     /非 `role ===/],
+    ['role 用 !== 比较',
+     OK.replace("role === 'lift' ? 0.68", "role !== 'lift' ? 0.68"),
+     /非 `role ===/],
+    ['role 与非白名单字面比较',
+     OK.replace("role === 'breakdown' ? 0.26", "role === 'pickup' ? 0.26"),
+     /非 `role ===/],
+    ['函数多次声明',
+     OK + OK, /多次声明/],
+    ['函数缺失',
+     "export const nothing = 1;\n", /未找到/],
+  ];
+  for (const [what, src, msg] of NEG) {
+    it(`拒绝：${what}`, () => {
+      expect(() => proveDensityRoleDependencyOn(tsParse(src)), what).toThrow(msg as string | RegExp);
+    });
+  }
+});
+
+/* ============================================================================
+ * physical 二值枚举 fail-closed 负向（实现门 F7 落库对抗套件）
+ *
+ * F7 的缺陷是 `x === 'right' ? 0 : 1` 把**任何**未知值静默映成 1（alternating）。
+ * 修法是 HAND_ID 按 kind 分支穷举 + 未知值抛错。下面两组靶：
+ *   ① 消息级负向——每个字段逐个未知字面量，断言**具体错误消息**（否则会被别的检查代打）；
+ *   ② 生产确实走 HAND_ID 的 AST 证明——否则改对了 HAND_ID 而 builder 仍内联，靶全绿也没用。
+ * ========================================================================== */
+describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () => {
+  const OK: Array<['timekeeper' | 'ghost', string, number]> = [
+    ['timekeeper', 'right', 0], ['timekeeper', 'alternating', 1],
+    ['ghost', 'left', 0], ['ghost', 'alternating', 1],
+  ];
+  it.each(OK)('%s/%s → %i（合法值精确映射）', (kind, v, want) => {
+    expect(HAND_ID(kind, v, 'p')).toBe(want);
+  });
+
+  /* ★ 判别力核心：两字段值域**不同**。若哪天合并成一张共用表，
+   *   'left' 会成为 timekeeper 的合法值、'right' 会成为 ghost 的合法值——这两条专抓它。 */
+  const BAD: Array<['timekeeper' | 'ghost', string]> = [
+    ['timekeeper', 'left'],          // ghost 的合法值，对 timekeeper 非法
+    ['ghost', 'right'],              // timekeeper 的合法值，对 ghost 非法
+    ['timekeeper', 'both'],          // 假想的第三值（F7 原文的场景）
+    ['ghost', 'both'],
+    ['timekeeper', 'Right'],         // 大小写
+    ['ghost', 'LEFT'],
+    ['timekeeper', ''],              // 空串
+    ['ghost', ''],
+    ['timekeeper', '__proto__'],     // 对象查表实现会被继承属性钻空
+    ['ghost', 'constructor'],
+    ['timekeeper', 'toString'],
+    ['ghost', 'hasOwnProperty'],
+  ];
+  it.each(BAD)('%s/%s → 抛错且消息含字段名与实得值', (kind, v) => {
+    expect(() => HAND_ID(kind, v, 'prof-x')).toThrow(
+      new RegExp(`prof-x\\.${kind}Hand 未知值 ${v === '' ? '' : v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}（fail-closed）`),
+    );
+  });
+
+  it('未知值不得静默落在 {0,1} 内（原缺陷的直接反例）', () => {
+    let leaked = 0;
+    for (const [kind, v] of BAD) {
+      try { HAND_ID(kind, v, 'p'); leaked++; } catch { /* 期望 */ }
+    }
+    expect(leaked).toBe(0);
+  });
+
+  /* ② 生产 builder 确实委托给 HAND_ID：在 buildFeelProfiles 的函数体内
+   *    (a) 恰好两处 HAND_ID 调用；(b) 不再出现 'right'/'left'/'alternating' 任一字面量。 */
+  it('buildFeelProfiles 委托 HAND_ID：2 处调用且函数体内无手写枚举字面量', () => {
+    const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
+    const sf = ts.createSourceFile('e.ts', src, ts.ScriptTarget.ES2022, true);
+    let body: ts.FunctionDeclaration | undefined;
+    sf.forEachChild((n) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === 'buildFeelProfiles') body = n;
+    });
+    if (!body) throw new Error('未找到 buildFeelProfiles 声明（fail-closed）');
+    let calls = 0;
+    const literals: string[] = [];
+    const walk = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'HAND_ID') calls++;
+      if (ts.isStringLiteral(n) && ['right', 'left', 'alternating'].includes(n.text)) literals.push(n.text);
+      n.forEachChild(walk);
+    };
+    body.forEachChild(walk);
+    expect(calls).toBe(2);
+    expect(literals).toEqual([]);
+  });
 });
