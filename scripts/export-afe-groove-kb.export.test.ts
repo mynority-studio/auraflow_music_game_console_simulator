@@ -1905,6 +1905,20 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
    *   · **符号身份**——用 TypeChecker 把 callee 解析到文件级那个 `HAND_ID` 函数声明本身；
    *   · **输出数据流**——结构定位到唯一的 `physical` 对象字面量，禁止 spread，
    *     要求两个字段是**它的**直接属性。 */
+  /* 四轮 Finding 1：三轮那版把「符号身份」与「physical 是对象字面量且禁 spread」都锁住了，
+   * 但**只证明函数体里存在唯一一个合格的 `physical:`**，没证明它就是最终返回的那份。
+   * Codex 的反例（我复现为 ACCEPT）：在最终 return 前加
+   *     rows.forEach((r: any) => { r.physical.timekeeperHand = 0; r.physical.ghostHand = 0; });
+   * 更隐蔽的等价形态是把弱映射搬到函数外 `BAD_REWRITE(rows, ids)` —— 当前 8 行合法输出
+   * 完全不变，JSON/golden 零漂移，只有将来新增枚举值时静默绕过 fail-closed。
+   *
+   * 故本版改为**完整正向数据流契约**（锁「唯一合法形态」，不是枚举坏形态）：
+   *   ① `rows` 必须是 `const rows = ids.map(<arrow>)`；
+   *   ② 合格的 `physical` 必须在该 callback 的**最终 return 对象**里；
+   *   ③ `id` 实参按符号核对 = callback 的第一个形参；`p` 的根标识符必须声明在 callback 内；
+   *   ④ `rows` 的**全部引用**只允许两处：它自己的声明名 + 最终 `return { … profiles: rows }`；
+   *      任何 forEach/属性访问/再赋值/当实参传出一律拒；
+   *   ⑤ 函数最终 return 的 `profiles` 直接引用该 `rows` 符号。 */
   const assertHandDelegation = (prog: ts.Program, sf: ts.SourceFile): void => {
     const ck = prog.getTypeChecker();
     let fn: ts.FunctionDeclaration | undefined;
@@ -1918,19 +1932,59 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     if (!topHandId) throw new Error('未找到文件级 HAND_ID 函数声明（fail-closed）');
     const wantSym = ck.getSymbolAtLocation(topHandId.name!);
     if (!wantSym) throw new Error('HAND_ID 声明无符号（fail-closed）');
+    const body = fn.body;
+    if (!body) throw new Error('buildFeelProfiles 无函数体（fail-closed）');
 
-    // 输出流：函数体内 `physical:` 属性必须恰 1 处，且其 initializer 是无 spread 的对象字面量
-    const physicals: ts.PropertyAssignment[] = [];
+    // 手写手型字面量：整个函数体内一律不许
     const literals: string[] = [];
-    const walk = (n: ts.Node): void => {
+    const scanLit = (n: ts.Node): void => {
       if (ts.isStringLiteral(n) && ['right', 'left', 'alternating'].includes(n.text)) literals.push(n.text);
-      if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name) && n.name.text === 'physical') physicals.push(n);
-      n.forEachChild(walk);
+      n.forEachChild(scanLit);
     };
-    fn.forEachChild(walk);
+    body.forEachChild(scanLit);
     if (literals.length) throw new Error(`buildFeelProfiles 体内出现手写手型字面量 ${JSON.stringify(literals)}（fail-closed）`);
-    if (physicals.length !== 1) throw new Error(`physical 属性赋值 ${physicals.length} 处，应恰 1 处（fail-closed）`);
-    const obj = physicals[0].initializer;
+
+    // ① const rows = ids.map(<arrow>)
+    let rowsDecl: ts.VariableDeclaration | undefined;
+    for (const st of body.statements) {
+      if (!ts.isVariableStatement(st)) continue;
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.name.text === 'rows') rowsDecl = d;
+      }
+    }
+    if (!rowsDecl) throw new Error('未找到 const rows 声明（fail-closed）');
+    const mapCall = rowsDecl.initializer;
+    if (!mapCall || !ts.isCallExpression(mapCall) || !ts.isPropertyAccessExpression(mapCall.expression)
+        || mapCall.expression.name.text !== 'map' || mapCall.arguments.length !== 1) {
+      throw new Error('rows 的 initializer 不是单参数 .map(...) 调用（fail-closed）');
+    }
+    const cb = mapCall.arguments[0];
+    if (!ts.isArrowFunction(cb) || !cb.body || !ts.isBlock(cb.body)) {
+      throw new Error('rows 的 map callback 不是块体箭头函数（fail-closed）');
+    }
+    const idParam = cb.parameters[0];
+    if (!idParam || !ts.isIdentifier(idParam.name) || idParam.name.text !== 'id') {
+      throw new Error('map callback 首个形参不是 id（fail-closed）');
+    }
+    const idSym = ck.getSymbolAtLocation(idParam.name);
+
+    // ② 合格 physical 必须在 callback 的**最终 return 对象**里
+    const last = cb.body.statements[cb.body.statements.length - 1];
+    if (!last || !ts.isReturnStatement(last) || !last.expression
+        || !ts.isObjectLiteralExpression(last.expression)) {
+      throw new Error('map callback 的最后一条语句不是 return 对象字面量（fail-closed）');
+    }
+    const rowObj = last.expression;
+    if (rowObj.properties.some((pr) => ts.isSpreadAssignment(pr))) {
+      throw new Error('row 对象含 spread——字段可被外部 helper 顶替，fail-closed');
+    }
+    const physHits = rowObj.properties.filter(
+      (pr): pr is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name) && pr.name.text === 'physical');
+    if (physHits.length !== 1) {
+      throw new Error(`row 对象的 physical 属性 ${physHits.length} 处，应恰 1 处（fail-closed）`);
+    }
+    const obj = physHits[0].initializer;
     if (!ts.isObjectLiteralExpression(obj)) {
       throw new Error(`physical 的 initializer 不是对象字面量（实得 ${ts.SyntaxKind[obj.kind]}）——`
         + '无法证明字段来源，fail-closed');
@@ -1949,7 +2003,6 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
         throw new Error(`${prop} 的 initializer 不是 HAND_ID 调用本身（实得 ${ts.SyntaxKind[init.kind]}）——`
           + '返回值未被消费，fail-closed');
       }
-      // ★ 符号身份而非文本：局部同名重绑会解析到别的声明
       let gotSym = ck.getSymbolAtLocation(init.expression);
       if (gotSym && gotSym.flags & ts.SymbolFlags.Alias) gotSym = ck.getAliasedSymbol(gotSym);
       if (init.expression.text !== 'HAND_ID' || gotSym !== wantSym) {
@@ -1965,11 +2018,54 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       if (!ts.isPropertyAccessExpression(a[1]) || a[1].getText(sf) !== want) {
         throw new Error(`${prop} 的源字段实参应为 ${want}，实得 ${a[1].getText(sf)}（fail-closed）`);
       }
-      if (!ts.isIdentifier(a[2]) || a[2].text !== 'id') {
-        throw new Error(`${prop} 的 id 实参应为标识符 id（fail-closed）`);
+      // ③ p 的根标识符须声明在 callback 内；id 须是 callback 首形参本身（按符号）
+      let root: ts.Node = a[1];
+      while (ts.isPropertyAccessExpression(root)) root = root.expression;
+      const pSym = ts.isIdentifier(root) ? ck.getSymbolAtLocation(root) : undefined;
+      const pDecl = pSym?.valueDeclaration;
+      if (!pDecl || pDecl.getStart(sf) < cb.getStart(sf) || pDecl.getEnd() > cb.getEnd()) {
+        throw new Error(`${prop} 的源字段根标识符 p 未声明在 map callback 内（fail-closed）`);
+      }
+      if (!ts.isIdentifier(a[2]) || a[2].text !== 'id' || ck.getSymbolAtLocation(a[2]) !== idSym) {
+        throw new Error(`${prop} 的 id 实参应为 callback 首形参 id 本身（fail-closed）`);
       }
     }
+
+    // ⑤ 函数最终 return { …, profiles: rows }
+    const fnLast = body.statements[body.statements.length - 1];
+    if (!fnLast || !ts.isReturnStatement(fnLast) || !fnLast.expression
+        || !ts.isObjectLiteralExpression(fnLast.expression)) {
+      throw new Error('buildFeelProfiles 的最后一条语句不是 return 对象字面量（fail-closed）');
+    }
+    const profProps = fnLast.expression.properties.filter(
+      (pr): pr is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name) && pr.name.text === 'profiles');
+    if (profProps.length !== 1 || !ts.isIdentifier(profProps[0].initializer)
+        || profProps[0].initializer.text !== 'rows') {
+      throw new Error('最终 return 的 profiles 不是直接引用 rows（fail-closed）');
+    }
+    const rowsSym = ck.getSymbolAtLocation(rowsDecl.name as ts.Identifier);
+    if (ck.getSymbolAtLocation(profProps[0].initializer) !== rowsSym) {
+      throw new Error('最终 return 的 profiles 引用的不是那个 rows 符号（fail-closed）');
+    }
+
+    // ④ rows 的全部引用只允许两处：声明名 + profiles: rows
+    const allowed = new Set<ts.Node>([rowsDecl.name, profProps[0].initializer]);
+    const strayed: string[] = [];
+    const scanRows = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && n.text === 'rows' && !allowed.has(n)
+          && ck.getSymbolAtLocation(n) === rowsSym) {
+        strayed.push(n.parent ? ts.SyntaxKind[n.parent.kind] : '?');
+      }
+      n.forEachChild(scanRows);
+    };
+    body.forEachChild(scanRows);
+    if (strayed.length) {
+      throw new Error(`rows 存在额外引用 ${JSON.stringify(strayed)}——构造结果可能在返回前被改写`
+        + '或逃逸到外部 helper，fail-closed');
+    }
   };
+
   /* 单文件内存 Program——符号身份判据需要 TypeChecker。noLib/noResolve：本谓词只关心
    * 文件内的声明解析（HAND_ID 是否被局部重绑），不需要 lib 与模块解析。 */
   const mkProgram = (src: string): [ts.Program, ts.SourceFile] => {
@@ -1994,112 +2090,123 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     return [prog, sf];
   };
   const check = (src: string): void => assertHandDelegation(...mkProgram(src));
-  /* 合成源必须自带**文件级 HAND_ID 声明**——符号身份判据要拿它当基准。 */
+  /* 合成源必须是**完整合法形态**（文件级 HAND_ID 声明 + const rows = ids.map(cb) +
+   * cb 末尾 return row 对象 + 函数末尾 return { profiles: rows }），只注入单点缺陷；
+   * 否则负向会被上游的结构检查代打——这一课本任务已栽过两次。 */
   const HAND_STUB = "function HAND_ID(k: any, v: any, i: any): number { return 0; }\n";
-  // extra 放**函数体内**：谓词只遍历 buildFeelProfiles 的函数体，放外面等于没注入
-  const wrap = (tk: string, gh: string, extra = ''): string =>
-    `${HAND_STUB}function buildFeelProfiles() {\n  ${extra}\n  return [{ physical: {\n`
-    + `    timekeeperHand: ${tk},\n    ghostHand: ${gh},\n  } }];\n}\n`;
+  const wrap = (tk: string, gh: string, extra = '', tail = ''): string =>
+    HAND_STUB
+    + 'function buildFeelProfiles() {\n'
+    + `  ${extra}\n`
+    + '  const rows = ids.map((id: any, idx: any) => {\n'
+    + '    const p = SRC[id];\n'
+    + '    return { physical: {\n'
+    + `      timekeeperHand: ${tk},\n      ghostHand: ${gh},\n    } };\n`
+    + '  });\n'
+    + `  ${tail}\n`
+    + '  return { profiles: rows };\n}\n';
+  const OKTK = "HAND_ID('timekeeper', p.physical.timekeeperHand, id)";
+  const OKGH = "HAND_ID('ghost', p.physical.ghostHand, id)";
 
-  it('生产 buildFeelProfiles 通过委托证明（initializer 即文件级 HAND_ID 调用）', () => {
+  it('生产 buildFeelProfiles 通过委托证明（完整正向数据流契约）', () => {
     const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
     expect(() => check(src)).not.toThrow();
   });
 
+  it('合成的合法形态也通过（防谓词过严导致人去放宽它）', () => {
+    expect(() => check(wrap(OKTK, OKGH))).not.toThrow();
+  });
+
   const BYPASS: Array<[string, string, string, RegExp]> = [
     ['逗号表达式丢弃返回值（二轮 Finding 2 原型）',
-      "(HAND_ID('timekeeper', p.physical.timekeeperHand, id), BAD_HAND(p.physical.timekeeperHand))",
-      "(HAND_ID('ghost', p.physical.ghostHand, id), BAD_HAND(p.physical.ghostHand))",
+      `(${OKTK}, BAD_HAND(p.physical.timekeeperHand))`, OKGH,
       /initializer 不是 HAND_ID 调用本身/],
-    ['三元包住调用',
-      "cond ? HAND_ID('timekeeper', p.physical.timekeeperHand, id) : 1",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
-      /initializer 不是 HAND_ID 调用本身/],
-    ['kind 实参写反',
-      "HAND_ID('ghost', p.physical.timekeeperHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
+    ['三元包住调用', `cond ? ${OKTK} : 1`, OKGH, /initializer 不是 HAND_ID 调用本身/],
+    ['kind 实参写反', "HAND_ID('ghost', p.physical.timekeeperHand, id)", OKGH,
       /kind 实参应为 'timekeeper'/],
-    ['源字段接错（两字段互换）',
-      "HAND_ID('timekeeper', p.physical.ghostHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
+    ['源字段接错（两字段互换）', "HAND_ID('timekeeper', p.physical.ghostHand, id)", OKGH,
       /源字段实参应为 p\.physical\.timekeeperHand/],
-    ['源字段被中间变量代理',
-      "HAND_ID('timekeeper', v, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
+    ['源字段被中间变量代理', "HAND_ID('timekeeper', v, id)", OKGH,
       /源字段实参应为 p\.physical\.timekeeperHand/],
-    ['id 实参被字面量顶替（错误消息将失去归属）',
-      "HAND_ID('timekeeper', p.physical.timekeeperHand, 'x')",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
-      /id 实参应为标识符 id/],
-    ['少传一个实参',
-      "HAND_ID('timekeeper', p.physical.timekeeperHand)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
-      /实参数=2/],
+    ['id 实参被字面量顶替', "HAND_ID('timekeeper', p.physical.timekeeperHand, 'x')", OKGH,
+      /id 实参应为 callback 首形参 id 本身/],
+    ['少传一个实参', "HAND_ID('timekeeper', p.physical.timekeeperHand)", OKGH, /实参数=2/],
     ['直接内联三元（F7 原缺陷形态）',
-      "p.physical.timekeeperHand === 'right' ? 0 : 1",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
-      /手写手型字面量/],
+      "p.physical.timekeeperHand === 'right' ? 0 : 1", OKGH, /手写手型字面量/],
   ];
   it.each(BYPASS)('委托证明拒绝：%s', (_name, tk, gh, msg) => {
     expect(() => check(wrap(tk, gh))).toThrow(msg);
   });
 
-  /* ★★ 三轮 Finding 1 的两个新维度——这两条正是打穿二轮那版的原型。 */
+  /* 三轮 Finding 1 的两个维度 */
   it('委托证明拒绝：函数内局部同名重绑 HAND_ID（符号身份维度）', () => {
-    const src = wrap(
-      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)");
-    // 在 buildFeelProfiles 体内插入局部 const HAND_ID —— 形状完全不变，只是解析到别的声明
-    const shadowed = src.replace('function buildFeelProfiles() {\n',
-      'function buildFeelProfiles() {\n  const HAND_ID = (k: any, v: any, i: any): number => BAD(k, v, i);\n');
-    expect(shadowed).not.toBe(src);   // 注入确实生效（防替换失配导致空跑）
-    expect(() => check(shadowed)).toThrow(/callee 不是文件级 HAND_ID 声明本身/);
+    expect(() => check(wrap(OKTK, OKGH,
+      'const HAND_ID = (k: any, v: any, i: any): number => BAD(k, v, i);')))
+      .toThrow(/callee 不是文件级 HAND_ID 声明本身/);
   });
-
-  it('委托证明拒绝：decoy 属性 + physical 用 spread（输出数据流维度）', () => {
+  it('委托证明拒绝：physical 用 spread', () => {
     expect(() => check(HAND_STUB
-      + "function buildFeelProfiles() {\n"
-      + "  return [{\n"
-      + "    physical: { ...BAD_PHYSICAL(p, id) },\n"
-      + "    _proof: {\n"
-      + "      timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
-      + "      ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n    },\n  }];\n}\n"))
-      .toThrow(/physical 对象含 spread/);
+      + 'function buildFeelProfiles() {\n'
+      + '  const rows = ids.map((id: any, idx: any) => {\n    const p = SRC[id];\n'
+      + '    return { physical: { ...BAD_PHYSICAL(p, id) } };\n  });\n'
+      + '  return { profiles: rows };\n}\n')).toThrow(/physical 对象含 spread/);
   });
-
   it('委托证明拒绝：physical 的 initializer 不是对象字面量', () => {
     expect(() => check(HAND_STUB
-      + "function buildFeelProfiles() {\n"
-      + "  return [{ physical: BAD_PHYSICAL(p, id) }];\n}\n"))
-      .toThrow(/physical 的 initializer 不是对象字面量/);
+      + 'function buildFeelProfiles() {\n'
+      + '  const rows = ids.map((id: any, idx: any) => {\n    const p = SRC[id];\n'
+      + '    return { physical: BAD_PHYSICAL(p, id) };\n  });\n'
+      + '  return { profiles: rows };\n}\n')).toThrow(/physical 的 initializer 不是对象字面量/);
   });
-
   it('委托证明拒绝：physical 内字段缺失 / 重复', () => {
-    /* ★ 两条都要**绕开上游检查**才算真打到目标——二轮我第一版写成「只赋 ghostHand」，
-     *   先被当时的「HAND_ID 调用数=1」拦下、目标检查从未执行。本版上游已换成
-     *   physical 结构检查，故这里保持 physical 存在、只动其内部属性。 */
     expect(() => check(HAND_STUB
-      + "function buildFeelProfiles() {\n"
-      + "  return [{ physical: { ghostHand: HAND_ID('ghost', p.physical.ghostHand, id) } }];\n}\n"))
-      .toThrow(/physical\.timekeeperHand 属性赋值 0 处/);
-    expect(() => check(HAND_STUB
-      + "function buildFeelProfiles() {\n  return [{ physical: {\n"
-      + "    timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
-      + "    timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
-      + "    ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n  } }];\n}\n"))
+      + 'function buildFeelProfiles() {\n'
+      + '  const rows = ids.map((id: any, idx: any) => {\n    const p = SRC[id];\n'
+      + `    return { physical: { ghostHand: ${OKGH} } };\n  });\n`
+      + '  return { profiles: rows };\n}\n')).toThrow(/physical\.timekeeperHand 属性赋值 0 处/);
+    expect(() => check(wrap(OKTK, OKGH).replace(
+      `      ghostHand: ${OKGH},`, `      timekeeperHand: ${OKTK},\n      ghostHand: ${OKGH},`)))
       .toThrow(/physical\.timekeeperHand 属性赋值 2 处/);
   });
 
-  it('委托证明拒绝：physical 属性出现多处（无法判定哪个是输出）', () => {
-    expect(() => check(wrap(
-      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)",
-      "const decoy = { physical: {} };"))).toThrow(/physical 属性赋值 2 处/);
+  /* ★★ 四轮 Finding 1：构造结果到最终返回之间的**正向数据流**。
+   *    前两条正是打穿三轮那版的原型——合法 8 行输出完全不变、JSON/golden 零漂移，
+   *    只有将来新增枚举值时才静默绕过 fail-closed，靠数据对账永远发现不了。 */
+  it('委托证明拒绝：返回前 rows.forEach 就地改写（四轮 Finding 1 原型）', () => {
+    expect(() => check(wrap(OKTK, OKGH, '',
+      'rows.forEach((r: any) => { r.physical.timekeeperHand = 0; r.physical.ghostHand = 0; });')))
+      .toThrow(/rows 存在额外引用/);
   });
-
-  it('委托证明的合法形态确实通过（防谓词过严导致人去放宽它）', () => {
-    expect(() => check(wrap(
-      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)"))).not.toThrow();
+  it('委托证明拒绝：rows 逃逸给外部弱 helper（BAD_REWRITE(rows, ids)）', () => {
+    expect(() => check(wrap(OKTK, OKGH, '', 'BAD_REWRITE(rows, ids);')))
+      .toThrow(/rows 存在额外引用/);
+  });
+  it('委托证明拒绝：profiles 不直接引用 rows（二次 map）', () => {
+    expect(() => check(wrap(OKTK, OKGH).replace(
+      'return { profiles: rows };', 'return { profiles: rows.map((r: any) => BAD(r)) };')))
+      .toThrow(/rows 存在额外引用|profiles 不是直接引用 rows/);
+  });
+  it('委托证明拒绝：rows 不是 ids.map(...) 直接构造', () => {
+    expect(() => check(HAND_STUB
+      + 'function buildFeelProfiles() {\n  const rows = BUILD_ROWS(ids);\n'
+      + '  return { profiles: rows };\n}\n'))
+      .toThrow(/rows 的 initializer 不是单参数 \.map\(\.\.\.\) 调用/);
+  });
+  it('委托证明拒绝：合格 physical 不在 callback 最终 return 内（decoy）', () => {
+    expect(() => check(HAND_STUB
+      + 'function buildFeelProfiles() {\n'
+      + '  const rows = ids.map((id: any, idx: any) => {\n    const p = SRC[id];\n'
+      + `    const decoy = { physical: { timekeeperHand: ${OKTK}, ghostHand: ${OKGH} } };\n`
+      + '    return { physical: BAD_PHYSICAL(p, id) };\n  });\n'
+      + '  return { profiles: rows };\n}\n'))
+      .toThrow(/physical 的 initializer 不是对象字面量/);
+  });
+  it('委托证明拒绝：p 的根标识符来自 callback 外', () => {
+    expect(() => check(HAND_STUB
+      + 'const p = GLOBAL_P;\nfunction buildFeelProfiles() {\n'
+      + '  const rows = ids.map((id: any, idx: any) => {\n'
+      + `    return { physical: { timekeeperHand: ${OKTK}, ghostHand: ${OKGH} } };\n  });\n`
+      + '  return { profiles: rows };\n}\n'))
+      .toThrow(/根标识符 p 未声明在 map callback 内/);
   });
 });
