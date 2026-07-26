@@ -49,6 +49,13 @@ import {
   type DrumKitProgram,
 } from '../src/core/generation/newEngine/knowledge/drumKitCapabilities';
 import {
+  DRUM_FEEL_PROFILES,
+  drumFeelProfile,
+  drumFeelProfileIdForContract,
+} from '../src/core/generation/newEngine/knowledge/drumPerformanceKnowledge';
+import { timingSafetyForContract } from '../src/core/generation/newEngine/arranger/performanceContractPlanner';
+import { planDrumPerformance } from '../src/core/generation/newEngine/arranger/drumPerformancePlanner';
+import {
   ROLE_RHYTHM_PATTERN_IDS,
   roleRhythmPattern,
 } from '../src/core/generation/newEngine/knowledge/roleRhythmPatterns';
@@ -59,7 +66,7 @@ import {
 } from '../src/core/generation/newEngine/knowledge/grooveBassPatterns';
 import { materializePopRockFill } from '../src/core/generation/newEngine/knowledge/drumFillVocabulary';
 
-const SCHEMA_VERSION = 'groove_kb_v4';  // v4: +P2-10A 步2 drum kit capability（3 kit 音高位图 + 投影）
+const SCHEMA_VERSION = 'groove_kb_v5';  // v4: +P2-10A 步2 drum kit capability（3 kit 音高位图 + 投影）
 const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e'; // Newengine_Demo-v5.0 规格锚（非工装 pin）
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -639,6 +646,281 @@ function buildKitCapabilities(): { kits: KitCapEntry[]; coreGmBits: string[]; pi
   return { kits, coreGmBits: pitchBitmap(coreUnion), pitchProjections };
 }
 
+// ---- ⑤ P2-10A 步3：feel profile / profile_by_contract / density / timing safety ----
+// 真源：knowledge/drumPerformanceKnowledge.ts（DRUM_FEEL_PROFILES、drumFeelProfileIdForContract）、
+//       arranger/drumPerformancePlanner.ts（私有 densityCeilingForFamily）、
+//       arranger/performanceContractPlanner.ts（timingSafetyForContract）。
+// 能直调生产 API 的一律直调；只有 densityCeilingForFamily 是私有，见下方"经 planner 观测 + AST 证明"。
+
+/** 9 个 knowledge source 的**声明序**（evidence bitmask 的位序，设计门 §4.1 冻结）。 */
+function extractKnowledgeSourceOrder(): string[] {
+  const sf = tsSource(['knowledge', 'drumPerformanceKnowledge.ts']);
+  const ids = astUnionLiterals(sf, 'DrumKnowledgeSourceId');
+  if (ids.length !== 9) throw new Error(`DrumKnowledgeSourceId 须 9 项，实得 ${ids.length}（fail-closed）`);
+  return ids;
+}
+
+/** GroovePhraseBarRole 的声明序（ghostRoles/openHatRoles bitmask 位序）。
+ *  设计门二轮 #2：它与 core 的 afe_groove_bar_role_t 五值**精确同构**，故复用不另造。 */
+function extractPhraseBarRoleOrder(): string[] {
+  const sf = tsSource(['knowledge', 'grooveContracts.ts']);
+  const roles = astUnionLiterals(sf, 'GroovePhraseBarRole');
+  const WANT = ['base', 'answer', 'lift', 'turnaround', 'breakdown'];
+  if (roles.length !== WANT.length || roles.some((r, i) => r !== WANT[i])) {
+    throw new Error(`GroovePhraseBarRole 须与 afe_groove_bar_role_t 同构 ${WANT}，实得 ${roles}（fail-closed）`);
+  }
+  return roles;
+}
+
+function bitmaskOf(values: readonly string[], order: readonly string[], what: string): number {
+  let m = 0;
+  for (const v of values) {
+    const i = order.indexOf(v);
+    if (i < 0) throw new Error(`${what}: 未知值 ${v}（fail-closed）`);
+    m |= 1 << i;
+  }
+  return m;
+}
+
+const HALF_MS = (x: number, what: string): number => {
+  const v = x * 2;
+  if (!Number.isInteger(v)) throw new Error(`${what}=${x} 非半毫秒整数（fail-closed）`);
+  if (v < -128 || v > 127) throw new Error(`${what}=${x} 越 i8 域（fail-closed）`);
+  return v;
+};
+const INT_MS = (x: number, what: string): number => {
+  if (!Number.isInteger(x)) throw new Error(`${what}=${x} 非整毫秒（fail-closed）`);
+  if (x < -128 || x > 127) throw new Error(`${what}=${x} 越 i8 域（fail-closed）`);
+  return x;
+};
+
+function buildFeelProfiles() {
+  const srcOrder = extractKnowledgeSourceOrder();
+  const roleOrder = extractPhraseBarRoleOrder();
+  const ids = Object.keys(DRUM_FEEL_PROFILES);
+  if (ids.length !== 8) throw new Error(`feel profile 须 8 行，实得 ${ids.length}（fail-closed）`);
+  const BANDS = ['kickAnchor', 'kickResponse', 'snareAccent', 'snareGhost',
+                 'timekeeperAccent', 'timekeeperTap', 'tomFill', 'crash'] as const;
+  const CADENCE_BITS: Record<number, number> = { 4: 0, 8: 1, 16: 2 };
+  const rows = ids.map((id, idx) => {
+    const p = drumFeelProfile(id as never);
+    if (p.id !== id) throw new Error(`profile[${idx}] id 与键不符（fail-closed）`);
+    // velocity band 不变量（设计门 §4.1）
+    const bands = BANDS.map((b) => {
+      const v = p.velocity[b];
+      if (!v) throw new Error(`${id}.velocity.${b} 缺失（fail-closed）`);
+      if (!Number.isInteger(v.min) || !Number.isInteger(v.max)) throw new Error(`${id}.${b} 非整数`);
+      if (v.min > v.max) throw new Error(`${id}.${b}: min>max（fail-closed）`);
+      if (v.min < 0 || v.max > 127) throw new Error(`${id}.${b}: 越 MIDI 域（fail-closed）`);
+      return [v.min, v.max];
+    });
+    if (!(p.velocity.snareAccent.min > p.velocity.snareGhost.max)) {
+      throw new Error(`${id}: snareAccent.min 须 > snareGhost.max（语义不变量，fail-closed）`);
+    }
+    // ★ 我最初照抄 snare 的形式假设 timekeeper 也严格分离——**假设错了**，被本 fail-closed 检查
+    //   当场抓住：真源里 jazz-swing-ride(62,82)/(42,64) 与 jazz-brush-ballad(44,62)/(28,46) 两带**重叠 2**，
+    //   其余六条恰好首尾相接（accent.min == tap.max）。实际成立且有意义的不变量是"accent 带整体高于 tap 带"：
+    if (!(p.velocity.timekeeperAccent.min > p.velocity.timekeeperTap.min
+          && p.velocity.timekeeperAccent.max > p.velocity.timekeeperTap.max)) {
+      throw new Error(`${id}: timekeeperAccent 带须整体高于 timekeeperTap 带`
+        + `（min 与 max 各自更大；允许重叠，语义不变量，fail-closed）`);
+    }
+    if (p.physical.maxHandsAtOnce !== 2) throw new Error(`${id}: maxHandsAtOnce != 2（fail-closed）`);
+    let cadence = 0;
+    for (const b of p.phrase.fillCadenceBars) {
+      if (!(b in CADENCE_BITS)) throw new Error(`${id}: fillCadenceBars 含 ${b}（fail-closed）`);
+      cadence |= 1 << CADENCE_BITS[b];
+    }
+    return {
+      id: idx, name: id, style: p.style,
+      evidence: bitmaskOf(p.evidence, srcOrder, `${id}.evidence`),
+      velocityBands: bands,
+      timing: {
+        kickAnchorMs: INT_MS(p.timing.kickAnchorMs, `${id}.kickAnchorMs`),
+        kickOffbeatMs: INT_MS(p.timing.kickOffbeatMs, `${id}.kickOffbeatMs`),
+        snareAccentMs: INT_MS(p.timing.snareAccentMs, `${id}.snareAccentMs`),
+        snareGhostMs: INT_MS(p.timing.snareGhostMs, `${id}.snareGhostMs`),
+        timekeeperOnbeatMs: INT_MS(p.timing.timekeeperOnbeatMs, `${id}.tkOnbeatMs`),
+        timekeeperOffbeatMs: INT_MS(p.timing.timekeeperOffbeatMs, `${id}.tkOffbeatMs`),
+        maxAbsoluteMs: INT_MS(p.timing.maxAbsoluteMs, `${id}.maxAbsoluteMs`),
+        phraseDriftHalfMs: p.timing.phraseDriftMs.map((x, k) => HALF_MS(x, `${id}.phraseDrift[${k}]`)),
+      },
+      phrase: {
+        velocityContourBits: p.phrase.velocityContour.map((x) => dbitsHex(x)),
+        ghostRolesMask: bitmaskOf(p.phrase.ghostRoles, roleOrder, `${id}.ghostRoles`),
+        openHatRolesMask: bitmaskOf(p.phrase.openHatRoles, roleOrder, `${id}.openHatRoles`),
+        allowInternalTurnaround: p.phrase.allowInternalTurnaround,
+        fillCadenceMask: cadence,
+      },
+      physical: {
+        timekeeperHand: p.physical.timekeeperHand === 'right' ? 0 : 1,
+        ghostHand: p.physical.ghostHand === 'left' ? 0 : 1,
+        chokeOpenHatWithClosed: p.physical.chokeOpenHatWithClosed,
+      },
+    };
+  });
+  return { sourceOrder: srcOrder, roleOrder, profiles: rows };
+}
+
+/** profile_by_contract[21] 的 **effective 表** + **7 叶** fallback 判别矩阵（设计门 §4.3）。
+ *  C 侧存"最终生效值"；fallback 逻辑只用于 codegen 期复算断言与判别矩阵。 */
+function buildProfileByContract(profileIdx: Map<string, number>) {
+  const effective = GROOVE_CONTRACT_POOL.map((c, i) => {
+    const pid = drumFeelProfileIdForContract(c);
+    const idx = profileIdx.get(pid);
+    if (idx === undefined) throw new Error(`合同 ${c.id} 映射到未知 profile ${pid}（fail-closed）`);
+    return { contract: i, contractId: c.id, profile: idx };
+  });
+  if (effective.length !== 21) throw new Error(`须 21 合同，实得 ${effective.length}（fail-closed）`);
+
+  // ★ 7 叶 fallback（4 个顶层 clause 展开）：JAZZ 2 / LOFI 1 / RNB 2 / default 2。
+  //   设计门三轮 #3 更正：4 个 synthetic fixture 锁不住 sparse/dilla/active 的正反分支。
+  const LEAVES: Array<{ leaf: string; style: string; grid: string; density: string; expect: string }> = [
+    { leaf: 'JAZZ-sparse',        style: 'JAZZ', grid: 'swing',    density: 'sparse', expect: 'jazz-brush-ballad' },
+    { leaf: 'JAZZ-nonsparse',     style: 'JAZZ', grid: 'swing',    density: 'medium', expect: 'jazz-swing-ride' },
+    { leaf: 'LOFI',               style: 'LOFI', grid: 'straight', density: 'medium', expect: 'lofi-dusty-pocket' },
+    { leaf: 'RNB-dilla',          style: 'RNB',  grid: 'dilla',    density: 'medium', expect: 'rnb-dilla-voices' },
+    { leaf: 'RNB-nondilla',       style: 'RNB',  grid: 'straight', density: 'medium', expect: 'rnb-laidback-pocket' },
+    { leaf: 'default-active',     style: 'POP',  grid: 'straight', density: 'active', expect: 'pop-driving-rock' },
+    { leaf: 'default-nonactive',  style: 'POP',  grid: 'straight', density: 'medium', expect: 'pop-tight-backbeat' },
+  ];
+  const matrix = LEAVES.map((L) => {
+    // id 用不含任何显式映射键的 synthetic 值，确保走 fallback 而非 PROFILE_BY_CONTRACT_ID
+    const got = drumFeelProfileIdForContract({
+      id: `__synthetic_${L.leaf}__`, style: L.style, grid: L.grid, density: L.density,
+    } as never);
+    if (got !== L.expect) throw new Error(`fallback 叶 ${L.leaf}: 实得 ${got} != 期望 ${L.expect}（fail-closed）`);
+    const idx = profileIdx.get(got);
+    if (idx === undefined) throw new Error(`叶 ${L.leaf} 映射未知 profile（fail-closed）`);
+    return { leaf: L.leaf, style: L.style, grid: L.grid, density: L.density, profile: idx };
+  });
+  if (new Set(matrix.map((m) => m.profile)).size < 6) {
+    throw new Error('7 叶判别矩阵产出的 profile 少于 6 种，判别力不足（fail-closed）');
+  }
+  return { effective, fallbackLeaves: matrix };
+}
+
+/** **AST 证明**：`densityCeilingForFamily` 的 role 依赖只有 `role==='lift'` 与 `role==='breakdown'`。
+ *  ⇒ 任何既非 lift 也非 breakdown 的 role（含 silent）结果**恒等于 timekeeper**。
+ *  该函数私有、planner 又永不产 silent，故 silent 行**由此定理导出**，而不是猜或另写一份实现。 */
+function proveDensityRoleDependency(): void {
+  const sf = tsSource(['arranger', 'drumPerformancePlanner.ts']);
+  let fn: ts.FunctionDeclaration | undefined;
+  const find = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === 'densityCeilingForFamily') fn = n;
+    ts.forEachChild(n, find);
+  };
+  find(sf);
+  if (!fn || !fn.body) throw new Error('densityCeilingForFamily 未找到（fail-closed）');
+  const roleParam = fn.parameters[0];
+  if (!roleParam || !ts.isIdentifier(roleParam.name) || roleParam.name.text !== 'role') {
+    throw new Error('densityCeilingForFamily 首参非 role（fail-closed）');
+  }
+  const ALLOWED = new Set(['lift', 'breakdown']);
+  let refs = 0;
+  const walk = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && n.text === 'role') {
+      refs++;
+      const p = n.parent;
+      if (!p || !ts.isBinaryExpression(p) || p.left !== n
+          || p.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken
+          || !ts.isStringLiteral(p.right) || !ALLOWED.has(p.right.text)) {
+        throw new Error(`densityCeilingForFamily: role 出现在非 \`role === 'lift'|'breakdown'\` 的位置`
+          + `（${p ? ts.SyntaxKind[p.kind] : '<none>'}）⇒ "silent 恒等于 timekeeper" 的定理不再成立（fail-closed）`);
+      }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(fn.body);
+  if (refs === 0) throw new Error('densityCeilingForFamily 体内零 role 引用（fail-closed）');
+}
+
+/** density 27 family × 5 role 的 permille 表。
+ *  27×4 **经生产 planner 观测**（synthetic 合同驱动，不复写算法）；
+ *  第 5 行 silent 由上面的 AST 定理导出（== timekeeper 行）。 */
+function buildDensityTable(families: readonly string[],
+                           observe: (family: string, role: string) => number) {
+  proveDensityRoleDependency();
+  const ROLES = ['timekeeper', 'lift', 'pickup', 'breakdown'] as const;
+  const rows: Array<{ family: number; role: number; permille: number }> = [];
+  const ROLE_ID: Record<string, number> = { silent: 0, timekeeper: 1, lift: 2, breakdown: 3, pickup: 4 };
+  families.forEach((fam, fi) => {
+    const byRole: Record<string, number> = {};
+    for (const r of ROLES) {
+      const v = observe(fam, r);
+      if (!Number.isFinite(v) || v < 0 || v > 1) throw new Error(`density ${fam}/${r}=${v} 越 [0,1]`);
+      byRole[r] = v;
+      rows.push({ family: fi, role: ROLE_ID[r], permille: permille(v) });
+    }
+    // silent 行由定理导出（== timekeeper），并显式记账其来源
+    rows.push({ family: fi, role: ROLE_ID.silent, permille: permille(byRole.timekeeper) });
+  });
+  if (rows.length !== families.length * 5) throw new Error(`density 表须 ${families.length * 5} 行`);
+  return rows;
+}
+
+/** density 观测器：用 synthetic 合同 + section 驱动**生产 planDrumPerformance**，
+ *  从输出的 densityCeiling 读值——**不复写 densityCeilingForFamily 的算法**（复写即自证）。
+ *  role 由 functionTag 决定（roleForSection）；family 由对应 role 的合同 family 字段决定。 */
+function makeDensityObserver() {
+  const TAG_FOR_ROLE: Record<string, string> = {
+    timekeeper: 'story', lift: 'hook', pickup: 'build', breakdown: 'setup',
+  };
+  const FIELD_FOR_ROLE: Record<string, string> = {
+    timekeeper: 'timekeeperFamily', lift: 'liftFamily',
+    pickup: 'pickupFamily', breakdown: 'breakdownFamily',
+  };
+  return (family: string, role: string): number => {
+    const drum: Record<string, unknown> = {
+      kitProgram: 8, timekeeperFamily: family, liftFamily: family,
+      pickupFamily: family, breakdownFamily: family,
+    };
+    drum[FIELD_FOR_ROLE[role]] = family;
+    const contract = {
+      id: `__density_probe_${family}_${role}__`, style: 'POP', grid: 'straight',
+      density: 'medium', drum,
+    } as never;
+    const section = { id: 's0', functionTag: TAG_FOR_ROLE[role], bars: 4 } as never;
+    const out = planDrumPerformance([section], 'pop', { s0: contract } as never,
+                                    { s0: 0.5 } as never, { s0: 'downbeat' } as never);
+    const got = out.s0;
+    if (!got) throw new Error(`density 观测失败 ${family}/${role}（fail-closed）`);
+    if (got.role !== role) throw new Error(`density 观测 role 不符：期望 ${role} 实得 ${got.role}（fail-closed）`);
+    if (got.patternFamily !== family) {
+      throw new Error(`density 观测 family 不符：期望 ${family} 实得 ${got.patternFamily}（fail-closed）`);
+    }
+    return got.densityCeiling;
+  };
+}
+
+/** timing safety 的 **45 格完整输入域**（3 effective swing source × 5 grid × 3 density）。
+ *  设计门三轮 #2：7 分支代表抓不住 authored+dilla 这类优先级冲突。 */
+function buildTimingSafetyGrid() {
+  const SWING = ['straight-eighths', 'straight-sixteenths', 'authored'] as const;
+  const GRID = ['straight', 'swing', 'shuffle', 'dilla', 'rubato'] as const;
+  const DENSITY = ['sparse', 'medium', 'active'] as const;
+  const SWING_ID: Record<string, number> = { 'straight-eighths': 0, 'straight-sixteenths': 1, authored: 2 };
+  const GRID_ID: Record<string, number> = { straight: 0, swing: 1, shuffle: 2, dilla: 3, rubato: 4 };
+  const DENSITY_ID: Record<string, number> = { sparse: 0, medium: 1, active: 2 };
+  const cells: Array<{ swing: number; grid: number; density: number; maxMoveTicks: number; humanizeAmount: number }> = [];
+  for (const sw of SWING) for (const g of GRID) for (const d of DENSITY) {
+    const r = timingSafetyForContract({ grid: g, density: d, rhythmSwingSource: sw } as never);
+    if (!Number.isInteger(r.maxMoveTicks) || r.maxMoveTicks < 0 || r.maxMoveTicks > 65535) {
+      throw new Error(`timing ${sw}/${g}/${d}: maxMoveTicks=${r.maxMoveTicks} 非法`);
+    }
+    if (![0, 1, 2, 3].includes(r.humanizeAmount)) throw new Error(`timing humanizeAmount 越域`);
+    cells.push({ swing: SWING_ID[sw], grid: GRID_ID[g], density: DENSITY_ID[d],
+                 maxMoveTicks: r.maxMoveTicks, humanizeAmount: r.humanizeAmount });
+  }
+  if (cells.length !== 45) throw new Error(`timing safety 须 45 格，实得 ${cells.length}（fail-closed）`);
+  // 判别力：45 格须至少出现 2 种 maxMoveTicks 与 2 种 humanizeAmount，否则整表无判别力
+  if (new Set(cells.map((c) => c.maxMoveTicks)).size < 2
+      || new Set(cells.map((c) => c.humanizeAmount)).size < 2) {
+    throw new Error('timing safety 45 格判别力不足（fail-closed）');
+  }
+  return cells;
+}
+
 // ---- ④ texture-case registry（owner=P2-8a）----
 // distinct textureCase 首现序（POOL 序 × preferred→allowed→forbidden × 数组内序）。groove 侧 [off,count]
 // 引本池；owner=P2-8a 落地时复用不重建/不重编号（afe_foreign_ids.h:afe_texture_case_id_t 落点）。
@@ -1056,6 +1338,11 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
     const texByName = new Map(textureCases.map((t) => [t.name, t.id]));
     const bassPatternMeter = buildBassPatternMeter();
     const kitCapability = buildKitCapabilities();
+    const feelKb = buildFeelProfiles();
+    const profileIdx = new Map(feelKb.profiles.map((p) => [p.name, p.id]));
+    const profileByContract = buildProfileByContract(profileIdx);
+    const densityTable = buildDensityTable(drumPatternFamilies.map((f) => f.name), makeDensityObserver());
+    const timingSafety = buildTimingSafetyGrid();
     const contract = buildContractKb(drumFamByName, texByName);
     const rhythmProfile = buildRhythmProfiles();
 
@@ -1194,6 +1481,36 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
         coreGmBits: kitCapability.coreGmBits,
         kits: kitCapability.kits,
         pitchProjections: kitCapability.pitchProjections,
+      },
+      drumFeelProfile: {
+        ownerTask: 'P2-10A',
+        note: '8 feel profile 全字段（velocity 8 band / timing 整毫秒 + phraseDrift 半毫秒定点 / '
+          + 'velocityContour IEEE754 位型 / ghostRoles·openHatRoles bitmask 复用 afe_groove_bar_role_t / '
+          + 'fillCadenceBars bit0→4 bit1→8 bit2→16 / evidence 9 位 bitmask 按 union 声明序）；'
+          + 'maxHandsAtOnce 恒 2 断言后不物化。',
+        knowledgeSourceOrder: feelKb.sourceOrder,
+        phraseBarRoleOrder: feelKb.roleOrder,
+        profiles: feelKb.profiles,
+        effectiveByContract: profileByContract.effective,
+        fallbackLeaves: profileByContract.fallbackLeaves,
+      },
+      drumDensityCeiling: {
+        ownerTask: 'P2-10A',
+        note: '27 family × 5 role 的 permille 表。27×4 **经生产 planDrumPerformance 观测**取得'
+          + '（不复写 densityCeilingForFamily 算法）；silent 行由 AST 定理导出——'
+          + '已机器证明该私有函数对 role 的依赖只有 role===\'lift\' 与 role===\'breakdown\' 两处比较，'
+          + '故任何既非 lift 也非 breakdown 的 role（含 silent）结果恒等于 timekeeper。',
+        roleOrder: ['silent', 'timekeeper', 'lift', 'breakdown', 'pickup'],
+        rows: densityTable,
+      },
+      drumTimingSafety: {
+        ownerTask: 'P2-10A',
+        note: '45 格完整输入域（3 effective swing source × 5 grid × 3 density）。'
+          + '7 分支代表抓不住 authored+dilla 这类优先级冲突，故按完整定义域冻结。',
+        swingOrder: ['straight-eighths', 'straight-sixteenths', 'authored'],
+        gridOrder: ['straight', 'swing', 'shuffle', 'dilla', 'rubato'],
+        densityOrder: ['sparse', 'medium', 'active'],
+        cells: timingSafety,
       },
       bassPatternMeter,
       contract,
