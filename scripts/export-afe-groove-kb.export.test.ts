@@ -1948,7 +1948,9 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
    *      **各恰 1 次**，且各自的**终端只读上下文**受限：
    *        · 通用：拒写入 / 复合赋值 / update / delete / 作 callee / 别名逃逸 / 动态索引 / 未知叶；
    *        · `maxHandsAtOnce`：必须是 `if (p.physical.maxHandsAtOnce !== 2) throw …` 的完整形态
-   *          （叶为 `!==` 左值、右值字面量 `2`、比较即 `if` 条件、无 else、then 分支抛错）；
+   *          （叶为 `!==` 左值、右值字面量 `2`、比较即 `if` 条件、无 else、then 分支是**直接** `throw`——
+   *          或恰含一条直接 `throw` 的 block；递归搜「子树里有 throw」不算，
+   *          那不证明可达，`if (false) throw` 会漏过）；
    *        · `chokeOpenHatWithClosed`：必须**就是** ⑨ 定位到的 physical 对象内那个唯一同名
    *          属性节点（节点身份，不是名字相等）的 initializer；
    *        · 两手型叶：必须是对应 `HAND_ID` 调用的第 2 实参；
@@ -2260,13 +2262,15 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
                 const ifSt = okCmp ? gp!.parent : undefined;
                 const okIf = ifSt && ts.isIfStatement(ifSt) && ifSt.expression === gp
                   && !ifSt.elseStatement;
+                // 十轮 Finding 3：递归搜「then 子树里存在任意 throw」**不证明可达**——
+                // `if (… !== 2) { if (false) throw ...; }` 实测 ACCEPT，清单⑪的措辞强于实物
+                // （描述通胀第五次）。只接受**直接** ThrowStatement，或恰含一条直接 throw 的 block。
                 let throws = false;
                 if (okIf) {
-                  const findThrow = (x: ts.Node): void => {
-                    if (ts.isThrowStatement(x)) throws = true;
-                    x.forEachChild(findThrow);
-                  };
-                  findThrow((ifSt as ts.IfStatement).thenStatement);
+                  const then = (ifSt as ts.IfStatement).thenStatement;
+                  throws = ts.isThrowStatement(then)
+                    || (ts.isBlock(then) && then.statements.length === 1
+                        && ts.isThrowStatement(then.statements[0]));
                 }
                 if (!okCmp || !okIf || !throws) {
                   bad.push('maxHandsAtOnce 非「if (… !== 2) throw」恒值校验形态:'
@@ -2708,6 +2712,12 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     ['maxHandsAtOnce 比较结果未被消费（恒值断言形同虚设）',
       { maxHands: 'const ignored = p.physical.maxHandsAtOnce !== 2;' },
       /alias:|非「if \(… !== 2\) throw」恒值校验形态/],
+    ['maxHandsAtOnce 的 then 里是不可达 throw（十轮 Finding 3）',
+      { maxHands: "if (p.physical.maxHandsAtOnce !== 2) { if (false) throw new Error('decoy'); }" },
+      /非「if \(… !== 2\) throw」恒值校验形态/],
+    ['maxHandsAtOnce 的 then block 含多条语句',
+      { maxHands: "if (p.physical.maxHandsAtOnce !== 2) { NOTE(); throw new Error('x'); }" },
+      /非「if \(… !== 2\) throw」恒值校验形态/],
     ['maxHandsAtOnce 的 if 分支不抛错',
       { maxHands: 'if (p.physical.maxHandsAtOnce !== 2) NOOP();' },
       /非「if \(… !== 2\) throw」恒值校验形态/],
