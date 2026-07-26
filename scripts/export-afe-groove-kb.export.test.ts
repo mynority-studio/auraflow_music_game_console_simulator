@@ -1379,12 +1379,15 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['Set 合法只读 .has 应放行（白名单正向）', () => { astNewSetLiterals(tsParse(SET_OK + "export const ok = DRUM_PATTERN_FAMILIES.has('a');\n"), 'DRUM_PATTERN_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
     ['realizer 生产形态应放行（正向契约，基线即含唯一生产引用）', () => { astObjectKeys(tsParse(OBJ_OK), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
-    // 计数锁的**独立靶**：第二处引用放在**同一函数内**且形态完全合法 ——
-    // 于是形态锁全部通过，只有计数锁能抓（否则会被函数名锁代打）
-    ['realizer 同一函数内多一处合法引用（引用计数锁独立靶）',
+    // ★ 计数锁的**独立靶**（八轮 #2 给的正确构造）：第二处引用放在**同一函数的嵌套块**内、
+    //   **同样命名 variants** —— 于是函数名锁、声明名锁、索引形态锁**全部通过**，
+    //   只有计数锁能抓。我前两版分别用 drumPerformanceVariants2 / variants2 构造，
+    //   都先被函数名锁 / 声明名锁代打，靶子是假的。
+    ['realizer 同函数嵌套块内多一处完全合法引用（计数锁独立靶）',
      () => astObjectKeys(tsParse(OBJ_OK.replace('  return variants;\n',
-       "  const variants2 = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];\n  return variants ?? variants2;\n")), 'DRUM_PERFORMANCE_FAMILIES'),
-     /非声明引用 2 处 != 冻结 1|声明名须为/],
+       "  {\n    const variants = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];\n"
+       + "    void variants;\n  }\n  return variants;\n")), 'DRUM_PERFORMANCE_FAMILIES'),
+     /非声明引用 2 处 != 冻结 1/],
   ];
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
