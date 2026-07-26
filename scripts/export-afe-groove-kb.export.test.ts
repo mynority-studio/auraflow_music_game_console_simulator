@@ -856,6 +856,8 @@ function buildDensityTable(families: readonly string[],
     rows.push({ family: fi, role: ROLE_ID.silent, permille: permille(byRole.timekeeper) });
   });
   if (rows.length !== families.length * 5) throw new Error(`density 表须 ${families.length * 5} 行`);
+  // ★ canonical 序 = (family, role) 升序 —— JSON 自身即 canonical，两侧 digest 才可能同序
+  rows.sort((a, b) => (a.family - b.family) || (a.role - b.role));
   return rows;
 }
 
