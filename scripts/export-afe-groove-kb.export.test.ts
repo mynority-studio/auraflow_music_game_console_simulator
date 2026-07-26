@@ -330,25 +330,23 @@ function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind
       else if (kind === 'set' && ts.isPropertyAccessExpression(p) && p.expression === cur) {
         const asCallee = p.parent && ts.isCallExpression(p.parent) && p.parent.expression === p;
         if (p.name.text !== 'has' || !asCallee) bad(`Set 只允许 .has(...) 只读调用，实得 .${p.name.text}`);
-      } else if (kind === 'object' && (ts.isElementAccessExpression(p) || ts.isPropertyAccessExpression(p))
-                 && p.expression === cur) {
-        // ★ 只允许**终端只读**成员访问（四轮 #1）：上一版允许成员访问后就不再看它被怎么用，
-        // 于是 `X['__defineGetter__']('c', …)` 穿过——它会**新增 own key**（Object.keys 从
-        // ["a"] 变 ["a","c"]），AST 仍只见原字面键，三方相等门假绿。
-        // 链式 `X['__proto__']['extra'] = …` 同理。故成员访问不得再作为
-        // Call/New 的 callee、也不得作为下一级成员访问的基底。
+      } else if (kind === 'object' && ts.isElementAccessExpression(p) && p.expression === cur) {
+        // ★★ **正向契约**（五轮 #1）：不再维护"拒绝清单"——那是无穷尽的
+        //   （已被 __defineGetter__、__proto__ 链式、for-in 左值逐个打穿）。
+        //   改为只接受**生产中实际存在的唯一读取形态**：
+        //       const variants = DRUM_PERFORMANCE_FAMILIES[expr];   // grooves.ts:383
+        //   即：终端 ElementAccess（不是 PropertyAccess）→ 直接作为 **const 声明的 initializer**。
+        //   其余一切上下文（for-in 左值、方法调用、链式、赋值、实参、return…）由兜底拒绝。
         let node: ts.Node = p;
         while (node.parent && (ts.isAsExpression(node.parent) || ts.isParenthesizedExpression(node.parent)
                || ts.isNonNullExpression(node.parent))) node = node.parent;
         const w = node.parent;
-        if (w && ts.isBinaryExpression(w) && w.left === node) bad('对象成员被赋值/复合赋值');
-        else if (w && ts.isDeleteExpression(w)) bad('对象成员被 delete');
-        else if (w && (ts.isPostfixUnaryExpression(w) || ts.isPrefixUnaryExpression(w))) bad('对象成员自增自减');
-        else if (w && (ts.isCallExpression(w) || ts.isNewExpression(w)) && w.expression === node) {
-          bad('对象成员被当作方法调用（可能新增 own key，如 __defineGetter__）');
-        } else if (w && (ts.isPropertyAccessExpression(w) || ts.isElementAccessExpression(w))
-                   && w.expression === node) {
-          bad('对象成员被链式继续访问（非终端只读）');
+        const isConstInit = w && ts.isVariableDeclaration(w) && w.initializer === node
+          && w.parent && ts.isVariableDeclarationList(w.parent)
+          && (w.parent.flags & ts.NodeFlags.Const) !== 0;
+        if (!isConstInit) {
+          bad(`对象成员访问只允许「const 声明的 initializer」这一种生产形态，`
+            + `实得父节点 ${w ? ts.SyntaxKind[w.kind] : '<none>'}`);
         }
       } else {
         bad(`出现在 ${ts.SyntaxKind[p.kind]} 位置（RHS 传递 / 实参 / return / 解构 / Object.assign 等均不允许）`);
@@ -1293,26 +1291,30 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['Set 经 alias 逃逸后 delete', () => astNewSetLiterals(tsParse(SET_OK + "const alias = DRUM_PATTERN_FAMILIES as Set<string>;\nalias.delete('b');\n"), 'DRUM_PATTERN_FAMILIES'), /VariableDeclaration 位置|RHS 传递/],
     ['Object.assign 改 realizer', () => astObjectKeys(tsParse(OBJ_OK + "Object.assign(DRUM_PERFORMANCE_FAMILIES, { c: 3 });\n"), 'DRUM_PERFORMANCE_FAMILIES'), /CallExpression 位置|实参/],
     ['for-init 假顶层声明', () => astNewSetLiterals(tsParse("for (const DRUM_PATTERN_FAMILIES = new Set(['a','b']); false;) {}\n"), 'DRUM_PATTERN_FAMILIES'), '不在 VariableStatement 中'],
-    ['realizer 复合赋值 ||=', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['a'] ||= 9;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
+    ['realizer 复合赋值 ||=', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['a'] ||= 9;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['Set 作实参传出', () => astNewSetLiterals(tsParse(SET_OK + "sink(DRUM_PATTERN_FAMILIES);\n"), 'DRUM_PATTERN_FAMILIES'), /CallExpression 位置/],
     ['Set 被 return 传出', () => astNewSetLiterals(tsParse(SET_OK + "export function g(){ return DRUM_PATTERN_FAMILIES; }\n"), 'DRUM_PATTERN_FAMILIES'), /ReturnStatement 位置/],
-    ['realizer 属性写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES.c = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
+    ['realizer 属性写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES.c = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /出现在|只允许/],
     // ★ 四轮 #1：成员访问不得再作为 Call/New callee 或链式基底
     ['realizer __defineGetter__ 新增 own key',
      () => astObjectKeys(tsParse(OBJ_OK + "(DRUM_PERFORMANCE_FAMILIES as any)['__defineGetter__']('c', () => 3);\n"), 'DRUM_PERFORMANCE_FAMILIES'),
-     '被当作方法调用'],
+     /只允许「const 声明的 initializer」/],
     ['realizer __proto__ 链式写入',
      () => astObjectKeys(tsParse(OBJ_OK + "(DRUM_PERFORMANCE_FAMILIES as any)['__proto__']['extra'] = 1;\n"), 'DRUM_PERFORMANCE_FAMILIES'),
-     '链式继续访问'],
+     /只允许「const 声明的 initializer」/],
     ['obj 含 spread', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ...base, 'a': 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
     ['obj 含 computed 键', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ['a'+'b']: 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'computed/非字面键'],
     ['obj 含 method', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { m(){ return 1; } };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
     ['obj 键重复', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { 'a': 1, 'a': 2 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '键重复'],
     ['obj initializer 非 ObjectLiteral', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = build();\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'initializer 非 ObjectLiteral'],
-    ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
-    ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被 delete'],
+    ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
+    // ★ 五轮反例：for-in 左值同样新增 own key
+    ['obj for-in 左值新增 key', () => astObjectKeys(tsParse(OBJ_OK + "for (DRUM_PERFORMANCE_FAMILIES['c'] in { z: 1 }) {}\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
+    ['obj for-of 左值', () => astObjectKeys(tsParse(OBJ_OK + "for (DRUM_PERFORMANCE_FAMILIES['c'] of [1]) {}\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
+    ['obj 属性读取（非下标）亦拒', () => astObjectKeys(tsParse(OBJ_OK + "export const v2 = DRUM_PERFORMANCE_FAMILIES.a;\n"), 'DRUM_PERFORMANCE_FAMILIES'), /出现在|只允许/],
+    ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['Set 合法只读 .has 应放行（白名单正向）', () => { astNewSetLiterals(tsParse(SET_OK + "export const ok = DRUM_PATTERN_FAMILIES.has('a');\n"), 'DRUM_PATTERN_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
-    ['realizer 合法只读索引应放行（白名单正向）', () => { astObjectKeys(tsParse(OBJ_OK + "export const v = DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
+    ['realizer 生产形态应放行（正向契约）', () => { astObjectKeys(tsParse(OBJ_OK + "export function f(k: string){ const variants = DRUM_PERFORMANCE_FAMILIES[k]; return variants; }\n"), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
   ];
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
