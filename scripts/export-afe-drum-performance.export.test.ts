@@ -151,7 +151,18 @@ const OPENING_ENTRY_ORDER = ['none', 'hatsOnly', 'kickOnly', 'backbeatDelayed', 
   'rideOnly', 'brushLoop', 'halftimePocket', 'tomPickup'] as const;
 const FUNCTION_TAG_ORDER = ['setup', 'story', 'build', 'hook', 'breakdown',
   'loop', 'head', 'solo', 'headOut', 'tag', 'outro'] as const;
-const SECTION_ENTRY_ORDER = ['downbeat', 'lead-in', 'delayed', 'pickup', 'none'] as const;
+// ★★ 拆步5 首跑抓出的第三次同类错：上一版我手写 ['downbeat','lead-in','delayed','pickup','none']，
+//   而真源 `SectionEntry = 'downbeat' | 'lead-in'` 只有 **2 值**（'delayed'/'pickup' 属另一个类型
+//   RolePerformanceContract.entryMode，根本不是合法输入），C ABI 则是 NONE=0/DOWNBEAT=1/LEAD_IN=2。
+//   结果 C2 组的 lead-in 与 delayed 两例 entry_mode 对调、且两个非法值本不该存在。
+//   现改为「只导 ABI 常量名」，数值由 codegen 解析 afe_groove.h 取得（与输出枚举同一制度）。
+const SECTION_ENTRY_ABI: Record<string, string> = {
+  none: 'AFE_GROOVE_SECTION_ENTRY_NONE',
+  downbeat: 'AFE_GROOVE_SECTION_ENTRY_DOWNBEAT',
+  'lead-in': 'AFE_GROOVE_SECTION_ENTRY_LEAD_IN',
+};
+/** 真源域：只有 2 个值 + absent（absent 在 C 侧即 ENTRY_NONE）。 */
+const SECTION_ENTRY_DOMAIN = ['downbeat', 'lead-in'] as const;
 // 27 family 冻结序 = 拆步2 append-only registry（前 17 项不可重编号）
 const FAMILY_ORDER = [
   'pop-backbeat', 'ballad-halftime', 'citypop-syncopated-boogie', 'citypop-disco-boogie',
@@ -554,7 +565,7 @@ for (const L of E2_LEAVES) {
 
 // ---- C2: SectionEntry 域（二轮 F6：此前**全部** section 的 entry 都是 absent，
 //      错误实现忽略 `entry==='lead-in' → full` 仍会全绿）----
-for (const en of [...SECTION_ENTRY_ORDER, undefined]) {
+for (const en of [...SECTION_ENTRY_DOMAIN, undefined]) {
   for (const role of ['timekeeper', 'pickup', 'breakdown'] as const) {
     addCase({
       name: `C2_entry_${en ?? 'absent'}_${role}`,
@@ -739,7 +750,7 @@ function buildCases() {
         functionTagIdx: s.functionTag ? idx(FUNCTION_TAG_ORDER, s.functionTag, 'functionTag') : 255,
         bars: s.bars ?? 4,
         entry: s.entry ?? null,
-        entryIdx: s.entry ? idx(SECTION_ENTRY_ORDER, s.entry, 'entry') : 255,
+        entryAbi: abiName(SECTION_ENTRY_ABI, s.entry ?? 'none', 'entry'),
         repeatGroup: s.repeatGroup ?? null,
         contractPoolIdx: poolRef(s.contract),
         contractIdEnum: (() => {
