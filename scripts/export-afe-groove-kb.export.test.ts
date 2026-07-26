@@ -1942,23 +1942,42 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
    *  故直接核对符号的声明是 ImportSpecifier 且其模块说明符符合预期——
    *  这足以证明「不是局部重绑」，正是六轮 Finding 1 的三个反例（drumFeelProfile /
    *  DRUM_FEEL_PROFILES / Object 局部重绑）能绕过文本锁的原因。 */
-  const assertImportedFrom = (ck: ts.TypeChecker, id: ts.Identifier, moduleHint: string): void => {
+  const KNOWLEDGE_MODULE = '../src/core/generation/newEngine/knowledge/drumPerformanceKnowledge';
+  /** 把标识符锁到**精确的 (模块路径, 被导入 export 名)** 二元组。
+   *
+   *  七轮 Finding 1：上一版只查「声明是任意 ImportSpecifier + moduleSpecifier 文本
+   *  `includes(hint)`」，判据层实测两处 ACCEPT：
+   *    · 路径换成 `…/drumPerformanceKnowledgeEvil`（hint 是它的子串）
+   *    · `weakProfile as drumFeelProfile`（本地名对上、真正导入的 export 是别的）
+   *  两者都能在 scripts 内做成可编译、当前输出相同的完整绕过。
+   *  `noResolve` 下无法比对 aliased symbol，但语法级的精确二元组已足够。 */
+  const assertImportedFrom = (ck: ts.TypeChecker, id: ts.Identifier,
+                              exactModule: string, exportName: string): void => {
     const sym = ck.getSymbolAtLocation(id);
     const decl = sym?.declarations?.[0];
     if (!decl || !ts.isImportSpecifier(decl)) {
       throw new Error(`${id.text} 不是顶层 import 的符号（可能被局部重绑），fail-closed`);
     }
+    const imported = (decl.propertyName ?? decl.name).text;
+    if (imported !== exportName) {
+      throw new Error(`${id.text} 实际导入的 export 是 ${imported}，应为 ${exportName}`
+        + '（别名遮蔽），fail-closed');
+    }
     const impDecl = decl.parent.parent.parent;
-    const spec = ts.isImportDeclaration(impDecl) ? impDecl.moduleSpecifier.getText() : '';
-    if (!spec.includes(moduleHint)) {
-      throw new Error(`${id.text} 来自 ${spec}，应来自含 ${moduleHint} 的模块，fail-closed`);
+    const spec = ts.isImportDeclaration(impDecl)
+      && ts.isStringLiteral(impDecl.moduleSpecifier) ? impDecl.moduleSpecifier.text : '';
+    if (spec !== exactModule) {
+      throw new Error(`${id.text} 来自 ${spec}，应**精确等于** ${exactModule}`
+        + '（路径子串 shim），fail-closed');
     }
   };
-  /** 该标识符不得在给定作用域内被重新声明（用于 `Object` 这类全局）。 */
-  const assertNotRebound = (ck: ts.TypeChecker, id: ts.Identifier, scope: ts.Node, sf: ts.SourceFile): void => {
+  /** 该标识符不得在**本文件任何位置**被重新声明（用于 `Object` 这类全局）。
+   *  七轮 Finding 1：上一版只查函数体范围，文件级 `const Object = BAD` 实测 ACCEPT。 */
+  const assertNotRebound = (ck: ts.TypeChecker, id: ts.Identifier, sf: ts.SourceFile): void => {
     const d = ck.getSymbolAtLocation(id)?.valueDeclaration;
-    if (d && d.getStart(sf) >= scope.getStart(sf) && d.getEnd() <= scope.getEnd()) {
-      throw new Error(`${id.text} 在被验证作用域内被重新声明（局部重绑），fail-closed`);
+    if (d && d.getSourceFile() === sf) {
+      throw new Error(`${id.text} 在本文件内被重新声明（第 ${
+        sf.getLineAndCharacterOfPosition(d.getStart(sf)).line + 1} 行），fail-closed`);
     }
   };
   const PHYSICAL_LEAVES = ['maxHandsAtOnce', 'timekeeperHand', 'ghostHand', 'chokeOpenHatWithClosed'];
@@ -2031,8 +2050,9 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
           + `实得 ${init?.getText(sf)}（fail-closed）`);
       }
       // ★ 文本相同 ≠ 符号相同（六轮 Finding 1）
-      assertNotRebound(ck, init.expression.expression, fn, sf);
-      assertImportedFrom(ck, init.arguments[0] as ts.Identifier, 'drumPerformanceKnowledge');
+      assertNotRebound(ck, init.expression.expression, sf);
+      assertImportedFrom(ck, init.arguments[0] as ts.Identifier,
+                         KNOWLEDGE_MODULE, 'DRUM_FEEL_PROFILES');
     }
     const idsSym = ck.getSymbolAtLocation(idsDecl.name as ts.Identifier);
     const mapCall = rowsDecl.initializer;
@@ -2096,7 +2116,7 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
         + `实得 ${pDecl.initializer?.getText(sf)}（fail-closed）`);
     }
     assertImportedFrom(ck, (pDecl.initializer as ts.CallExpression).expression as ts.Identifier,
-                       'drumPerformanceKnowledge');
+                       KNOWLEDGE_MODULE, 'drumFeelProfile');
     const pSym = ck.getSymbolAtLocation(pDecl.name as ts.Identifier);
 
     const rowObj = last.expression;
@@ -2181,6 +2201,7 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       //   initializer / 返回值 / 更深动态索引的基底。
       {
         const bad: string[] = [];
+        const leafHits = new Map<string, number>();
         const scanPhys = (n: ts.Node): void => {
           if (ts.isPropertyAccessExpression(n) && n.name.text === 'physical'
               && ts.isIdentifier(n.expression) && ck.getSymbolAtLocation(n.expression) === pSym) {
@@ -2188,30 +2209,61 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
             if (!par || !ts.isPropertyAccessExpression(par) || par.expression !== n
                 || !PHYSICAL_LEAVES.includes(par.name.text)) {
               bad.push(par ? `${ts.SyntaxKind[par.kind]}:${par.getText(sf).slice(0, 40)}` : '?');
+            } else {
+              // ★★ 七轮 Finding 3：只锁叶名**不够**——`p.physical.maxHandsAtOnce = 2;` 实测
+              //    ACCEPT。现有 8 行本来全是 2，输出与 golden 都不变；将来真源变 3 时会先被
+              //    归一化成 2，让本该 fail-closed 的恒 2 断言失效。故每个叶都要锁**使用上下文**。
+              const leaf = par.name.text;
+              leafHits.set(leaf, (leafHits.get(leaf) ?? 0) + 1);
+              const gp = par.parent;
+              const isWrite = gp
+                && ((ts.isBinaryExpression(gp) && gp.left === par
+                     && gp.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+                     && gp.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
+                    || ts.isPrefixUnaryExpression(gp) || ts.isPostfixUnaryExpression(gp)
+                    || ts.isDeleteExpression(gp));
+              if (isWrite) {
+                bad.push(`write:${gp!.getText(sf).slice(0, 40)}`);
+              } else if (gp && ts.isCallExpression(gp) && gp.expression === par) {
+                bad.push(`callee:${gp.getText(sf).slice(0, 40)}`);
+              } else if (gp && (ts.isVariableDeclaration(gp) || ts.isSpreadElement(gp))) {
+                bad.push(`alias:${gp.getText(sf).slice(0, 40)}`);   // 别名逃逸
+              } else if (leaf === 'maxHandsAtOnce') {
+                // 唯一允许：恒值校验比较（生产为 `p.physical.maxHandsAtOnce !== 2`）
+                if (!gp || !ts.isBinaryExpression(gp)
+                    || gp.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsEqualsToken) {
+                  bad.push(`maxHandsAtOnce 非恒值校验上下文:${gp ? gp.getText(sf).slice(0, 40) : '?'}`);
+                }
+              } else if (leaf === 'chokeOpenHatWithClosed') {
+                // 唯一允许：作为最终 row 里同名属性的 initializer
+                if (!gp || !ts.isPropertyAssignment(gp) || gp.initializer !== par
+                    || !ts.isIdentifier(gp.name) || gp.name.text !== 'chokeOpenHatWithClosed') {
+                  bad.push(`chokeOpenHatWithClosed 非 row 属性 initializer:${gp ? gp.getText(sf).slice(0, 40) : '?'}`);
+                }
+              } else {
+                // 两个手型叶：只允许作对应 HAND_ID 调用的第 2 实参
+                if (!gp || !ts.isCallExpression(gp) || gp.arguments[1] !== par
+                    || !ts.isIdentifier(gp.expression) || gp.expression.text !== 'HAND_ID') {
+                  bad.push(`${leaf} 非 HAND_ID 第二实参:${gp ? gp.getText(sf).slice(0, 40) : '?'}`);
+                }
+              }
             }
           }
           n.forEachChild(scanPhys);
         };
         cb.body.forEachChild(scanPhys);
         if (bad.length) {
-          throw new Error(`p.physical 未直达已知叶 ${JSON.stringify(bad)}——`
-            + '子对象整体逃逸后可先被归一化，fail-closed');
+          throw new Error(`p.physical 叶的终端只读上下文违例 ${JSON.stringify(bad)}——`
+            + '写入/逃逸/换上下文后可先被归一化，fail-closed');
+        }
+        for (const leaf of PHYSICAL_LEAVES) {
+          const hits = leafHits.get(leaf) ?? 0;
+          if (hits !== 1) {
+            throw new Error(`p.physical.${leaf} 出现 ${hits} 次，应恰 1 次（fail-closed）`);
+          }
         }
       }
-      // 两个手型叶各恰读一次（写入/重复读都会让计数 ≠ 1）
-      for (const [, prop] of HAND_FIELDS) {
-        let hits = 0;
-        const scanLeaf = (n: ts.Node): void => {
-          if (ts.isPropertyAccessExpression(n) && n.name.text === prop
-              && n.getText(sf) === `p.physical.${prop}`) hits++;
-          n.forEachChild(scanLeaf);
-        };
-        cb.body.forEachChild(scanLeaf);
-        if (hits !== 1) {
-          throw new Error(`p.physical.${prop} 在 callback 内出现 ${hits} 次，应恰 1 次`
-            + '（只能作为对应 HAND_ID 的第二实参），fail-closed');
-        }
-      }
+      // 四个叶各恰 1 次已由上面的 leafHits 统一断言（原先另有一处只覆盖两个手型叶，已合并）
     }
 
     // ⑤ 函数最终 return { …, profiles: rows }
@@ -2239,15 +2291,30 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     //    且该函数符号的全部值引用只允许「声明名 + 这一处调用」（禁别名/逃逸/额外调用）。
     {
       const fnSym = ck.getSymbolAtLocation(fn.name!);
-      let feelKbInit: ts.Expression | undefined;
+      // ★★ 七轮 Finding 2：上一版只「按文本找最后一个名为 feelKb 的声明」并核 initializer，
+      //    没查唯一性/const/是否被重赋值/最终 JSON 是否真来自它。判据层实测三例 ACCEPT：
+      //    `let feelKb` / 初始化后 `feelKb = BAD_KB` / 最终 profiles 改走 `BAD_KB.profiles`。
+      //    于是仍可让合格 builder 当 decoy、另一路投影进产物，且当前 8 行同值 ⇒ golden 不报警。
+      let feelKbDecl: ts.VariableDeclaration | undefined;
+      let feelKbCount = 0;
       const findFeelKb = (n: ts.Node): void => {
         if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === 'feelKb') {
-          feelKbInit = n.initializer;
+          feelKbCount++;
+          const list = n.parent;
+          if (!ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Const) === 0) {
+            throw new Error('feelKb 不是 const 声明——可被重新赋值，fail-closed');
+          }
+          feelKbDecl = n;
         }
         n.forEachChild(findFeelKb);
       };
       sf.forEachChild(findFeelKb);
-      if (!feelKbInit) throw new Error('未找到消费点 const feelKb = …（fail-closed）');
+      if (!feelKbDecl) throw new Error('未找到消费点 const feelKb = …（fail-closed）');
+      if (feelKbCount !== 1) {
+        throw new Error(`feelKb 声明 ${feelKbCount} 处，应恰 1 处（fail-closed）`);
+      }
+      const feelKbInit: ts.Expression | undefined = feelKbDecl.initializer;
+      if (!feelKbInit) throw new Error('feelKb 无 initializer（fail-closed）');
       if (!ts.isCallExpression(feelKbInit) || !ts.isIdentifier(feelKbInit.expression)
           || feelKbInit.arguments.length !== 0
           || ck.getSymbolAtLocation(feelKbInit.expression) !== fnSym) {
@@ -2257,7 +2324,7 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       const refs: string[] = [];
       const scanFn = (n: ts.Node): void => {
         if (ts.isIdentifier(n) && n.text === 'buildFeelProfiles'
-            && n !== fn!.name && n !== feelKbInit!.expression
+            && n !== fn!.name && n !== (feelKbInit as ts.CallExpression).expression
             && ck.getSymbolAtLocation(n) === fnSym) {
           refs.push(n.parent ? ts.SyntaxKind[n.parent.kind] : '?');
         }
@@ -2267,6 +2334,44 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       if (refs.length) {
         throw new Error(`buildFeelProfiles 存在额外引用 ${JSON.stringify(refs)}——`
           + '可被别名/额外调用绕开唯一消费点，fail-closed');
+      }
+
+      // feelKb 符号的**全部引用**只允许 `feelKb.<字段>` 读取（禁赋值/别名/整体逃逸）
+      const kbSym = ck.getSymbolAtLocation(feelKbDecl.name as ts.Identifier);
+      const kbBad: string[] = [];
+      const kbFieldReads: ts.PropertyAccessExpression[] = [];
+      const scanKb = (n: ts.Node): void => {
+        if (ts.isIdentifier(n) && n.text === 'feelKb' && n !== feelKbDecl!.name
+            && ck.getSymbolAtLocation(n) === kbSym) {
+          const par = n.parent;
+          if (par && ts.isPropertyAccessExpression(par) && par.expression === n) {
+            kbFieldReads.push(par);
+          } else {
+            kbBad.push(par ? `${ts.SyntaxKind[par.kind]}:${par.getText(sf).slice(0, 40)}` : '?');
+          }
+        }
+        n.forEachChild(scanKb);
+      };
+      sf.forEachChild(scanKb);
+      if (kbBad.length) {
+        throw new Error(`feelKb 存在非字段读取的引用 ${JSON.stringify(kbBad)}——`
+          + '可被重赋值或整体换成第二 KB，fail-closed');
+      }
+
+      // 最终 JSON 的三个字段必须**直接**取自该 feelKb 符号
+      const WANT_JSON: Array<[string, string]> = [
+        ['knowledgeSourceOrder', 'sourceOrder'],
+        ['phraseBarRoleOrder', 'roleOrder'],
+        ['profiles', 'profiles'],
+      ];
+      for (const [jsonKey, kbField] of WANT_JSON) {
+        const hits = kbFieldReads.filter((r) => r.name.text === kbField
+          && r.parent && ts.isPropertyAssignment(r.parent) && r.parent.initializer === r
+          && ts.isIdentifier(r.parent.name) && r.parent.name.text === jsonKey);
+        if (hits.length !== 1) {
+          throw new Error(`最终 JSON 的 ${jsonKey} 不是恰 1 处直接取自 feelKb.${kbField}`
+            + `（实得 ${hits.length} 处）——产物可能来自第二条投影链，fail-closed`);
+        }
       }
     }
 
@@ -2314,8 +2419,7 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
   /* 合成源必须是**完整合法形态**，只注入单点缺陷；否则负向会被上游结构检查代打
    * ——这一课本任务已栽过三次。故用**统一构造器** mkSrc()，收紧契约时只改一处。 */
   const IMPORT_STUB =
-    "import { DRUM_FEEL_PROFILES, drumFeelProfile } from "
-    + "'../src/core/generation/newEngine/knowledge/drumPerformanceKnowledge';\n";
+    `import { DRUM_FEEL_PROFILES, drumFeelProfile } from '${KNOWLEDGE_MODULE}';\n`;
   const HAND_STUB = "function HAND_ID(k: any, v: any, i: any): number { return 0; }\n";
   const OKTK = "HAND_ID('timekeeper', p.physical.timekeeperHand, id)";
   const OKGH = "HAND_ID('ghost', p.physical.ghostHand, id)";
@@ -2333,22 +2437,39 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     tail?: string;       // rows 之后、return 之前
     ret?: string;        // 最终 return 全文
     consume?: string;    // 消费点 feelKb 的 initializer
+    kbKw?: string;       // const | let
+    kbTail?: string;     // feelKb 之后追加的语句
+    jsonSrc?: string; jsonRole?: string; jsonProfiles?: string;   // 最终 JSON 三字段
+    importFrom?: string; importAlias?: string;                    // import 形态
+    maxHands?: string;   // maxHandsAtOnce 的使用语句
+    choke?: string;      // chokeOpenHatWithClosed 的 initializer
   };
   const mkSrc = (o: Parts = {}): string =>
-    IMPORT_STUB + HAND_STUB + (o.pre ?? '') + '\n'
+    (o.importFrom || o.importAlias
+      ? `import { DRUM_FEEL_PROFILES, ${o.importAlias ?? 'drumFeelProfile'} } from `
+        + `'${o.importFrom ?? KNOWLEDGE_MODULE}';\n`
+      : IMPORT_STUB) + HAND_STUB + (o.pre ?? '') + '\n'
     + 'function buildFeelProfiles() {\n'
     + `  ${o.head ?? ''}\n`
     + `  const ids = ${o.idsInit ?? 'Object.keys(DRUM_FEEL_PROFILES)'};\n`
     + `  ${o.rowsKw ?? 'const'} rows = ${o.recv ?? 'ids'}.map((id: any, idx: any) => {\n`
     + `    const p = ${o.pInit ?? 'drumFeelProfile(id as never)'};\n`
+    // 生产形态：maxHandsAtOnce 恒值校验（不物化）
+    + `    ${o.maxHands ?? "if (p.physical.maxHandsAtOnce !== 2) throw new Error('x');"}\n`
     + `    ${o.cbHead ?? ''}\n`
     + '    return { '
-    + `physical: ${o.physical ?? `{\n      timekeeperHand: ${o.tk ?? OKTK},\n      ghostHand: ${o.gh ?? OKGH},\n    }`}`
+    + `physical: ${o.physical ?? `{\n      timekeeperHand: ${o.tk ?? OKTK},\n      ghostHand: ${o.gh ?? OKGH},\n`
+      + `      chokeOpenHatWithClosed: ${o.choke ?? 'p.physical.chokeOpenHatWithClosed'},\n    }`}`
     + `${o.rowExtra ?? ''} };\n`
     + '  });\n'
     + `  ${o.tail ?? ''}\n`
     + `  ${o.ret ?? 'return { profiles: rows };'}\n}\n`
-    + `const feelKb = ${o.consume ?? 'buildFeelProfiles()'};\n`;
+    + `${o.kbKw ?? 'const'} feelKb = ${o.consume ?? 'buildFeelProfiles()'};\n`
+    + `${o.kbTail ?? ''}\n`
+    + 'const out = { drumFeelProfile: {\n'
+    + `  knowledgeSourceOrder: ${o.jsonSrc ?? 'feelKb.sourceOrder'},\n`
+    + `  phraseBarRoleOrder: ${o.jsonRole ?? 'feelKb.roleOrder'},\n`
+    + `  profiles: ${o.jsonProfiles ?? 'feelKb.profiles'},\n} };\n`;
 
   it('生产 buildFeelProfiles 通过委托证明（完整正向数据流契约）', () => {
     const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
@@ -2396,6 +2517,28 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       /自身有 2 条 return，应恰 1 条/],
     ['p 被 sanitizer 预处理（HAND_ID 拿到的已非真源原值）',
       { cbHead: 'SANITIZE(p);' }, /p 在 callback 内被额外引用/],
+    // ★★ 七轮 Finding 1/2/3
+    ['import 路径子串 shim（…KnowledgeEvil）', { importFrom: KNOWLEDGE_MODULE + 'Evil' },
+      /应\*\*精确等于\*\*|精确等于/],
+    ['import 别名遮蔽（weakProfile as drumFeelProfile）',
+      { importAlias: 'weakProfile as drumFeelProfile' }, /实际导入的 export 是 weakProfile/],
+    ['文件级 Object 重绑', { pre: 'const Object = BAD_OBJECT;' },
+      /Object 在本文件内被重新声明/],
+    ['feelKb 用 let', { kbKw: 'let' }, /feelKb 不是 const 声明/],
+    ['feelKb 被重赋值', { kbKw: 'let', kbTail: 'feelKb = BAD_KB;' }, /feelKb 不是 const 声明/],
+    ['feelKb 整体逃逸', { kbTail: 'SEND(feelKb);' }, /feelKb 存在非字段读取的引用/],
+    ['最终 profiles 改走第二 KB', { jsonProfiles: 'BAD_KB.profiles' },
+      /profiles 不是恰 1 处直接取自 feelKb\.profiles/],
+    ['最终 knowledgeSourceOrder 改走第二 KB', { jsonSrc: 'BAD_KB.sourceOrder' },
+      /knowledgeSourceOrder 不是恰 1 处直接取自/],
+    ['p.physical.maxHandsAtOnce 写入', { cbHead: 'p.physical.maxHandsAtOnce = 2;' },
+      /终端只读上下文违例/],
+    ['p.physical.chokeOpenHatWithClosed 换上下文（不落 row 属性）',
+      { choke: 'NORMALIZE(p.physical.chokeOpenHatWithClosed)' },
+      /chokeOpenHatWithClosed 非 row 属性 initializer/],
+    ['p.physical.maxHandsAtOnce 换上下文（不做恒值校验）',
+      { maxHands: 'const mh = p.physical.maxHandsAtOnce;' },
+      /alias:|maxHandsAtOnce 非恒值校验上下文/],
     // ★★ 六轮 Finding 2：消费点绑定
     ['消费点被重定向到 BAD_BUILD()（decoy 仍在）', { consume: 'BAD_BUILD()' },
       /不是被验证的 buildFeelProfiles 零参直接调用/],
@@ -2407,13 +2550,13 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       /p 的 initializer 应为 drumFeelProfile\(id as never\)/],
     // ★★ 六轮 Finding 1：p 只作属性访问对象不够，p.physical 子对象仍可整体逃逸
     ['SANITIZE(p.physical) 子对象逃逸', { cbHead: 'SANITIZE(p.physical);' },
-      /p\.physical 未直达已知叶/],
+      /p\.physical 叶的终端只读上下文违例|p\.physical 未直达已知叶/],
     ['const q = p.physical 别名逃逸', { cbHead: 'const q = p.physical; SANITIZE(q);' },
-      /p\.physical 未直达已知叶/],
+      /p\.physical 叶的终端只读上下文违例|p\.physical 未直达已知叶/],
     ['p.physical 动态索引', { cbHead: "const w = p.physical['timekeeperHand'];" },
-      /p\.physical 未直达已知叶/],
+      /p\.physical 叶的终端只读上下文违例|p\.physical 未直达已知叶/],
     ['p.physical 访问未知叶', { cbHead: 'const w = p.physical.somethingElse;' },
-      /p\.physical 未直达已知叶/],
+      /p\.physical 叶的终端只读上下文违例|p\.physical 未直达已知叶/],
     // 真源按符号锁（文本相同 ≠ 符号相同）
     ['drumFeelProfile 被局部重绑',
       { head: 'const drumFeelProfile = (x: any): any => BAD_PROFILE(x);' },
@@ -2421,7 +2564,7 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     ['DRUM_FEEL_PROFILES 被局部重绑', { head: 'const DRUM_FEEL_PROFILES = BAD_TABLE;' },
       /DRUM_FEEL_PROFILES 不是顶层 import 的符号/],
     ['Object 被局部重绑', { head: 'const Object = BAD_OBJECT;' },
-      /Object 在被验证作用域内被重新声明/],
+      /Object 在本文件内被重新声明/],
   ];
   it.each(BYPASS)('委托证明拒绝：%s', (_name, parts, msg) => {
     expect(() => check(mkSrc(parts))).toThrow(msg);
