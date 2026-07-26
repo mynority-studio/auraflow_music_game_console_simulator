@@ -332,11 +332,24 @@ function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind
         if (p.name.text !== 'has' || !asCallee) bad(`Set 只允许 .has(...) 只读调用，实得 .${p.name.text}`);
       } else if (kind === 'object' && (ts.isElementAccessExpression(p) || ts.isPropertyAccessExpression(p))
                  && p.expression === cur) {
-        const w = p.parent;
-        // 读取才放行：作为赋值左值、复合赋值、delete、自增自减一律拒
-        if (w && ts.isBinaryExpression(w) && w.left === p) bad('对象成员被赋值/复合赋值');
-        if (w && ts.isDeleteExpression(w)) bad('对象成员被 delete');
-        if (w && (ts.isPostfixUnaryExpression(w) || ts.isPrefixUnaryExpression(w))) bad('对象成员自增自减');
+        // ★ 只允许**终端只读**成员访问（四轮 #1）：上一版允许成员访问后就不再看它被怎么用，
+        // 于是 `X['__defineGetter__']('c', …)` 穿过——它会**新增 own key**（Object.keys 从
+        // ["a"] 变 ["a","c"]），AST 仍只见原字面键，三方相等门假绿。
+        // 链式 `X['__proto__']['extra'] = …` 同理。故成员访问不得再作为
+        // Call/New 的 callee、也不得作为下一级成员访问的基底。
+        let node: ts.Node = p;
+        while (node.parent && (ts.isAsExpression(node.parent) || ts.isParenthesizedExpression(node.parent)
+               || ts.isNonNullExpression(node.parent))) node = node.parent;
+        const w = node.parent;
+        if (w && ts.isBinaryExpression(w) && w.left === node) bad('对象成员被赋值/复合赋值');
+        else if (w && ts.isDeleteExpression(w)) bad('对象成员被 delete');
+        else if (w && (ts.isPostfixUnaryExpression(w) || ts.isPrefixUnaryExpression(w))) bad('对象成员自增自减');
+        else if (w && (ts.isCallExpression(w) || ts.isNewExpression(w)) && w.expression === node) {
+          bad('对象成员被当作方法调用（可能新增 own key，如 __defineGetter__）');
+        } else if (w && (ts.isPropertyAccessExpression(w) || ts.isElementAccessExpression(w))
+                   && w.expression === node) {
+          bad('对象成员被链式继续访问（非终端只读）');
+        }
       } else {
         bad(`出现在 ${ts.SyntaxKind[p.kind]} 位置（RHS 传递 / 实参 / return / 解构 / Object.assign 等均不允许）`);
       }
@@ -1284,6 +1297,13 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['Set 作实参传出', () => astNewSetLiterals(tsParse(SET_OK + "sink(DRUM_PATTERN_FAMILIES);\n"), 'DRUM_PATTERN_FAMILIES'), /CallExpression 位置/],
     ['Set 被 return 传出', () => astNewSetLiterals(tsParse(SET_OK + "export function g(){ return DRUM_PATTERN_FAMILIES; }\n"), 'DRUM_PATTERN_FAMILIES'), /ReturnStatement 位置/],
     ['realizer 属性写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES.c = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
+    // ★ 四轮 #1：成员访问不得再作为 Call/New callee 或链式基底
+    ['realizer __defineGetter__ 新增 own key',
+     () => astObjectKeys(tsParse(OBJ_OK + "(DRUM_PERFORMANCE_FAMILIES as any)['__defineGetter__']('c', () => 3);\n"), 'DRUM_PERFORMANCE_FAMILIES'),
+     '被当作方法调用'],
+    ['realizer __proto__ 链式写入',
+     () => astObjectKeys(tsParse(OBJ_OK + "(DRUM_PERFORMANCE_FAMILIES as any)['__proto__']['extra'] = 1;\n"), 'DRUM_PERFORMANCE_FAMILIES'),
+     '链式继续访问'],
     ['obj 含 spread', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ...base, 'a': 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
     ['obj 含 computed 键', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ['a'+'b']: 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'computed/非字面键'],
     ['obj 含 method', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { m(){ return 1; } };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
