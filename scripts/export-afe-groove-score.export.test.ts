@@ -37,6 +37,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import * as ts from 'typescript';
 import { buildSongBundle } from '../src/core/generation/newEngine/generation/GenerationController';
 
@@ -850,16 +851,25 @@ const FIXTURES: Fixture[] = [
 // ============================================================
 // ★ P2-4d：G4 **固定语料集** 12 例（真实歌曲）接入本 golden
 // ------------------------------------------------------------
-// 目的：手构造 fixtures 再全也可能**恰好避开**真实歌曲才出现的段/合同/能量组合。
-// 本组用 `buildSongBundle` 跑真实语料，取其 arrangement 暴露的
-// `sections / grooveContractBySection / energyBySection / entryBySection /
-//  openingGesture / climaxMap` 作输入，重调**生产** planGrooveScore 产 (输入, 期望 plan) 对。
+// 手构造 fixtures 再全也可能**恰好避开**真实歌曲才出现的段/合同/能量组合。
+// 本组用 `buildSongBundle` 跑真实语料，**输入取生产实际值**：
+//   · sections / grooveContractBySection / energyBySection / entryBySection /
+//     openingGesture / climaxMap —— 由 arrangement 直接暴露
+//   · `fillVariantSeed` —— 取自 **`bundle.seedRng.substream('drumFill').int(0x7fffffff)`**
+//   · `bassPatternIdBySection` —— 从**生产 plan 自身**的 `bySection[sid].bassPatternId` 读回
+//   · `rolePatternBySection` —— **传空表**：12 例生产输出的 roleRhythmByRole 当前全为空
+//     （非「按 fallback 重建」）。该值可读回（ArrangementPlan 的 roleRhythmByRole 暴露
+//     物化对象、对象含 id），但按 D10 当前语料全空、不加这套读回逻辑；
+//     **若语料集将来扩到含 sectionPolicy 的用例，须补投影**。
 //
-// ★★ 语义边界（必须说清，否则会被误读成「复现了生产运行」）：
-//   `fillVariantSeed` 在生产里来自 `opts.rng.substream('drumFill')` 的一次抽取，
-//   **不暴露在 plan 上**，外部拿不到。故本组用 exporter 选定的**固定 seed**。
-//   因此本组验证的是「**真实歌曲的段/合同/能量/入场组合下，C 与 TS 的 plan 逐位一致**」，
-//   **不是**「复现某次生产运行的 plan」。后者属 P2-8b 全链门（届时整链在两侧同跑、种子自然一致）。
+// ★★ 忠实性由**机器断言**证明，不靠上面这段推理：逐例断言
+//    「按重建输入重调 planGrooveScore 所得 plan **严格深等于** 生产 `arrangement.grooveScorePlan`」。
+//    该断言曾当场抓出 jazz-42 不忠实（prod `"bass.jazz-walking.v1"` vs replay `undefined`），
+//    并逼出「从生产 plan 读回 bassPatternId」这条修法 —— 首版没有它，错输入直接交了出去。
+//
+// ★ 沿革（首轮 Codex Blocker）：本段初版曾称「生产 seed 外部拿不到、故用 exporter 固定 seed、
+//   本组不复现生产运行」——**该陈述是假的**（`SongBundle` 明确导出 `seedRng`），
+//   且初版漏传 bass/role 两个生产实参，导致 57 段 `bassPatternRef` 全为 65535。已全部修正。
 // ============================================================
 const G4_CORPUS = JSON.parse(
   readFileSync(join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json'), 'utf8'),
@@ -920,8 +930,9 @@ function buildCorpusFixtures(): Fixture[] {
     }
     const replay = planGrooveScore(a.sections, contractBySection, a.energyBySection,
                                    a.entryBySection, a.openingGesture, options);
-    const norm = (x: unknown): string => JSON.stringify(x);
-    if (norm(replay) !== norm(a.grooveScorePlan)) {
+    // 严格深等：JSON.stringify 会吞掉「属性缺失 vs 值为 undefined」的差别、且对键序敏感，
+    // 判据强度弱于所声称的「逐位」。改用 node 的 isDeepStrictEqual（一行成本，消除歧义）。
+    if (!isDeepStrictEqual(replay, a.grooveScorePlan)) {
       throw new Error(`${c.id}: 重建输入重调所得 plan 与生产 plan **不一致** —— `
         + `重建不忠实（seed=${fillVariantSeed}），fail-closed。`
         + `若属 sectionPolicy 相关差异，须把该来源也投影进来`);
@@ -931,8 +942,10 @@ function buildCorpusFixtures(): Fixture[] {
       name: `g4_corpus_${c.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
       note: `P2-4d G4 固定语料集：${c.id}（seed=${c.seed} ${c.styleHint}/${c.mood}/`
         + `${c.targetDuration}s，${a.sections.length} 段）。**输入为生产实际值**：`
-        + `fillVariantSeed 取自 bundle.seedRng.substream('drumFill')，bass/role pattern 表按生产 `
-        + `fallback 重建；并已机器断言「按此输入重调的 plan == 生产 grooveScorePlan 逐位一致」。`,
+        + `fillVariantSeed 取自 bundle.seedRng.substream('drumFill')；bassPatternIdBySection 从生产 `
+        + `plan 的 bySection[sid].bassPatternId 读回；rolePatternBySection 传空表（本 12 例生产 `
+        + `roleRhythmByRole 全为空，非 fallback 重建）。已机器断言「按此输入重调的 plan `
+        + `**严格深等于** 生产 grooveScorePlan」。`,
       sections: a.sections,
       contractId,
       energy: a.energyBySection,
