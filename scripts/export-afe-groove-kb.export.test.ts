@@ -1895,36 +1895,66 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
   const HAND_FIELDS: Array<['timekeeper' | 'ghost', string]> = [
     ['timekeeper', 'timekeeperHand'], ['ghost', 'ghostHand'],
   ];
-  const assertHandDelegation = (sf: ts.SourceFile): void => {
+  /* 三轮 Finding 1：二轮那版又被打穿两处——
+   *   ① callee 只比**文本** `HAND_ID`：函数内 `const HAND_ID = (...) => BAD_HAND(...)`
+   *      局部重绑后形状不变，谓词照过；
+   *   ② 两个字段在**整个函数体**里搜集，没证明它们属于最终返回行的 `physical`：
+   *      把两次正确调用塞进无关 `_proof` 对象、真正的 `physical: {...BAD_PHYSICAL(...)}`，
+   *      谓词同样照过。
+   * 两例我都亲跑复现（均 ACCEPT）。故本版补两个新维度：
+   *   · **符号身份**——用 TypeChecker 把 callee 解析到文件级那个 `HAND_ID` 函数声明本身；
+   *   · **输出数据流**——结构定位到唯一的 `physical` 对象字面量，禁止 spread，
+   *     要求两个字段是**它的**直接属性。 */
+  const assertHandDelegation = (prog: ts.Program, sf: ts.SourceFile): void => {
+    const ck = prog.getTypeChecker();
     let fn: ts.FunctionDeclaration | undefined;
+    let topHandId: ts.FunctionDeclaration | undefined;
     sf.forEachChild((n) => {
-      if (ts.isFunctionDeclaration(n) && n.name?.text === 'buildFeelProfiles') fn = n;
+      if (!ts.isFunctionDeclaration(n)) return;
+      if (n.name?.text === 'buildFeelProfiles') fn = n;
+      if (n.name?.text === 'HAND_ID') topHandId = n;
     });
     if (!fn) throw new Error('未找到 buildFeelProfiles 声明（fail-closed）');
-    const props = new Map<string, ts.PropertyAssignment[]>();
-    let handCalls = 0;
+    if (!topHandId) throw new Error('未找到文件级 HAND_ID 函数声明（fail-closed）');
+    const wantSym = ck.getSymbolAtLocation(topHandId.name!);
+    if (!wantSym) throw new Error('HAND_ID 声明无符号（fail-closed）');
+
+    // 输出流：函数体内 `physical:` 属性必须恰 1 处，且其 initializer 是无 spread 的对象字面量
+    const physicals: ts.PropertyAssignment[] = [];
     const literals: string[] = [];
     const walk = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'HAND_ID') handCalls++;
       if (ts.isStringLiteral(n) && ['right', 'left', 'alternating'].includes(n.text)) literals.push(n.text);
-      if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name)) {
-        const k = n.name.text;
-        if (k === 'timekeeperHand' || k === 'ghostHand') {
-          props.set(k, [...(props.get(k) ?? []), n]);
-        }
-      }
+      if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name) && n.name.text === 'physical') physicals.push(n);
       n.forEachChild(walk);
     };
     fn.forEachChild(walk);
     if (literals.length) throw new Error(`buildFeelProfiles 体内出现手写手型字面量 ${JSON.stringify(literals)}（fail-closed）`);
-    if (handCalls !== 2) throw new Error(`buildFeelProfiles 内 HAND_ID 调用数=${handCalls}，应为 2（fail-closed）`);
+    if (physicals.length !== 1) throw new Error(`physical 属性赋值 ${physicals.length} 处，应恰 1 处（fail-closed）`);
+    const obj = physicals[0].initializer;
+    if (!ts.isObjectLiteralExpression(obj)) {
+      throw new Error(`physical 的 initializer 不是对象字面量（实得 ${ts.SyntaxKind[obj.kind]}）——`
+        + '无法证明字段来源，fail-closed');
+    }
+    if (obj.properties.some((pr) => ts.isSpreadAssignment(pr))) {
+      throw new Error('physical 对象含 spread——字段可被外部 helper 顶替，fail-closed');
+    }
+
     for (const [kind, prop] of HAND_FIELDS) {
-      const hits = props.get(prop) ?? [];
-      if (hits.length !== 1) throw new Error(`${prop} 属性赋值 ${hits.length} 处，应恰 1 处（fail-closed）`);
+      const hits = obj.properties.filter(
+        (pr): pr is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name) && pr.name.text === prop);
+      if (hits.length !== 1) throw new Error(`physical.${prop} 属性赋值 ${hits.length} 处，应恰 1 处（fail-closed）`);
       const init = hits[0].initializer;
-      if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression) || init.expression.text !== 'HAND_ID') {
+      if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression)) {
         throw new Error(`${prop} 的 initializer 不是 HAND_ID 调用本身（实得 ${ts.SyntaxKind[init.kind]}）——`
           + '返回值未被消费，fail-closed');
+      }
+      // ★ 符号身份而非文本：局部同名重绑会解析到别的声明
+      let gotSym = ck.getSymbolAtLocation(init.expression);
+      if (gotSym && gotSym.flags & ts.SymbolFlags.Alias) gotSym = ck.getAliasedSymbol(gotSym);
+      if (init.expression.text !== 'HAND_ID' || gotSym !== wantSym) {
+        throw new Error(`${prop} 的 callee 不是文件级 HAND_ID 声明本身`
+          + `（实得标识符 ${init.expression.text}，符号身份不符）——可能被局部重绑，fail-closed`);
       }
       const a = init.arguments;
       if (a.length !== 3) throw new Error(`${prop} 的 HAND_ID 实参数=${a.length}，应为 3（fail-closed）`);
@@ -1940,15 +1970,40 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       }
     }
   };
-  const parse = (src: string): ts.SourceFile =>
-    ts.createSourceFile('e.ts', src, ts.ScriptTarget.ES2022, true);
+  /* 单文件内存 Program——符号身份判据需要 TypeChecker。noLib/noResolve：本谓词只关心
+   * 文件内的声明解析（HAND_ID 是否被局部重绑），不需要 lib 与模块解析。 */
+  const mkProgram = (src: string): [ts.Program, ts.SourceFile] => {
+    const name = 'e.ts';
+    const sf0 = ts.createSourceFile(name, src, ts.ScriptTarget.ES2022, true);
+    const host: ts.CompilerHost = {
+      getSourceFile: (f) => (f === name ? sf0 : undefined),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => { /* 不产出 */ },
+      getCurrentDirectory: () => '',
+      getDirectories: () => [],
+      getCanonicalFileName: (f) => f,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (f) => f === name,
+      readFile: (f) => (f === name ? src : undefined),
+    };
+    const prog = ts.createProgram([name],
+      { noResolve: true, noLib: true, target: ts.ScriptTarget.ES2022 }, host);
+    const sf = prog.getSourceFile(name);
+    if (!sf) throw new Error('内存 Program 未产出 SourceFile（fail-closed）');
+    return [prog, sf];
+  };
+  const check = (src: string): void => assertHandDelegation(...mkProgram(src));
+  /* 合成源必须自带**文件级 HAND_ID 声明**——符号身份判据要拿它当基准。 */
+  const HAND_STUB = "function HAND_ID(k: any, v: any, i: any): number { return 0; }\n";
+  // extra 放**函数体内**：谓词只遍历 buildFeelProfiles 的函数体，放外面等于没注入
   const wrap = (tk: string, gh: string, extra = ''): string =>
-    `${extra}\nfunction buildFeelProfiles() {\n  return [{ physical: {\n`
+    `${HAND_STUB}function buildFeelProfiles() {\n  ${extra}\n  return [{ physical: {\n`
     + `    timekeeperHand: ${tk},\n    ghostHand: ${gh},\n  } }];\n}\n`;
 
-  it('生产 buildFeelProfiles 通过委托证明（initializer 即 HAND_ID 调用）', () => {
+  it('生产 buildFeelProfiles 通过委托证明（initializer 即文件级 HAND_ID 调用）', () => {
     const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
-    expect(() => assertHandDelegation(parse(src))).not.toThrow();
+    expect(() => check(src)).not.toThrow();
   });
 
   const BYPASS: Array<[string, string, string, RegExp]> = [
@@ -1986,31 +2041,65 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
       /手写手型字面量/],
   ];
   it.each(BYPASS)('委托证明拒绝：%s', (_name, tk, gh, msg) => {
-    expect(() => assertHandDelegation(parse(wrap(tk, gh)))).toThrow(msg);
+    expect(() => check(wrap(tk, gh))).toThrow(msg);
   });
 
-  it('委托证明拒绝：字段整体缺失 / 重复赋值', () => {
-    /* ★ 这两条都要**绕开上游的调用数检查**才算真打到目标——
-     *   我第一版写成「只赋 ghostHand」，结果先被「HAND_ID 调用数=1」拦下，
-     *   目标检查（属性赋值 0 处）从未执行。这正是本轮给 _expect_reject 加消息断言
-     *   要防的同一种「被非目标检查代打」，此处同样以消息断言坐实。 */
-    expect(() => assertHandDelegation(parse(
-      "function buildFeelProfiles() {\n"
-      + "  const _stray = HAND_ID('timekeeper', p.physical.timekeeperHand, id);\n"
-      + "  return [{ physical: { ghostHand: HAND_ID('ghost', p.physical.ghostHand, id) } }];\n}\n")))
-      .toThrow(/timekeeperHand 属性赋值 0 处/);
-    expect(() => assertHandDelegation(parse(
-      "function buildFeelProfiles() {\n"
-      + "  const dup = { timekeeperHand: 1 };\n"
-      + "  return [{ physical: {\n"
+  /* ★★ 三轮 Finding 1 的两个新维度——这两条正是打穿二轮那版的原型。 */
+  it('委托证明拒绝：函数内局部同名重绑 HAND_ID（符号身份维度）', () => {
+    const src = wrap(
+      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)");
+    // 在 buildFeelProfiles 体内插入局部 const HAND_ID —— 形状完全不变，只是解析到别的声明
+    const shadowed = src.replace('function buildFeelProfiles() {\n',
+      'function buildFeelProfiles() {\n  const HAND_ID = (k: any, v: any, i: any): number => BAD(k, v, i);\n');
+    expect(shadowed).not.toBe(src);   // 注入确实生效（防替换失配导致空跑）
+    expect(() => check(shadowed)).toThrow(/callee 不是文件级 HAND_ID 声明本身/);
+  });
+
+  it('委托证明拒绝：decoy 属性 + physical 用 spread（输出数据流维度）', () => {
+    expect(() => check(HAND_STUB
+      + "function buildFeelProfiles() {\n"
+      + "  return [{\n"
+      + "    physical: { ...BAD_PHYSICAL(p, id) },\n"
+      + "    _proof: {\n"
+      + "      timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
+      + "      ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n    },\n  }];\n}\n"))
+      .toThrow(/physical 对象含 spread/);
+  });
+
+  it('委托证明拒绝：physical 的 initializer 不是对象字面量', () => {
+    expect(() => check(HAND_STUB
+      + "function buildFeelProfiles() {\n"
+      + "  return [{ physical: BAD_PHYSICAL(p, id) }];\n}\n"))
+      .toThrow(/physical 的 initializer 不是对象字面量/);
+  });
+
+  it('委托证明拒绝：physical 内字段缺失 / 重复', () => {
+    /* ★ 两条都要**绕开上游检查**才算真打到目标——二轮我第一版写成「只赋 ghostHand」，
+     *   先被当时的「HAND_ID 调用数=1」拦下、目标检查从未执行。本版上游已换成
+     *   physical 结构检查，故这里保持 physical 存在、只动其内部属性。 */
+    expect(() => check(HAND_STUB
+      + "function buildFeelProfiles() {\n"
+      + "  return [{ physical: { ghostHand: HAND_ID('ghost', p.physical.ghostHand, id) } }];\n}\n"))
+      .toThrow(/physical\.timekeeperHand 属性赋值 0 处/);
+    expect(() => check(HAND_STUB
+      + "function buildFeelProfiles() {\n  return [{ physical: {\n"
       + "    timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
-      + "    ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n  } }];\n}\n")))
-      .toThrow(/timekeeperHand 属性赋值 2 处/);
+      + "    timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
+      + "    ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n  } }];\n}\n"))
+      .toThrow(/physical\.timekeeperHand 属性赋值 2 处/);
+  });
+
+  it('委托证明拒绝：physical 属性出现多处（无法判定哪个是输出）', () => {
+    expect(() => check(wrap(
+      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      "const decoy = { physical: {} };"))).toThrow(/physical 属性赋值 2 处/);
   });
 
   it('委托证明的合法形态确实通过（防谓词过严导致人去放宽它）', () => {
-    expect(() => assertHandDelegation(parse(wrap(
+    expect(() => check(wrap(
       "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
-      "HAND_ID('ghost', p.physical.ghostHand, id)")))).not.toThrow();
+      "HAND_ID('ghost', p.physical.ghostHand, id)"))).not.toThrow();
   });
 });
