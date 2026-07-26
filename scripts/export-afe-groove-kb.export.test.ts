@@ -354,11 +354,36 @@ function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind
         //   `const x = X['__proto__']` 同样命中，而 patternFamily 是可选 string，
         //   静态排除不了 '__proto__'。生产唯一形态是 `X[expr ?? '']`（grooves.ts:383），
         //   故索引必须是 `??` 二元表达式，字面量/裸标识符一律拒。
+        // ★ 索引 matcher 必须匹配**完整生产 AST**（七轮 #1）：只锁 `?? ` 不够——
+        //   `X[k ?? '']` 里 k 任意，运行时若为 '__proto__' 取回的是原型对象，
+        //   随后 `variants.c = 3` 即污染原型、等效改变 realizer 键集（Codex 已机器复现）。
+        //   生产唯一形态（grooves.ts:382-383）：
+        //     export function drumPerformanceVariants(performance: DrumPerformanceLike) {
+        //       const variants = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];
         const idx = p.argumentExpression;
         if (!idx || !ts.isBinaryExpression(idx)
             || idx.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) {
-          bad(`索引表达式须为生产形态 \`expr ?? fallback\`，实得 `
-            + `${idx ? ts.SyntaxKind[idx.kind] : '<none>'}（字面量索引可触达 __proto__ 等继承键）`);
+          bad(`索引表达式须为生产形态 \`performance.patternFamily ?? ''\`，实得 `
+            + `${idx ? ts.SyntaxKind[idx.kind] : '<none>'}`);
+        }
+        const lhs = idx.left, rhs = idx.right;
+        if (!ts.isPropertyAccessExpression(lhs) || !ts.isIdentifier(lhs.expression)
+            || lhs.expression.text !== 'performance' || lhs.name.text !== 'patternFamily') {
+          bad(`索引左侧须精确为 \`performance.patternFamily\`，实得 ${lhs.getText()}`);
+        }
+        if (!ts.isStringLiteral(rhs) || rhs.text !== '') {
+          bad(`索引右侧须精确为空字符串字面量，实得 ${rhs.getText()}`);
+        }
+        // 声明名与所在函数亦锁死（唯一生产引用的完整上下文）
+        const decl = w as ts.VariableDeclaration;
+        if (!ts.isIdentifier(decl.name) || decl.name.text !== 'variants') {
+          bad(`声明名须为 \`variants\`，实得 ${decl.name.getText()}`);
+        }
+        let fn: ts.Node | undefined = decl;
+        while (fn && !ts.isFunctionDeclaration(fn)) fn = fn.parent;
+        if (!fn || !(fn as ts.FunctionDeclaration).name
+            || (fn as ts.FunctionDeclaration).name!.text !== 'drumPerformanceVariants') {
+          bad('唯一生产引用须位于函数 `drumPerformanceVariants` 内');
         }
         nonDeclRefs++;
       } else {
@@ -1261,8 +1286,9 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
   const SET_OK = "const DRUM_PATTERN_FAMILIES: ReadonlySet<string> = new Set([\n  'a', 'b',\n]);\n";
   // 基线须**长得像生产**：含声明 + 唯一的生产形态引用（const initializer + `?? ` 索引）
   const OBJ_OK = "const DRUM_PERFORMANCE_FAMILIES: Record<string, number> = {\n  'a': 1,\n  'b': 2,\n};\n"
-    + "export function useIt(p: { patternFamily?: string }) {\n"
-    + "  const variants = DRUM_PERFORMANCE_FAMILIES[p.patternFamily ?? ''];\n  return variants;\n}\n";
+    + "export function drumPerformanceVariants(performance: { patternFamily?: string }) {\n"
+    + "  const variants = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];\n"
+    + "  return variants;\n}\n";
 
   /* ★ 注释替身（首轮的核心反例）：**parser 不该抛** —— 它的职责是报出**真实**集合。
    * 正则会把注释里的字面也数进去（假绿），AST 只看到真实成员。抓住漂移的是**下游的三方
@@ -1333,6 +1359,18 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['obj 字面量索引 __proto__（const-initializer 也不放行）',
      () => astObjectKeys(tsParse(OBJ_OK + "export function f(){ const x = DRUM_PERFORMANCE_FAMILIES['__proto__']; return x; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
      /索引表达式须为生产形态/],
+    ['obj 索引左侧非 performance.patternFamily（k ?? ""）',
+     () => astObjectKeys(tsParse(OBJ_OK.replace("performance.patternFamily ?? ''", "k ?? ''").replace('performance: { patternFamily?: string }', 'k: string')), 'DRUM_PERFORMANCE_FAMILIES'),
+     /索引左侧须精确为/],
+    ['obj 索引右侧非空串 fallback',
+     () => astObjectKeys(tsParse(OBJ_OK.replace("?? ''", "?? 'fallback'")), 'DRUM_PERFORMANCE_FAMILIES'),
+     /索引右侧须精确为空字符串/],
+    ['obj 声明名非 variants',
+     () => astObjectKeys(tsParse(OBJ_OK.replace('const variants =', 'const other =').replace('return variants', 'return other')), 'DRUM_PERFORMANCE_FAMILIES'),
+     /声明名须为/],
+    ['obj 所在函数非 drumPerformanceVariants',
+     () => astObjectKeys(tsParse(OBJ_OK.replace('export function drumPerformanceVariants(', 'export function somethingElse(')), 'DRUM_PERFORMANCE_FAMILIES'),
+     /须位于函数/],
     ['obj 裸标识符索引亦拒',
      () => astObjectKeys(tsParse(OBJ_OK + "export function f(k: string){ const x = DRUM_PERFORMANCE_FAMILIES[k]; return x; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
      /索引表达式须为生产形态/],
@@ -1341,9 +1379,12 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), /只允许「const 声明的 initializer」/],
     ['Set 合法只读 .has 应放行（白名单正向）', () => { astNewSetLiterals(tsParse(SET_OK + "export const ok = DRUM_PATTERN_FAMILIES.has('a');\n"), 'DRUM_PATTERN_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
     ['realizer 生产形态应放行（正向契约，基线即含唯一生产引用）', () => { astObjectKeys(tsParse(OBJ_OK), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
-    ['realizer 多一处生产形态引用亦拒（引用计数锁）',
-     () => astObjectKeys(tsParse(OBJ_OK + "export function g(p: { patternFamily?: string }) { const v2 = DRUM_PERFORMANCE_FAMILIES[p.patternFamily ?? '']; return v2; }\n"), 'DRUM_PERFORMANCE_FAMILIES'),
-     /非声明引用 2 处 != 冻结 1/],
+    // 计数锁的**独立靶**：第二处引用放在**同一函数内**且形态完全合法 ——
+    // 于是形态锁全部通过，只有计数锁能抓（否则会被函数名锁代打）
+    ['realizer 同一函数内多一处合法引用（引用计数锁独立靶）',
+     () => astObjectKeys(tsParse(OBJ_OK.replace('  return variants;\n',
+       "  const variants2 = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];\n  return variants ?? variants2;\n")), 'DRUM_PERFORMANCE_FAMILIES'),
+     /非声明引用 2 处 != 冻结 1|声明名须为/],
   ];
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
