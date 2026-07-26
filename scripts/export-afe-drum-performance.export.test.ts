@@ -65,19 +65,82 @@ const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e';
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const PLANNER_REL = 'src/core/generation/newEngine/arranger/drumPerformancePlanner.ts';
 
-// ---- 冻结枚举序（对锁 afe_drum_performance.h / afe_p2org.h；索引即 C 枚举值）----
+// ---- 枚举序：**逐条对锁冻结 ABI**（afe_drum_performance.h / afe_p2org.h）----
+// ★★ 首轮 Blocker 教训：上一版这五张表（entryMode/velocity/kick/snare/hat）是我**凭 TS union
+//   序与直觉编的**，与冻结 ABI 不符（`full` 导成 1 实为 5、velocity 少了 FLAT=0、
+//   kick 的 ANCHOR_ONLY 才是 0、snare 的 rim/ghost 次序颠倒、hat 少了 QUARTERS=0 与 PEDAL=5），
+//   而我又把 C 自洽门的域宽锁成缩窄后的值 ⇒ **整体自证成绿**。
+//   这与拆步3 首轮 style 枚举（我写 {POP,RNB,LOFI,JAZZ}，实为 POP0/JAZZ1/LOFI2/RNB3）同一形态。
+//   **根因是没让机器去对**：TS 侧序表与 C 侧 ABI 之间此前零交叉校验。
+//   现在的制度：本文件只是「TS 字符串 → ABI 常量**名**」的映射，**数值一律由 codegen 解析
+//   冻结头取得**（gen_drum_performance_golden.py 的 parse_abi_enums），并在 .h 里 emit 具名常量
+//   让 C 编译器再兜一层；下方 it('枚举映射对锁冻结 ABI') 直接读 .h 做第三重独立核对。
+const ROLE_ABI: Record<string, string> = {
+  silent: 'AFE_DRUM_ROLE_SILENT', timekeeper: 'AFE_DRUM_ROLE_TIMEKEEPER',
+  lift: 'AFE_DRUM_ROLE_LIFT', breakdown: 'AFE_DRUM_ROLE_BREAKDOWN', pickup: 'AFE_DRUM_ROLE_PICKUP',
+};
+const ENTRY_MODE_ABI: Record<string, string> = {
+  none: 'AFE_DRUM_ENTRY_NONE', 'hat-only': 'AFE_DRUM_ENTRY_HAT_ONLY',
+  'kick-only': 'AFE_DRUM_ENTRY_KICK_ONLY', 'kick-hat': 'AFE_DRUM_ENTRY_KICK_HAT',
+  'ride-only': 'AFE_DRUM_ENTRY_RIDE_ONLY', full: 'AFE_DRUM_ENTRY_FULL',
+  dropout: 'AFE_DRUM_ENTRY_DROPOUT',
+};
+const FILL_POLICY_ABI: Record<string, string> = {
+  none: 'AFE_DRUM_FILL_NONE', light: 'AFE_DRUM_FILL_LIGHT',
+  turnaround: 'AFE_DRUM_FILL_TURNAROUND', big: 'AFE_DRUM_FILL_BIG',
+};
+const TIMING_PROFILE_ABI: Record<string, string> = {
+  tight: 'AFE_DRUM_TIMING_TIGHT', 'behind-snare': 'AFE_DRUM_TIMING_BEHIND_SNARE',
+  'dilla-late': 'AFE_DRUM_TIMING_DILLA_LATE', 'swing-ride': 'AFE_DRUM_TIMING_SWING_RIDE',
+};
+const VELOCITY_PROFILE_ABI: Record<string, string> = {
+  flat: 'AFE_DRUM_VEL_FLAT', backbeat: 'AFE_DRUM_VEL_BACKBEAT',
+  ghosted: 'AFE_DRUM_VEL_GHOSTED', crescendo: 'AFE_DRUM_VEL_CRESCENDO',
+};
+const KICK_POLICY_ABI: Record<string, string> = {
+  'anchor-only': 'AFE_DRUM_KICK_ANCHOR_ONLY', 'four-on-floor': 'AFE_DRUM_KICK_FOUR_ON_FLOOR',
+  syncopated: 'AFE_DRUM_KICK_SYNCOPATED', halftime: 'AFE_DRUM_KICK_HALFTIME',
+};
+const SNARE_POLICY_ABI: Record<string, string> = {
+  backbeat: 'AFE_DRUM_SNARE_BACKBEAT', rim: 'AFE_DRUM_SNARE_RIM',
+  'ghost-before-backbeat': 'AFE_DRUM_SNARE_GHOST_BEFORE_BACKBEAT',
+  'jazz-comping': 'AFE_DRUM_SNARE_JAZZ_COMPING',
+};
+const HAT_POLICY_ABI: Record<string, string> = {
+  quarters: 'AFE_DRUM_HAT_QUARTERS', eighths: 'AFE_DRUM_HAT_EIGHTHS',
+  sixteenths: 'AFE_DRUM_HAT_SIXTEENTHS', shaker16: 'AFE_DRUM_HAT_SHAKER16',
+  ride: 'AFE_DRUM_HAT_RIDE', pedal: 'AFE_DRUM_HAT_PEDAL',
+};
+const CYMBAL_POLICY_ABI: Record<string, string> = {
+  none: 'AFE_DRUM_CYMBAL_NONE', 'section-crash': 'AFE_DRUM_CYMBAL_SECTION_CRASH',
+  'hook-crash': 'AFE_DRUM_CYMBAL_HOOK_CRASH',
+};
+const TOM_POLICY_ABI: Record<string, string> = {
+  none: 'AFE_DRUM_TOM_NONE', turnaround: 'AFE_DRUM_TOM_TURNAROUND',
+  'big-fill': 'AFE_DRUM_TOM_BIG_FILL',
+};
+const GUARD_ABI: Record<string, string> = {
+  strict: 'AFE_DRUM_GUARD_STRICT', normal: 'AFE_DRUM_GUARD_NORMAL',
+};
+const FEEL_ABI: Record<string, string> = {
+  'pop-tight-backbeat': 'AFE_DRUM_FEEL_POP_TIGHT_BACKBEAT',
+  'pop-driving-rock': 'AFE_DRUM_FEEL_POP_DRIVING_ROCK',
+  'rnb-laidback-pocket': 'AFE_DRUM_FEEL_RNB_LAIDBACK_POCKET',
+  'rnb-dilla-voices': 'AFE_DRUM_FEEL_RNB_DILLA_VOICES',
+  'lofi-dusty-pocket': 'AFE_DRUM_FEEL_LOFI_DUSTY_POCKET',
+  'jazz-swing-ride': 'AFE_DRUM_FEEL_JAZZ_SWING_RIDE',
+  'jazz-brush-ballad': 'AFE_DRUM_FEEL_JAZZ_BRUSH_BALLAD',
+  'jazz-bossa-tight': 'AFE_DRUM_FEEL_JAZZ_BOSSA_TIGHT',
+};
+const OPENING_ENTRY_ABI: Record<string, string> = {
+  none: 'AFE_DRUM_OPENING_NONE', hatsOnly: 'AFE_DRUM_OPENING_HATS_ONLY',
+  kickOnly: 'AFE_DRUM_OPENING_KICK_ONLY', backbeatDelayed: 'AFE_DRUM_OPENING_BACKBEAT_DELAYED',
+  fourOnFloorRamp: 'AFE_DRUM_OPENING_FOUR_ON_FLOOR_RAMP', rideOnly: 'AFE_DRUM_OPENING_RIDE_ONLY',
+  brushLoop: 'AFE_DRUM_OPENING_BRUSH_LOOP', halftimePocket: 'AFE_DRUM_OPENING_HALFTIME_POCKET',
+  tomPickup: 'AFE_DRUM_OPENING_TOM_PICKUP',
+};
+// 输入侧枚举（不进输出合同，仍须与 C 侧输入结构一致）
 const STYLE_ORDER = ['POP', 'JAZZ', 'LOFI', 'RNB', 'ACG', 'BLUES', 'MODAL'] as const;
-const ROLE_ORDER = ['silent', 'timekeeper', 'lift', 'breakdown', 'pickup'] as const;
-const ENTRY_MODE_ORDER = ['none', 'full', 'kick-hat', 'kick-only', 'hat-only', 'ride-only'] as const;
-const FILL_POLICY_ORDER = ['none', 'light', 'turnaround', 'big'] as const;
-const TIMING_PROFILE_ORDER = ['tight', 'behind-snare', 'dilla-late', 'swing-ride'] as const;
-const VELOCITY_PROFILE_ORDER = ['backbeat', 'ghosted', 'crescendo'] as const;
-const KICK_POLICY_ORDER = ['syncopated', 'four-on-floor', 'halftime', 'anchor-only'] as const;
-const SNARE_POLICY_ORDER = ['backbeat', 'ghost-before-backbeat', 'rim', 'jazz-comping'] as const;
-const HAT_POLICY_ORDER = ['eighths', 'sixteenths', 'ride', 'shaker16'] as const;
-const CYMBAL_POLICY_ORDER = ['none', 'section-crash', 'hook-crash'] as const;
-const TOM_POLICY_ORDER = ['none', 'turnaround', 'big-fill'] as const;
-const GUARD_ORDER = ['strict', 'normal'] as const;
 const OPENING_ENTRY_ORDER = ['none', 'hatsOnly', 'kickOnly', 'backbeatDelayed', 'fourOnFloorRamp',
   'rideOnly', 'brushLoop', 'halftimePocket', 'tomPickup'] as const;
 const FUNCTION_TAG_ORDER = ['setup', 'story', 'build', 'hook', 'breakdown',
@@ -93,6 +156,13 @@ const FAMILY_ORDER = [
   'rnb-gospel-shuffle', 'trap-soul-halftime', 'lofi-boombap', 'lofi-dusty-break',
   'lofi-minimal', 'jazz-ballad-light',
 ] as const;
+
+/** TS 字符串 → ABI 常量名（**只导名，不导数值**）。未知值 fail-closed。 */
+const abiName = (m: Record<string, string>, v: string, what: string): string => {
+  const n = m[v];
+  if (n === undefined) throw new Error(`${what}: 未知值 ${v}（fail-closed）`);
+  return n;
+};
 
 const idx = <T extends readonly string[]>(order: T, v: string, what: string): number => {
   const i = order.indexOf(v as never);
@@ -263,7 +333,7 @@ for (const fam of FAMILY_ORDER) {
       note: `A: family=${fam} role=${role}（显式 drum family 驱动）`,
       style: 'POP',
       secs: [{ id: 's0', functionTag: ROLE_TAG[role], contract: { base: 'pop_radio_straight', drum } }],
-      bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+      bnds: [{ from: 's0', to: 's0', intensity: 1 }],
     });
   }
 }
@@ -294,7 +364,7 @@ for (const a of A2) {
     note: `A2: contractFamilyForRole 回退链 ${a.name}（role=${a.role}）`,
     style: 'POP',
     secs: [{ id: 's0', functionTag: ROLE_TAG[a.role], contract: { base: 'pop_radio_straight', drum: a.drum } }],
-    bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+    bnds: [{ from: 's0', to: 's0', intensity: 1 }],
   });
 }
 
@@ -305,7 +375,7 @@ for (const tag of [...FUNCTION_TAG_ORDER, undefined]) {
     note: `B: functionTag=${tag ?? 'undefined'} → roleForSection 分派`,
     style: 'POP',
     secs: [{ id: 's0', functionTag: tag, contract: { base: 'pop_radio_straight' } }],
-    bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+    bnds: [{ from: 's0', to: 's0', intensity: 1 }],
   });
 }
 
@@ -319,7 +389,7 @@ for (const oe of [...OPENING_ENTRY_ORDER, undefined]) {
       { id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } },
       { id: 's1', functionTag: 'story', contract: { base: 'pop_radio_straight' } },
     ],
-    bnds: [{ from: 's0', to: 's1', intensity: 1 }, { from: 's1', to: 's2', intensity: 1 }],
+    bnds: [{ from: 's0', to: 's1', intensity: 1 }, { from: 's1', to: 's1', intensity: 1 }],
     openingDrumEntry: oe,
   });
 }
@@ -331,7 +401,7 @@ for (const c of GROOVE_CONTRACT_POOL) {
     note: `D: 合同 ${c.id} → feel profile`,
     style: 'POP',
     secs: [{ id: 's0', functionTag: 'story', contract: { base: c.id } }],
-    bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+    bnds: [{ from: 's0', to: 's0', intensity: 1 }],
   });
 }
 
@@ -385,16 +455,21 @@ for (const L of E_LEAVES) {
     note: `E: baseFamily fallback 叶 ${L.name}（style=${L.style} base=${L.base} tag=${L.tag}）`,
     style: L.style,
     secs: [{ id: 's0', functionTag: L.tag, contract: { base: L.base, density: L.density, drum: null } }],
-    bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+    bnds: [{ from: 's0', to: 's0', intensity: 1 }],
   });
 }
 
 // ---- F: score boundary 选择规则 ----
+const F3SECS: SecSpec[] = [
+  { id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } },
+  { id: 's1', functionTag: 'story', contract: { base: 'pop_radio_straight' } },
+  { id: 's2', functionTag: 'story', contract: { base: 'pop_radio_straight' } },
+];
 addCase({
   name: 'F_boundary_cross_section_first',
   note: 'F: 有跨段候选 ⇒ 取**首个** toSectionId != section.id 的候选（intensity 3 → big）',
   style: 'POP',
-  secs: [{ id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } }],
+  secs: F3SECS,
   bnds: [
     { from: 's0', to: 's0', intensity: 1 },   // 自指，须被跳过
     { from: 's0', to: 's1', intensity: 3 },   // 首个跨段 ⇒ 命中
@@ -415,7 +490,7 @@ addCase({
   name: 'F_boundary_opening_excluded',
   note: 'F: opening 候选须被过滤（否则会错取 intensity 3）',
   style: 'POP',
-  secs: [{ id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } }],
+  secs: F3SECS.slice(0, 2),
   bnds: [
     { from: 's0', to: 's1', opening: true, intensity: 3 },
     { from: 's0', to: 's1', intensity: 1 },
@@ -423,17 +498,18 @@ addCase({
 });
 addCase({
   name: 'F_boundary_none',
-  note: 'F: 无候选 ⇒ fillPolicy=none（fillAmount/fillComplexity/tom/cymbal 全部随之）',
+  note: 'F: s0 无候选 ⇒ fillPolicy=none。**边界端点全部是合法段**（首轮 F3：'
+    + '原写池外 id sXY，转换器会生成 ABI 中不存在的 0xFF sentinel）',
   style: 'POP',
-  secs: [{ id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } }],
-  bnds: [{ from: 'sX', to: 'sY', intensity: 3 }],
+  secs: F3SECS.slice(0, 2),
+  bnds: [{ from: 's1', to: 's0', intensity: 3 }],
 });
 addCase({
   name: 'F_boundary_intensity_1_light',
   note: 'F: intensity 1 ⇒ light（三个 intensity 阈值的第三档）',
   style: 'POP',
   secs: [{ id: 's0', functionTag: 'story', contract: { base: 'pop_radio_straight' } }],
-  bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+  bnds: [{ from: 's0', to: 's0', intensity: 1 }],
 });
 
 // ---- G: complexity / intensity 钳位 ----
@@ -444,7 +520,7 @@ for (const density of ['sparse', 'medium', 'active'] as const) {
       note: `G: density=${density} role=${role} ⇒ complexity/intensity 钳位`,
       style: 'POP',
       secs: [{ id: 's0', functionTag: ROLE_TAG[role], contract: { base: 'pop_radio_straight', density } }],
-      bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+      bnds: [{ from: 's0', to: 's0', intensity: 1 }],
     });
   }
 }
@@ -463,7 +539,7 @@ for (const sw of SWING_SRC) {
           id: 's0', functionTag: 'story',
           contract: { base: 'pop_radio_straight', grid: g, density: d, rhythmSwingSource: sw },
         }],
-        bnds: [{ from: 's0', to: 's1', intensity: 1 }],
+        bnds: [{ from: 's0', to: 's0', intensity: 1 }],
       });
     }
   }
@@ -489,25 +565,34 @@ const projectContract = (o: Record<string, unknown>, secIdx: number, contractIdE
   const permille = Math.round(scaled);
   const feelOffset = num('feelOffsetMs');
   if (feelOffset < -32768 || feelOffset > 32767) throw new Error('feelOffsetMs 越 i16');
+  // ★ 输出枚举**只导 ABI 常量名 + TS 原串**，数值由 codegen 解析冻结头取得（首轮 Blocker 修法）
+  const S = (k: string): string => String(o[k]);
   return {
     sectionIndex: secIdx,
     contractIdEnum,
-    feelProfile: idx(['pop-tight-backbeat', 'pop-driving-rock', 'rnb-laidback-pocket',
-      'rnb-dilla-voices', 'lofi-dusty-pocket', 'jazz-swing-ride', 'jazz-brush-ballad',
-      'jazz-bossa-tight'], String(o['feelProfileId']), 'feelProfileId'),
-    role: idx(ROLE_ORDER, String(o['role']), 'role'),
-    patternFamily: idx(FAMILY_ORDER, String(o['patternFamily']), 'patternFamily'),
+    role: S('role'), roleAbi: abiName(ROLE_ABI, S('role'), 'role'),
+    patternFamily: S('patternFamily'),
+    patternFamilyIdx: (() => {
+      const k = (FAMILY_ORDER as readonly string[]).indexOf(S('patternFamily'));
+      if (k < 0) throw new Error(`patternFamily 未知值 ${S('patternFamily')}（fail-closed）`);
+      return k;
+    })(),
+    feelProfileId: S('feelProfileId'), feelProfileAbi: abiName(FEEL_ABI, S('feelProfileId'), 'feelProfileId'),
     kitProgram: num('kitProgram'),
-    entryMode: idx(ENTRY_MODE_ORDER, String(o['entryMode']), 'entryMode'),
-    fillPolicy: idx(FILL_POLICY_ORDER, String(o['fillPolicy']), 'fillPolicy'),
-    timingProfile: idx(TIMING_PROFILE_ORDER, String(o['timingProfile']), 'timingProfile'),
-    velocityProfile: idx(VELOCITY_PROFILE_ORDER, String(o['velocityProfile']), 'velocityProfile'),
-    kickPolicy: idx(KICK_POLICY_ORDER, String(o['kickPolicy']), 'kickPolicy'),
-    snarePolicy: idx(SNARE_POLICY_ORDER, String(o['snarePolicy']), 'snarePolicy'),
-    hatPolicy: idx(HAT_POLICY_ORDER, String(o['hatPolicy']), 'hatPolicy'),
-    cymbalPolicy: idx(CYMBAL_POLICY_ORDER, String(o['cymbalPolicy']), 'cymbalPolicy'),
-    tomPolicy: idx(TOM_POLICY_ORDER, String(o['tomPolicy']), 'tomPolicy'),
-    foregroundGuard: idx(GUARD_ORDER, String(o['foregroundGuard']), 'foregroundGuard'),
+    entryMode: S('entryMode'), entryModeAbi: abiName(ENTRY_MODE_ABI, S('entryMode'), 'entryMode'),
+    fillPolicy: S('fillPolicy'), fillPolicyAbi: abiName(FILL_POLICY_ABI, S('fillPolicy'), 'fillPolicy'),
+    timingProfile: S('timingProfile'),
+    timingProfileAbi: abiName(TIMING_PROFILE_ABI, S('timingProfile'), 'timingProfile'),
+    velocityProfile: S('velocityProfile'),
+    velocityProfileAbi: abiName(VELOCITY_PROFILE_ABI, S('velocityProfile'), 'velocityProfile'),
+    kickPolicy: S('kickPolicy'), kickPolicyAbi: abiName(KICK_POLICY_ABI, S('kickPolicy'), 'kickPolicy'),
+    snarePolicy: S('snarePolicy'), snarePolicyAbi: abiName(SNARE_POLICY_ABI, S('snarePolicy'), 'snarePolicy'),
+    hatPolicy: S('hatPolicy'), hatPolicyAbi: abiName(HAT_POLICY_ABI, S('hatPolicy'), 'hatPolicy'),
+    cymbalPolicy: S('cymbalPolicy'),
+    cymbalPolicyAbi: abiName(CYMBAL_POLICY_ABI, S('cymbalPolicy'), 'cymbalPolicy'),
+    tomPolicy: S('tomPolicy'), tomPolicyAbi: abiName(TOM_POLICY_ABI, S('tomPolicy'), 'tomPolicy'),
+    foregroundGuard: S('foregroundGuard'),
+    foregroundGuardAbi: abiName(GUARD_ABI, S('foregroundGuard'), 'foregroundGuard'),
     complexity: num('complexity'), intensity: num('intensity'),
     fillAmount: num('fillAmount'), fillComplexity: num('fillComplexity'),
     phraseVariation: num('phraseVariation'), humanizeAmount: num('humanizeAmount'),
@@ -516,7 +601,6 @@ const projectContract = (o: Record<string, unknown>, secIdx: number, contractIdE
     densityCeilingScaledBits: Buffer.from(Float64Array.of(scaled).buffer).reverse().toString('hex'),
     maxMoveTicks: num('maxMoveTicks'),
     feelOffsetMs: feelOffset,
-    // 投影登记：id 串不入 C（诊断元数据），此处保留供 golden 可读性与人工核对
     tsId: String(o['id']),
   };
 };
@@ -556,6 +640,15 @@ function buildCases() {
         })(),
       });
     });
+    // ★ 首轮 F3：boundary 端点必须是**本用例存在的段**——池外 id 会被转换器变成
+    //   ABI 中不存在的 0xFF sentinel（afe_groove_boundary_score_t 无此哨兵）。
+    const secIds = new Set(c.secs.map((x) => x.id));
+    for (const b of c.bnds ?? []) {
+      if (!secIds.has(b.from) || !secIds.has(b.to)) {
+        throw new Error(`${c.name}: boundary ${b.from}→${b.to} 引用了本用例不存在的段`
+          + `（存在的段：${[...secIds].join(',')}）——ABI 无 0xFF sentinel，fail-closed`);
+      }
+    }
     const score = mkScore(c.bnds ?? []);
     const res = planDrumPerformance(
       sections, c.style, contractBySection, energyBySection, entryBySection,
