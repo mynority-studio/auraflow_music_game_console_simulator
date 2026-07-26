@@ -1884,25 +1884,133 @@ describe('physical 二值枚举 fail-closed 负向（落库对抗套件）', () 
     expect(leaked).toBe(0);
   });
 
-  /* ② 生产 builder 确实委托给 HAND_ID：在 buildFeelProfiles 的函数体内
-   *    (a) 恰好两处 HAND_ID 调用；(b) 不再出现 'right'/'left'/'alternating' 任一字面量。 */
-  it('buildFeelProfiles 委托 HAND_ID：2 处调用且函数体内无手写枚举字面量', () => {
-    const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
-    const sf = ts.createSourceFile('e.ts', src, ts.ScriptTarget.ES2022, true);
-    let body: ts.FunctionDeclaration | undefined;
+  /* ② 生产 builder 确实**消费 HAND_ID 的返回值**。
+   *    二轮 Finding 1 打穿了上一版：上一版只数「函数体内 HAND_ID 调用 == 2」+「体内无手写
+   *    枚举字面量」，于是
+   *        timekeeperHand: (HAND_ID(...), BAD_HAND(...)),
+   *    这种「逗号表达式 + 函数体外的弱 helper」照样满足谓词——HAND_ID 被调用了但返回值
+   *    被丢弃，真正落进 JSON 的是 BAD_HAND 的旧「未知值→1」结果。
+   *    故改为**锁 property initializer 本身**：它必须**就是**那次 HAND_ID 调用，
+   *    且三个实参逐个核对（kind 字面量 / 源字段路径 / id）。 */
+  const HAND_FIELDS: Array<['timekeeper' | 'ghost', string]> = [
+    ['timekeeper', 'timekeeperHand'], ['ghost', 'ghostHand'],
+  ];
+  const assertHandDelegation = (sf: ts.SourceFile): void => {
+    let fn: ts.FunctionDeclaration | undefined;
     sf.forEachChild((n) => {
-      if (ts.isFunctionDeclaration(n) && n.name?.text === 'buildFeelProfiles') body = n;
+      if (ts.isFunctionDeclaration(n) && n.name?.text === 'buildFeelProfiles') fn = n;
     });
-    if (!body) throw new Error('未找到 buildFeelProfiles 声明（fail-closed）');
-    let calls = 0;
+    if (!fn) throw new Error('未找到 buildFeelProfiles 声明（fail-closed）');
+    const props = new Map<string, ts.PropertyAssignment[]>();
+    let handCalls = 0;
     const literals: string[] = [];
     const walk = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'HAND_ID') calls++;
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'HAND_ID') handCalls++;
       if (ts.isStringLiteral(n) && ['right', 'left', 'alternating'].includes(n.text)) literals.push(n.text);
+      if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name)) {
+        const k = n.name.text;
+        if (k === 'timekeeperHand' || k === 'ghostHand') {
+          props.set(k, [...(props.get(k) ?? []), n]);
+        }
+      }
       n.forEachChild(walk);
     };
-    body.forEachChild(walk);
-    expect(calls).toBe(2);
-    expect(literals).toEqual([]);
+    fn.forEachChild(walk);
+    if (literals.length) throw new Error(`buildFeelProfiles 体内出现手写手型字面量 ${JSON.stringify(literals)}（fail-closed）`);
+    if (handCalls !== 2) throw new Error(`buildFeelProfiles 内 HAND_ID 调用数=${handCalls}，应为 2（fail-closed）`);
+    for (const [kind, prop] of HAND_FIELDS) {
+      const hits = props.get(prop) ?? [];
+      if (hits.length !== 1) throw new Error(`${prop} 属性赋值 ${hits.length} 处，应恰 1 处（fail-closed）`);
+      const init = hits[0].initializer;
+      if (!ts.isCallExpression(init) || !ts.isIdentifier(init.expression) || init.expression.text !== 'HAND_ID') {
+        throw new Error(`${prop} 的 initializer 不是 HAND_ID 调用本身（实得 ${ts.SyntaxKind[init.kind]}）——`
+          + '返回值未被消费，fail-closed');
+      }
+      const a = init.arguments;
+      if (a.length !== 3) throw new Error(`${prop} 的 HAND_ID 实参数=${a.length}，应为 3（fail-closed）`);
+      if (!ts.isStringLiteral(a[0]) || a[0].text !== kind) {
+        throw new Error(`${prop} 的 kind 实参应为 '${kind}'（fail-closed）`);
+      }
+      const want = `p.physical.${prop}`;
+      if (!ts.isPropertyAccessExpression(a[1]) || a[1].getText(sf) !== want) {
+        throw new Error(`${prop} 的源字段实参应为 ${want}，实得 ${a[1].getText(sf)}（fail-closed）`);
+      }
+      if (!ts.isIdentifier(a[2]) || a[2].text !== 'id') {
+        throw new Error(`${prop} 的 id 实参应为标识符 id（fail-closed）`);
+      }
+    }
+  };
+  const parse = (src: string): ts.SourceFile =>
+    ts.createSourceFile('e.ts', src, ts.ScriptTarget.ES2022, true);
+  const wrap = (tk: string, gh: string, extra = ''): string =>
+    `${extra}\nfunction buildFeelProfiles() {\n  return [{ physical: {\n`
+    + `    timekeeperHand: ${tk},\n    ghostHand: ${gh},\n  } }];\n}\n`;
+
+  it('生产 buildFeelProfiles 通过委托证明（initializer 即 HAND_ID 调用）', () => {
+    const src = readFileSync(new URL(import.meta.url).pathname, 'utf8');
+    expect(() => assertHandDelegation(parse(src))).not.toThrow();
+  });
+
+  const BYPASS: Array<[string, string, string, RegExp]> = [
+    ['逗号表达式丢弃返回值（二轮 Finding 2 原型）',
+      "(HAND_ID('timekeeper', p.physical.timekeeperHand, id), BAD_HAND(p.physical.timekeeperHand))",
+      "(HAND_ID('ghost', p.physical.ghostHand, id), BAD_HAND(p.physical.ghostHand))",
+      /initializer 不是 HAND_ID 调用本身/],
+    ['三元包住调用',
+      "cond ? HAND_ID('timekeeper', p.physical.timekeeperHand, id) : 1",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /initializer 不是 HAND_ID 调用本身/],
+    ['kind 实参写反',
+      "HAND_ID('ghost', p.physical.timekeeperHand, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /kind 实参应为 'timekeeper'/],
+    ['源字段接错（两字段互换）',
+      "HAND_ID('timekeeper', p.physical.ghostHand, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /源字段实参应为 p\.physical\.timekeeperHand/],
+    ['源字段被中间变量代理',
+      "HAND_ID('timekeeper', v, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /源字段实参应为 p\.physical\.timekeeperHand/],
+    ['id 实参被字面量顶替（错误消息将失去归属）',
+      "HAND_ID('timekeeper', p.physical.timekeeperHand, 'x')",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /id 实参应为标识符 id/],
+    ['少传一个实参',
+      "HAND_ID('timekeeper', p.physical.timekeeperHand)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /实参数=2/],
+    ['直接内联三元（F7 原缺陷形态）',
+      "p.physical.timekeeperHand === 'right' ? 0 : 1",
+      "HAND_ID('ghost', p.physical.ghostHand, id)",
+      /手写手型字面量/],
+  ];
+  it.each(BYPASS)('委托证明拒绝：%s', (_name, tk, gh, msg) => {
+    expect(() => assertHandDelegation(parse(wrap(tk, gh)))).toThrow(msg);
+  });
+
+  it('委托证明拒绝：字段整体缺失 / 重复赋值', () => {
+    /* ★ 这两条都要**绕开上游的调用数检查**才算真打到目标——
+     *   我第一版写成「只赋 ghostHand」，结果先被「HAND_ID 调用数=1」拦下，
+     *   目标检查（属性赋值 0 处）从未执行。这正是本轮给 _expect_reject 加消息断言
+     *   要防的同一种「被非目标检查代打」，此处同样以消息断言坐实。 */
+    expect(() => assertHandDelegation(parse(
+      "function buildFeelProfiles() {\n"
+      + "  const _stray = HAND_ID('timekeeper', p.physical.timekeeperHand, id);\n"
+      + "  return [{ physical: { ghostHand: HAND_ID('ghost', p.physical.ghostHand, id) } }];\n}\n")))
+      .toThrow(/timekeeperHand 属性赋值 0 处/);
+    expect(() => assertHandDelegation(parse(
+      "function buildFeelProfiles() {\n"
+      + "  const dup = { timekeeperHand: 1 };\n"
+      + "  return [{ physical: {\n"
+      + "    timekeeperHand: HAND_ID('timekeeper', p.physical.timekeeperHand, id),\n"
+      + "    ghostHand: HAND_ID('ghost', p.physical.ghostHand, id),\n  } }];\n}\n")))
+      .toThrow(/timekeeperHand 属性赋值 2 处/);
+  });
+
+  it('委托证明的合法形态确实通过（防谓词过严导致人去放宽它）', () => {
+    expect(() => assertHandDelegation(parse(wrap(
+      "HAND_ID('timekeeper', p.physical.timekeeperHand, id)",
+      "HAND_ID('ghost', p.physical.ghostHand, id)")))).not.toThrow();
   });
 });
