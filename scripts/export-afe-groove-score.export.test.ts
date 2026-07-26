@@ -38,6 +38,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import * as ts from 'typescript';
+import { buildSongBundle } from '../src/core/generation/newEngine/generation/GenerationController';
 
 import {
   GROOVE_CONTRACT_POOL,
@@ -847,6 +848,65 @@ const FIXTURES: Fixture[] = [
 ];
 
 // ============================================================
+// ★ P2-4d：G4 **固定语料集** 12 例（真实歌曲）接入本 golden
+// ------------------------------------------------------------
+// 目的：手构造 fixtures 再全也可能**恰好避开**真实歌曲才出现的段/合同/能量组合。
+// 本组用 `buildSongBundle` 跑真实语料，取其 arrangement 暴露的
+// `sections / grooveContractBySection / energyBySection / entryBySection /
+//  openingGesture / climaxMap` 作输入，重调**生产** planGrooveScore 产 (输入, 期望 plan) 对。
+//
+// ★★ 语义边界（必须说清，否则会被误读成「复现了生产运行」）：
+//   `fillVariantSeed` 在生产里来自 `opts.rng.substream('drumFill')` 的一次抽取，
+//   **不暴露在 plan 上**，外部拿不到。故本组用 exporter 选定的**固定 seed**。
+//   因此本组验证的是「**真实歌曲的段/合同/能量/入场组合下，C 与 TS 的 plan 逐位一致**」，
+//   **不是**「复现某次生产运行的 plan」。后者属 P2-8b 全链门（届时整链在两侧同跑、种子自然一致）。
+// ============================================================
+const G4_CORPUS = JSON.parse(
+  readFileSync(join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json'), 'utf8'),
+) as { cases: Array<{ id: string; seed: number; styleHint: string; mood: string; targetDuration: number }> };
+
+function buildCorpusFixtures(): Fixture[] {
+  const out: Fixture[] = [];
+  for (const c of G4_CORPUS.cases) {
+    const bundle = buildSongBundle({
+      seed: c.seed, styleHint: c.styleHint, mood: c.mood, targetDuration: c.targetDuration,
+    } as never);
+    const a = bundle.arrangement as unknown as {
+      sections: Section[];
+      grooveContractBySection: Record<string, { id: string }>;
+      energyBySection: Record<string, number>;
+      entryBySection: Record<string, SectionEntry>;
+      openingGesture: OpeningGesturePlan;
+      climaxMap: readonly ClimaxPoint[];
+    };
+    if (!a.sections?.length) throw new Error(`${c.id}: 无 sections（fail-closed）`);
+    const contractId: Record<string, string> = {};
+    for (const s of a.sections) {
+      const ct = a.grooveContractBySection?.[s.id];
+      if (!ct?.id) throw new Error(`${c.id}/${s.id}: 无 grooveContract（fail-closed）`);
+      contractId[s.id] = ct.id;
+    }
+    // 固定 seed：由 case id 的字符和派生（确定性、逐例不同以覆盖更多 fill variant 分支）
+    let h = 0;
+    for (const ch of c.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    out.push({
+      name: `g4_corpus_${c.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      note: `P2-4d G4 固定语料集：${c.id}（seed=${c.seed} ${c.styleHint}/${c.mood}/${c.targetDuration}s，`
+        + `${a.sections.length} 段）。**fillVariantSeed 为 exporter 选定的固定值**，非生产 RNG 抽取值`
+        + `——本例验证真实歌曲输入组合下的逐位一致，不复现生产运行（见 exporter 头注）。`,
+      sections: a.sections,
+      contractId,
+      energy: a.energyBySection,
+      entry: a.entryBySection,
+      opening: a.openingGesture,
+      options: { climaxMap: a.climaxMap, fillVariantSeed: h % 0x7fffffff },
+    });
+  }
+  return out;
+}
+
+
+// ============================================================
 // 投影：GrooveScorePlan → flat-pool（对锁 afe_groove_score_plan_t）
 // ============================================================
 function buildCase(fx: Fixture, cellLiterals: Map<string, Array<Record<string, Rational | Rational[]>>>) {
@@ -1109,7 +1169,9 @@ describe('export afe groove score golden（P2-4c 步3）', () => {
     const exporterSha = createHash('sha256')
       .update(readFileSync(join(HERE, 'export-afe-groove-score.export.test.ts'))).digest('hex');
     const cellLiterals = extractRoleRhythmCellLiterals();
-    const cases = FIXTURES.map((fx) => buildCase(fx, cellLiterals));
+    // P2-4d：手构造 fixtures + G4 固定语料集 12 例（真实歌曲），同走一套三层门
+    const ALL_FIXTURES = [...FIXTURES, ...buildCorpusFixtures()];
+    const cases = ALL_FIXTURES.map((fx) => buildCase(fx, cellLiterals));
 
     // ---- 覆盖自检（fail-closed；断言的是**设计覆盖真的达成**，非事后描述）----
     expect(new Set(cases.map((c) => c.name)).size, 'case name distinct').toBe(cases.length);
