@@ -300,34 +300,45 @@ export function tsParse(text: string, name = 'x.ts'): ts.SourceFile {
   return sf;
 }
 
-/** 目标 const 的**运行时 mutation** 检查（实现门二轮 #1）：
- *  `(X as Set<string>).delete('...')` / `X.add(...)` / `X.clear()` / `X['k']=...` / `delete X['k']`
- *  都能在**初始化器之外**改变生产实际看到的集合，而只读初始化器的提取器完全看不见。
- *  故：目标标识符除"声明处"与"只读属性读取"外的任何用法一律 fail-closed。 */
-function assertNoRuntimeMutation(sf: ts.SourceFile, name: string): void {
-  const MUTATORS = new Set(['add', 'delete', 'clear', 'set', 'push', 'splice', 'pop', 'shift', 'unshift']);
+/** 目标 const 的**用法白名单**（实现门三轮 #1）。
+ *
+ * ★ 上一版是**黑名单**：只对认得出的 mutation 形态抛，其余**静默放行**——于是
+ *   `const alias = DRUM_PATTERN_FAMILIES as Set<string>; alias.delete('x')` 整条穿过
+ *   （剥 as 后父节点是 VariableDeclaration 但不是它的 name，没有任何分支命中，也没有兜底 throw）。
+ *   这与我在生产调用点门修过的"没找到即通过"是同一个病。
+ *   本版改为**白名单**：目标标识符的每一处出现都必须落在**明确允许**的形态里，否则一律 fail-closed。
+ *   `Object.assign(X, …)` / `X['k'] ||= v` / RHS 传递 / 实参 / return / 解构 / inc-dec 因此全部被拒。
+ */
+type UsageKind = 'set' | 'object';
+function assertOnlyAllowedUsage(sf: ts.SourceFile, name: string, kind: UsageKind): void {
   const visit = (n: ts.Node): void => {
     if (ts.isIdentifier(n) && n.text === name) {
-      // 剥掉 as/括号，取"实际被使用"的那个表达式节点
+      // 剥掉 as / 括号 / ! 后，取"实际被使用"的那个节点
       let cur: ts.Node = n;
       while (cur.parent && (ts.isAsExpression(cur.parent) || ts.isParenthesizedExpression(cur.parent)
-             || ts.isNonNullExpression(cur.parent))) cur = cur.parent;
+             || ts.isNonNullExpression(cur.parent) || ts.isTypeAssertionExpression(cur.parent))) {
+        cur = cur.parent;
+      }
       const p = cur.parent;
-      if (!p) return;
-      if (ts.isVariableDeclaration(p) && p.name === n) { /* 声明处 */ }
-      else if (ts.isPropertyAccessExpression(p) && p.expression === cur) {
-        if (MUTATORS.has(p.name.text)) {
-          throw new Error(`${name}: 检测到运行时 mutation .${p.name.text}(…)（fail-closed）`);
-        }
-      } else if (ts.isElementAccessExpression(p) && p.expression === cur) {
+      const bad = (why: string): never => {
+        throw new Error(`${name}: 不允许的用法——${why}（白名单外一律 fail-closed）`);
+      };
+      if (!p) bad('孤立标识符');
+      // ① 声明处本身
+      else if (ts.isVariableDeclaration(p) && p.name === n) { /* ok */ }
+      // ② 只读用法（按 kind 分别放行）
+      else if (kind === 'set' && ts.isPropertyAccessExpression(p) && p.expression === cur) {
+        const asCallee = p.parent && ts.isCallExpression(p.parent) && p.parent.expression === p;
+        if (p.name.text !== 'has' || !asCallee) bad(`Set 只允许 .has(...) 只读调用，实得 .${p.name.text}`);
+      } else if (kind === 'object' && (ts.isElementAccessExpression(p) || ts.isPropertyAccessExpression(p))
+                 && p.expression === cur) {
         const w = p.parent;
-        if (w && ((ts.isBinaryExpression(w) && w.left === p
-                   && w.operatorToken.kind === ts.SyntaxKind.EqualsToken)
-                  || ts.isDeleteExpression(w))) {
-          throw new Error(`${name}: 检测到运行时下标写入/删除（fail-closed）`);
-        }
-      } else if (ts.isDeleteExpression(p)) {
-        throw new Error(`${name}: 检测到 delete（fail-closed）`);
+        // 读取才放行：作为赋值左值、复合赋值、delete、自增自减一律拒
+        if (w && ts.isBinaryExpression(w) && w.left === p) bad('对象成员被赋值/复合赋值');
+        if (w && ts.isDeleteExpression(w)) bad('对象成员被 delete');
+        if (w && (ts.isPostfixUnaryExpression(w) || ts.isPrefixUnaryExpression(w))) bad('对象成员自增自减');
+      } else {
+        bad(`出现在 ${ts.SyntaxKind[p.kind]} 位置（RHS 传递 / 实参 / return / 解构 / Object.assign 等均不允许）`);
       }
     }
     ts.forEachChild(n, visit);
@@ -335,16 +346,18 @@ function assertNoRuntimeMutation(sf: ts.SourceFile, name: string): void {
   visit(sf);
 }
 
-/** 声明须为 **SourceFile 顶层**；const 还须带 const 修饰。 */
-function assertTopLevelDecl(node: ts.Node, name: string, needConst: boolean): void {
+/** 声明链**精确**锁为 VariableDeclaration → VariableDeclarationList → VariableStatement → SourceFile。
+ *  上一版只查"祖父是 SourceFile"，会错误接受 `for (const X = new Set([...]); false;) {}`（三轮 #1）。 */
+function assertTopLevelDecl(node: ts.Node, name: string): void {
   const list = node.parent;
-  const stmt = list && list.parent;
-  const top = stmt && stmt.parent;
-  if (!top || !ts.isSourceFile(top)) throw new Error(`${name}: 声明不在 SourceFile 顶层（fail-closed）`);
-  if (needConst) {
-    if (!list || !ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Const) === 0) {
-      throw new Error(`${name}: 声明非 const（fail-closed）`);
-    }
+  if (!list || !ts.isVariableDeclarationList(list)) throw new Error(`${name}: 非 VariableDeclarationList（fail-closed）`);
+  if ((list.flags & ts.NodeFlags.Const) === 0) throw new Error(`${name}: 声明非 const（fail-closed）`);
+  const stmt = list.parent;
+  if (!stmt || !ts.isVariableStatement(stmt)) {
+    throw new Error(`${name}: 声明不在 VariableStatement 中（如 for-init，fail-closed）`);
+  }
+  if (!stmt.parent || !ts.isSourceFile(stmt.parent)) {
+    throw new Error(`${name}: 声明不在 SourceFile 顶层（fail-closed）`);
   }
 }
 
@@ -392,7 +405,7 @@ export function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[
   const visit = (n: ts.Node): void => {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
       if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
-      assertTopLevelDecl(n, constName, true);
+      assertTopLevelDecl(n, constName);
       const init = n.initializer;
       if (!init || !ts.isNewExpression(init) || !ts.isIdentifier(init.expression)
           || init.expression.text !== 'Set') {
@@ -415,7 +428,7 @@ export function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[
   visit(sf);
   if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
   if (new Set(out).size !== out.length) throw new Error(`${constName}: 元素重复（fail-closed）`);
-  assertNoRuntimeMutation(sf, constName);
+  assertOnlyAllowedUsage(sf, constName, 'set');
   return out;
 }
 
@@ -425,7 +438,7 @@ export function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
   const visit = (n: ts.Node): void => {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
       if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
-      assertTopLevelDecl(n, constName, true);
+      assertTopLevelDecl(n, constName);
       const init = n.initializer;
       if (!init || !ts.isObjectLiteralExpression(init)) {
         throw new Error(`${constName}: initializer 非 ObjectLiteral（fail-closed）`);
@@ -445,7 +458,7 @@ export function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
   visit(sf);
   if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
   if (new Set(out).size !== out.length) throw new Error(`${constName}: 键重复（fail-closed）`);
-  assertNoRuntimeMutation(sf, constName);
+  assertOnlyAllowedUsage(sf, constName, 'object');
   return out;
 }
 
@@ -1260,16 +1273,26 @@ describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）
     ['Set 非 const', () => astNewSetLiterals(tsParse(SET_OK.replace('const ', 'let ')), 'DRUM_PATTERN_FAMILIES'), '声明非 const'],
     ['Set 非顶层', () => astNewSetLiterals(tsParse('function f(){ ' + SET_OK + ' }\n'), 'DRUM_PATTERN_FAMILIES'), '不在 SourceFile 顶层'],
     // ★ 二轮反例：运行时 mutation —— 只读初始化器的提取器完全看不见
-    ['Set 运行时 delete', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).delete('b');\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .delete'],
-    ['Set 运行时 add', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).add('z');\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .add'],
-    ['Set 运行时 clear', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).clear();\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .clear'],
+    ['Set 运行时 delete', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).delete('b');\n"), 'DRUM_PATTERN_FAMILIES'), '只允许 .has'],
+    ['Set 运行时 add', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).add('z');\n"), 'DRUM_PATTERN_FAMILIES'), '只允许 .has'],
+    ['Set 运行时 clear', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).clear();\n"), 'DRUM_PATTERN_FAMILIES'), '只允许 .has'],
+    // ★ 三轮 #1 的三条独立靶（黑名单版全部放行，白名单版精确拒绝）
+    ['Set 经 alias 逃逸后 delete', () => astNewSetLiterals(tsParse(SET_OK + "const alias = DRUM_PATTERN_FAMILIES as Set<string>;\nalias.delete('b');\n"), 'DRUM_PATTERN_FAMILIES'), /VariableDeclaration 位置|RHS 传递/],
+    ['Object.assign 改 realizer', () => astObjectKeys(tsParse(OBJ_OK + "Object.assign(DRUM_PERFORMANCE_FAMILIES, { c: 3 });\n"), 'DRUM_PERFORMANCE_FAMILIES'), /CallExpression 位置|实参/],
+    ['for-init 假顶层声明', () => astNewSetLiterals(tsParse("for (const DRUM_PATTERN_FAMILIES = new Set(['a','b']); false;) {}\n"), 'DRUM_PATTERN_FAMILIES'), '不在 VariableStatement 中'],
+    ['realizer 复合赋值 ||=', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['a'] ||= 9;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
+    ['Set 作实参传出', () => astNewSetLiterals(tsParse(SET_OK + "sink(DRUM_PATTERN_FAMILIES);\n"), 'DRUM_PATTERN_FAMILIES'), /CallExpression 位置/],
+    ['Set 被 return 传出', () => astNewSetLiterals(tsParse(SET_OK + "export function g(){ return DRUM_PATTERN_FAMILIES; }\n"), 'DRUM_PATTERN_FAMILIES'), /ReturnStatement 位置/],
+    ['realizer 属性写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES.c = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
     ['obj 含 spread', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ...base, 'a': 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
     ['obj 含 computed 键', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ['a'+'b']: 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'computed/非字面键'],
     ['obj 含 method', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { m(){ return 1; } };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
     ['obj 键重复', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { 'a': 1, 'a': 2 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '键重复'],
     ['obj initializer 非 ObjectLiteral', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = build();\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'initializer 非 ObjectLiteral'],
-    ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '运行时下标写入/删除'],
-    ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), '运行时下标写入/删除'],
+    ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被赋值/复合赋值'],
+    ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), '被 delete'],
+    ['Set 合法只读 .has 应放行（白名单正向）', () => { astNewSetLiterals(tsParse(SET_OK + "export const ok = DRUM_PATTERN_FAMILIES.has('a');\n"), 'DRUM_PATTERN_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
+    ['realizer 合法只读索引应放行（白名单正向）', () => { astObjectKeys(tsParse(OBJ_OK + "export const v = DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'); throw new Error('__SENTINEL_OK__'); }, '__SENTINEL_OK__'],
   ];
   for (const [what, run, msg] of NEG) {
     it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
