@@ -292,6 +292,62 @@ interface DrumFamilyEntry { id: number; name: string; halftime: boolean; minimal
  *   本版改用 TypeScript AST，并对每种节点形态 fail-closed（拒 spread / 非字符串字面 / 重复 /
  *   computed / method / 多次声明），杜绝"注释替身"与任意字符串补数。
  */
+export function tsParse(text: string, name = 'x.ts'): ts.SourceFile {
+  const sf = ts.createSourceFile(name, text, ts.ScriptTarget.ES2020, true);
+  if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+    throw new Error(`${name}: ${sf.parseDiagnostics.length} 条 parse diagnostic（fail-closed）`);
+  }
+  return sf;
+}
+
+/** 目标 const 的**运行时 mutation** 检查（实现门二轮 #1）：
+ *  `(X as Set<string>).delete('...')` / `X.add(...)` / `X.clear()` / `X['k']=...` / `delete X['k']`
+ *  都能在**初始化器之外**改变生产实际看到的集合，而只读初始化器的提取器完全看不见。
+ *  故：目标标识符除"声明处"与"只读属性读取"外的任何用法一律 fail-closed。 */
+function assertNoRuntimeMutation(sf: ts.SourceFile, name: string): void {
+  const MUTATORS = new Set(['add', 'delete', 'clear', 'set', 'push', 'splice', 'pop', 'shift', 'unshift']);
+  const visit = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && n.text === name) {
+      // 剥掉 as/括号，取"实际被使用"的那个表达式节点
+      let cur: ts.Node = n;
+      while (cur.parent && (ts.isAsExpression(cur.parent) || ts.isParenthesizedExpression(cur.parent)
+             || ts.isNonNullExpression(cur.parent))) cur = cur.parent;
+      const p = cur.parent;
+      if (!p) return;
+      if (ts.isVariableDeclaration(p) && p.name === n) { /* 声明处 */ }
+      else if (ts.isPropertyAccessExpression(p) && p.expression === cur) {
+        if (MUTATORS.has(p.name.text)) {
+          throw new Error(`${name}: 检测到运行时 mutation .${p.name.text}(…)（fail-closed）`);
+        }
+      } else if (ts.isElementAccessExpression(p) && p.expression === cur) {
+        const w = p.parent;
+        if (w && ((ts.isBinaryExpression(w) && w.left === p
+                   && w.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+                  || ts.isDeleteExpression(w))) {
+          throw new Error(`${name}: 检测到运行时下标写入/删除（fail-closed）`);
+        }
+      } else if (ts.isDeleteExpression(p)) {
+        throw new Error(`${name}: 检测到 delete（fail-closed）`);
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+}
+
+/** 声明须为 **SourceFile 顶层**；const 还须带 const 修饰。 */
+function assertTopLevelDecl(node: ts.Node, name: string, needConst: boolean): void {
+  const list = node.parent;
+  const stmt = list && list.parent;
+  const top = stmt && stmt.parent;
+  if (!top || !ts.isSourceFile(top)) throw new Error(`${name}: 声明不在 SourceFile 顶层（fail-closed）`);
+  if (needConst) {
+    if (!list || !ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Const) === 0) {
+      throw new Error(`${name}: 声明非 const（fail-closed）`);
+    }
+  }
+}
+
 function tsSource(rel: string[]): ts.SourceFile {
   const fp = join(HERE, '..', 'src', 'core', 'generation', 'newEngine', ...rel);
   const text = readFileSync(fp, 'utf-8');
@@ -303,11 +359,16 @@ function tsSource(rel: string[]): ts.SourceFile {
 }
 
 /** `export type X = 'a' | 'b' | …` 的字符串字面 union → 有序数组（拒非字符串成员）。 */
-function astUnionLiterals(sf: ts.SourceFile, typeName: string): string[] {
+export function astUnionLiterals(sf: ts.SourceFile, typeName: string): string[] {
   let out: string[] | undefined;
   const visit = (n: ts.Node): void => {
     if (ts.isTypeAliasDeclaration(n) && n.name.text === typeName) {
       if (out) throw new Error(`${typeName}: 多次声明（fail-closed）`);
+      if (!n.parent || !ts.isSourceFile(n.parent)) throw new Error(`${typeName}: 非顶层声明（fail-closed）`);
+      const mods = ts.canHaveModifiers(n) ? (ts.getModifiers(n) || []) : [];
+      if (!mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+        throw new Error(`${typeName}: 未 export（fail-closed）`);
+      }
       const t = n.type;
       if (!ts.isUnionTypeNode(t)) throw new Error(`${typeName}: 非 union 类型（fail-closed）`);
       out = t.types.map((m) => {
@@ -326,17 +387,21 @@ function astUnionLiterals(sf: ts.SourceFile, typeName: string): string[] {
 }
 
 /** `const X = new Set([...])` 的字符串字面数组 → 有序数组（拒 spread / 非字面 / 重复）。 */
-function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[] {
+export function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[] {
   let out: string[] | undefined;
   const visit = (n: ts.Node): void => {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
       if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
+      assertTopLevelDecl(n, constName, true);
       const init = n.initializer;
       if (!init || !ts.isNewExpression(init) || !ts.isIdentifier(init.expression)
           || init.expression.text !== 'Set') {
         throw new Error(`${constName}: initializer 非 new Set(...)（fail-closed）`);
       }
-      const arg = init.arguments && init.arguments[0];
+      if (!init.arguments || init.arguments.length !== 1) {
+        throw new Error(`${constName}: new Set 实参须恰 1 个（fail-closed）`);
+      }
+      const arg = init.arguments[0];
       if (!arg || !ts.isArrayLiteralExpression(arg)) {
         throw new Error(`${constName}: new Set 实参非数组字面（fail-closed）`);
       }
@@ -350,15 +415,17 @@ function astNewSetLiterals(sf: ts.SourceFile, constName: string): string[] {
   visit(sf);
   if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
   if (new Set(out).size !== out.length) throw new Error(`${constName}: 元素重复（fail-closed）`);
+  assertNoRuntimeMutation(sf, constName);
   return out;
 }
 
 /** `const X: Record<...> = { 'k': …, }` 的**顶层属性键** → 有序数组（拒 spread / computed / 重复）。 */
-function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
+export function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
   let out: string[] | undefined;
   const visit = (n: ts.Node): void => {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === constName) {
       if (out) throw new Error(`${constName}: 多次声明（fail-closed）`);
+      assertTopLevelDecl(n, constName, true);
       const init = n.initializer;
       if (!init || !ts.isObjectLiteralExpression(init)) {
         throw new Error(`${constName}: initializer 非 ObjectLiteral（fail-closed）`);
@@ -378,6 +445,7 @@ function astObjectKeys(sf: ts.SourceFile, constName: string): string[] {
   visit(sf);
   if (!out || out.length === 0) throw new Error(`${constName}: 未找到或为空（fail-closed）`);
   if (new Set(out).size !== out.length) throw new Error(`${constName}: 键重复（fail-closed）`);
+  assertNoRuntimeMutation(sf, constName);
   return out;
 }
 
@@ -454,7 +522,9 @@ function buildKitCapabilities(): { kits: KitCapEntry[]; coreGmBits: string[]; pi
     const inherited = new Set(cap.inheritedCorePitches);
     // ★ 派生关系断言（设计门二轮 #11：两表都物化便于 O(1) 查询，但须证明它们仍自洽）：
     //   inherited = CORE_GM \ native ⇒ native ∩ inherited = ∅ 且 native ∪ inherited 对三 kit **恒等**
-    //   （那个恒等的并集就是 CORE_GM——无需提取私有常量即可锁死派生关系）
+    //   ★ 但**这一条单独不够**（实现门首轮 #2）：它只证明『存在某个基集 U 使
+    //   inherited_i = U \\ native_i』，证明不了 U 就是真源的 CORE_GM_PITCHES——
+    //   三 kit 一致漂移时该判据仍成立。真正把 U 钉到真源的是下面的 FROZEN_CORE_GM 逐值锚。
     for (const p of native) {
       if (inherited.has(p)) throw new Error(`kit ${prog}: pitch ${p} 同时在 native 与 inherited（fail-closed）`);
     }
@@ -1052,7 +1122,8 @@ describe('export afe groove KB owner 前置切片（P2-4c 步1）', () => {
         note: 'DREAM GMBK 三 kit（8=Room / 25=TR808 / 40=Brush）的音高能力：native/inherited 各一张 '
           + '128-bit 位图（pitch p ↦ word=p>>5, bit=p&31, LSB-first）。两表都物化便于 O(1) 查询，'
           + '派生关系 inherited = CORE_GM \\ native 由 exporter fail-closed 断言（三 kit 的 '
-          + 'native∪inherited 恒等 ⇒ 该恒等并集即 CORE_GM，无需提取私有常量）。'
+          + 'native∪inherited 恒等（只锁"共享同一基集"）；② canonical CORE_GM 30 音高**逐值冻结锚**'
+          + '（锁"该基集即真源 CORE_GM"）。★①单独不够：三 kit 一致漂移时①仍成立。'
           + 'sampleVelocityLayers 恒 1 不物化。pitchProjections = 穷举 3×128 得到的全部改写项。',
         coreGmBits: kitCapability.coreGmBits,
         kits: kitCapability.kits,
@@ -1135,4 +1206,72 @@ describe('parseFillCells fail-closed 负向（AST 提取器本身）', () => {
     const cells = parseFillCells(LEGAL.replace('steps: [0, 4]', 'steps: ALL_STEPS'));
     expect(cells[0].steps).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
+});
+
+/* ============================================================
+ * family 三方 AST 提取器的**落库对抗套件**（实现门二轮 #1）
+ * ------------------------------------------------------------
+ * 上一轮我只是**手跑一次**注释替身反例就还原了源码，仓里没有留下任何对抗测试——
+ * 等于"验证过"但没有"持续看守"。本套件把每条 fail-closed 分支落成注入负向，
+ * 并**逐例断言精确错误消息**（只断言 toThrow 会被下游检查代打，本仓已栽多次）。
+ * ============================================================ */
+describe('family 三方 AST 提取器 fail-closed 负向（落库对抗套件）', () => {
+  const UNION_OK = "export type DrumPatternFamily =\n  | 'a'\n  | 'b';\n";
+  const SET_OK = "const DRUM_PATTERN_FAMILIES: ReadonlySet<string> = new Set([\n  'a', 'b',\n]);\n";
+  const OBJ_OK = "const DRUM_PERFORMANCE_FAMILIES: Record<string, number> = {\n  'a': 1,\n  'b': 2,\n};\n";
+
+  /* ★ 注释替身（首轮的核心反例）：**parser 不该抛** —— 它的职责是报出**真实**集合。
+   * 正则会把注释里的字面也数进去（假绿），AST 只看到真实成员。抓住漂移的是**下游的三方
+   * 相等门**。这条测试锁的正是这个分工：parser 如实报少、相等门据此转红。
+   * （我第一版把它写成"parser 应抛"，是把两层职责混了——测试设计错了，不是实现错了。） */
+  it('注释替身：AST 如实报出被注释掉的成员不计入（正则会假绿）', () => {
+    const decoyed = SET_OK.replace("'a', 'b',", "'a', /* 'b' */");
+    expect(astNewSetLiterals(tsParse(decoyed), 'DRUM_PATTERN_FAMILIES'), 'AST 只见 a').toEqual(['a']);
+    // 同一文本用首轮的正则口径会数出 2 —— 这就是当时的假锁
+    const regexHits = [...decoyed.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+    expect(regexHits, '旧正则把注释里的也数进去').toEqual(['a', 'b']);
+  });
+
+  it('三方相等门在注释替身下转红（真正抓住漂移的一层）', () => {
+    const u = astUnionLiterals(tsParse(UNION_OK), 'DrumPatternFamily');
+    const p2 = astNewSetLiterals(tsParse(SET_OK.replace("'a', 'b',", "'a', /* 'b' */")), 'DRUM_PATTERN_FAMILIES');
+    expect(u.length, 'union 2').toBe(2);
+    expect(p2.length, 'planner 被注释掉一项 ⇒ 1').toBe(1);
+    expect(u.length === p2.length, '相等门必然判不等').toBe(false);
+  });
+
+  it('三种合法基线可解析（负向的对照）', () => {
+    expect(astUnionLiterals(tsParse(UNION_OK), 'DrumPatternFamily')).toEqual(['a', 'b']);
+    expect(astNewSetLiterals(tsParse(SET_OK), 'DRUM_PATTERN_FAMILIES')).toEqual(['a', 'b']);
+    expect(astObjectKeys(tsParse(OBJ_OK), 'DRUM_PERFORMANCE_FAMILIES')).toEqual(['a', 'b']);
+  });
+
+  const NEG: Array<[string, () => unknown, string | RegExp]> = [
+    ['union 含非字符串字面', () => astUnionLiterals(tsParse("export type DrumPatternFamily = 'a' | string;\n"), 'DrumPatternFamily'), '含非字符串字面成员'],
+    ['union 未 export', () => astUnionLiterals(tsParse(UNION_OK.replace('export ', '')), 'DrumPatternFamily'), '未 export'],
+    ['union 多次声明', () => astUnionLiterals(tsParse(UNION_OK + UNION_OK), 'DrumPatternFamily'), '多次声明'],
+    ['union 成员重复', () => astUnionLiterals(tsParse("export type DrumPatternFamily = 'a' | 'a';\n"), 'DrumPatternFamily'), '成员重复'],
+    ['union 缺失', () => astUnionLiterals(tsParse('export const x = 1;\n'), 'DrumPatternFamily'), '未找到或为空'],
+    ['Set 含 spread', () => astNewSetLiterals(tsParse("const DRUM_PATTERN_FAMILIES = new Set([...other, 'a']);\n"), 'DRUM_PATTERN_FAMILIES'), '含非字符串字面元素'],
+    ['Set initializer 非 new Set', () => astNewSetLiterals(tsParse("const DRUM_PATTERN_FAMILIES = buildSet(['a']);\n"), 'DRUM_PATTERN_FAMILIES'), 'initializer 非 new Set'],
+    ['Set 实参非数组字面', () => astNewSetLiterals(tsParse("const DRUM_PATTERN_FAMILIES = new Set(other);\n"), 'DRUM_PATTERN_FAMILIES'), '实参非数组字面'],
+    ['Set 实参个数不为 1', () => astNewSetLiterals(tsParse("const DRUM_PATTERN_FAMILIES = new Set(['a'], 2 as never);\n"), 'DRUM_PATTERN_FAMILIES'), '实参须恰 1 个'],
+    ['Set 元素重复', () => astNewSetLiterals(tsParse("const DRUM_PATTERN_FAMILIES = new Set(['a','a']);\n"), 'DRUM_PATTERN_FAMILIES'), '元素重复'],
+    ['Set 非 const', () => astNewSetLiterals(tsParse(SET_OK.replace('const ', 'let ')), 'DRUM_PATTERN_FAMILIES'), '声明非 const'],
+    ['Set 非顶层', () => astNewSetLiterals(tsParse('function f(){ ' + SET_OK + ' }\n'), 'DRUM_PATTERN_FAMILIES'), '不在 SourceFile 顶层'],
+    // ★ 二轮反例：运行时 mutation —— 只读初始化器的提取器完全看不见
+    ['Set 运行时 delete', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).delete('b');\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .delete'],
+    ['Set 运行时 add', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).add('z');\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .add'],
+    ['Set 运行时 clear', () => astNewSetLiterals(tsParse(SET_OK + "(DRUM_PATTERN_FAMILIES as Set<string>).clear();\n"), 'DRUM_PATTERN_FAMILIES'), '运行时 mutation .clear'],
+    ['obj 含 spread', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ...base, 'a': 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
+    ['obj 含 computed 键', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { ['a'+'b']: 1 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'computed/非字面键'],
+    ['obj 含 method', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { m(){ return 1; } };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '含非 PropertyAssignment 成员'],
+    ['obj 键重复', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = { 'a': 1, 'a': 2 };\n"), 'DRUM_PERFORMANCE_FAMILIES'), '键重复'],
+    ['obj initializer 非 ObjectLiteral', () => astObjectKeys(tsParse("const DRUM_PERFORMANCE_FAMILIES = build();\n"), 'DRUM_PERFORMANCE_FAMILIES'), 'initializer 非 ObjectLiteral'],
+    ['obj 运行时下标写入', () => astObjectKeys(tsParse(OBJ_OK + "DRUM_PERFORMANCE_FAMILIES['c'] = 3;\n"), 'DRUM_PERFORMANCE_FAMILIES'), '运行时下标写入/删除'],
+    ['obj 运行时 delete', () => astObjectKeys(tsParse(OBJ_OK + "delete DRUM_PERFORMANCE_FAMILIES['a'];\n"), 'DRUM_PERFORMANCE_FAMILIES'), '运行时下标写入/删除'],
+  ];
+  for (const [what, run, msg] of NEG) {
+    it(`拒绝：${what}`, () => { expect(run, what).toThrow(msg as string | RegExp); });
+  }
 });
