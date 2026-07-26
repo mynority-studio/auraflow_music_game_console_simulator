@@ -50,6 +50,7 @@ import { createHash } from 'node:crypto';
 import * as ts from 'typescript';
 import { planDrumPerformance } from '../src/core/generation/newEngine/arranger/drumPerformancePlanner';
 import { GROOVE_CONTRACT_POOL } from '../src/core/generation/newEngine/knowledge/grooveContracts';
+import { drumFeelProfileIdForContract } from '../src/core/generation/newEngine/knowledge/drumPerformanceKnowledge';
 import type {
   Section, SectionEntry, SectionFunctionTag, OpeningDrumEntry, GrooveScorePlan,
 } from '../src/core/generation/newEngine/arranger/ArrangementPlan';
@@ -74,7 +75,12 @@ const PLANNER_REL = 'src/core/generation/newEngine/arranger/drumPerformancePlann
 //   **根因是没让机器去对**：TS 侧序表与 C 侧 ABI 之间此前零交叉校验。
 //   现在的制度：本文件只是「TS 字符串 → ABI 常量**名**」的映射，**数值一律由 codegen 解析
 //   冻结头取得**（gen_drum_performance_golden.py 的 parse_abi_enums），并在 .h 里 emit 具名常量
-//   让 C 编译器再兜一层；下方 it('枚举映射对锁冻结 ABI') 直接读 .h 做第三重独立核对。
+//   让 C 编译器再兜一层。
+//   ★★ 二轮 F1/F8 更正：上一版注释称「下方 it('枚举映射对锁冻结 ABI') 直接读 .h 做第三重
+//     独立核对」——**该测试当时并不存在**（描述通胀）；而且即便存在，那三层查的都是
+//     「常量名是否存在」，**没有一层验证映射本身**（把 'full' 映到 HAT_ONLY 三层全过）。
+//     真正独立的判据是**从 TS 串重新推导**：'-' 与 camelCase 断词 → 全大写 → 加前缀。
+//     该判据现已同时落在 codegen（ts_to_abi_name）与下方 it('枚举映射经独立推导核对')。
 const ROLE_ABI: Record<string, string> = {
   silent: 'AFE_DRUM_ROLE_SILENT', timekeeper: 'AFE_DRUM_ROLE_TIMEKEEPER',
   lift: 'AFE_DRUM_ROLE_LIFT', breakdown: 'AFE_DRUM_ROLE_BREAKDOWN', pickup: 'AFE_DRUM_ROLE_PICKUP',
@@ -223,7 +229,12 @@ type DrumOverride = Partial<{
   breakdownFamily: string | undefined;
 }>;
 type PoolSpec = {
-  base: string;                  // 真合同 id（**id 串不可覆盖**）
+  base: string;                  // 克隆基底（真合同 id）
+  /** ★ 二轮 F2/F6：**合成 id 串**。上一版我判定「不可表示」——那是错的：
+   *  合成 id 让 TS 落 feel fallback，只要**基底 enum 的 effective feel 恰等于该 fallback 结果**，
+   *  两侧就自然一致（Codex 的解法，直接推翻我的结论）。故允许 override，但由
+   *  assertSyntheticIdFeelMatch() **机器证明**该等式成立，不成立即 fail-closed。 */
+  idStr?: string;
   density?: 'sparse' | 'medium' | 'active';
   grid?: string;
   rhythmSwingSource?: string;
@@ -233,7 +244,7 @@ type PoolSpec = {
 const REAL = new Map(GROOVE_CONTRACT_POOL.map((c) => [c.id, c]));
 
 const poolSpecs: PoolSpec[] = [];
-const poolKey = (s: PoolSpec): string => JSON.stringify([s.base, s.density ?? null, s.grid ?? null,
+const poolKey = (s: PoolSpec): string => JSON.stringify([s.base, s.idStr ?? null, s.density ?? null, s.grid ?? null,
   s.rhythmSwingSource ?? null, s.drum === null ? 'NO_DRUM' : (s.drum ?? null)]);
 const poolIndex = new Map<string, number>();
 function poolRef(s: PoolSpec): number {
@@ -246,12 +257,50 @@ function poolRef(s: PoolSpec): number {
   return i;
 }
 
+/** 合成 id 的**可表示性证明**：TS 侧会落 `drumFeelProfileIdForContract` 的 fallback 子句，
+ *  而 C 侧仍按基底 enum 取拆步3 冻结的 effective 表 —— 二者必须相等，否则期望输出不可表示。
+ *  直调生产 `drumFeelProfileIdForContract` 取两侧结果，不复写 fallback 算法。 */
+function assertSyntheticIdFeelMatch(s: PoolSpec, cloned: GrooveContract): void {
+  const base = REAL.get(s.base)!;
+  const cEffective = drumFeelProfileIdForContract(base);            // C 侧：enum → effective 表
+  const probe = { ...cloned, id: s.idStr } as GrooveContract;
+  const tsFallback = drumFeelProfileIdForContract(probe);           // TS 侧：合成 id → fallback
+  if (tsFallback !== cEffective) {
+    throw new Error(`合成 id ${s.idStr!} 不可表示：TS fallback feel=${tsFallback} 而基底 `
+      + `${s.base} 的 effective feel=${cEffective} —— 请改选一个 effective feel 等于 `
+      + `${tsFallback} 的基底 enum（fail-closed）`);
+  }
+}
+
+/** 为合成 id **自动选基底**：在 21 个真合同里找 effective feel 恰等于「该合成 id 在此合同
+ *  结构下的 TS fallback feel」的那一个。手挑基底我已错过一次（probe_gospel_dilla），
+ *  这类可机器推导的选择就不该手写。找不到 ⇒ 该 id 确实不可表示，fail-closed。 */
+function pickBaseForSyntheticId(idStr: string, styleHint: string,
+                                shape: { density?: string; grid?: string }): string {
+  const tried: string[] = [];
+  for (const cand of GROOVE_CONTRACT_POOL) {
+    const probe = { ...cand, id: idStr } as GrooveContract;
+    if (shape.density !== undefined) (probe as { density: string }).density = shape.density;
+    if (shape.grid !== undefined) (probe as { grid: string }).grid = shape.grid;
+    const tsFallback = drumFeelProfileIdForContract(probe);
+    const effective = drumFeelProfileIdForContract(cand);
+    tried.push(`${cand.id}:${effective}vs${tsFallback}`);
+    if (tsFallback === effective) return cand.id;
+  }
+  throw new Error(`合成 id ${idStr}（style=${styleHint}）找不到可表示的基底 —— `
+    + `需 effective feel == TS fallback feel。候选比对：${tried.slice(0, 5).join(' ')}…（fail-closed）`);
+}
+
 function materializeContract(s: PoolSpec): GrooveContract {
   const base = REAL.get(s.base);
   if (!base) throw new Error(`合同池基底 ${s.base} 不在 GROOVE_CONTRACT_POOL（fail-closed）`);
   const c = JSON.parse(JSON.stringify(base)) as GrooveContract;
-  // ★ 不变量：id 串绝不改写（见文件头）
   if (c.id !== s.base) throw new Error('克隆后 id 串漂移（fail-closed）');
+  if (s.idStr !== undefined) {
+    // 合成 id：必须先证明「TS fallback feel == 基底 enum 的 effective feel」
+    assertSyntheticIdFeelMatch(s, c);
+    (c as { id: string }).id = s.idStr;
+  }
   if (s.density !== undefined) (c as { density: string }).density = s.density;
   if (s.grid !== undefined) (c as { grid: string }).grid = s.grid;
   if (s.rhythmSwingSource !== undefined) {
@@ -457,6 +506,66 @@ for (const L of E_LEAVES) {
     secs: [{ id: 's0', functionTag: L.tag, contract: { base: L.base, density: L.density, drum: null } }],
     bnds: [{ from: 's0', to: 's0', intensity: 1 }],
   });
+}
+
+// ---- E2: **单 id 双关键字优先级**（§6.1 明确要求；二轮 F6）----
+// 用合成 id + 「effective feel 等于 TS fallback 结果」的基底（见 assertSyntheticIdFeelMatch）。
+// 判别力：把 baseFamily 里同 clause 内两个关键字的判断次序调换，这些靶就会红。
+type E2 = { name: string; style: (typeof STYLE_ORDER)[number];
+  idStr: string; tag?: SectionFunctionTag; note: string };
+const E2_LEAVES: E2[] = [
+  // jazz clause: smooth 先于 bossa 先于 ballad。基底取 effective feel == JAZZ 非 sparse fallback
+  // (jazz-swing-ride=5) 的合同：jazz_combo_swing(0)/jazz_medium_swing(15) 皆为 5。
+  { name: 'jazz_smooth_beats_bossa', style: 'JAZZ',
+    idStr: 'probe_smooth_bossa', tag: 'story', note: 'smooth 先于 bossa ⇒ smooth-jazz-backbeat' },
+  { name: 'jazz_smooth_beats_ballad', style: 'JAZZ',
+    idStr: 'probe_smooth_ballad', tag: 'story', note: 'smooth 先于 ballad ⇒ smooth-jazz-backbeat' },
+  { name: 'jazz_bossa_beats_ballad', style: 'JAZZ',
+    idStr: 'probe_bossa_ballad', tag: 'story', note: 'bossa 先于 ballad ⇒ jazz-bossa' },
+  // rnb clause: gospel 先于 dilla 先于 trap 先于 motown。RNB 非 dilla fallback = rnb-laidback-pocket(2)
+  { name: 'rnb_gospel_beats_dilla', style: 'RNB',
+    idStr: 'probe_gospel_dilla', tag: 'story', note: 'gospel 先于 dilla ⇒ rnb-gospel-triplet' },
+  { name: 'rnb_dilla_beats_trap', style: 'RNB',
+    idStr: 'probe_dilla_trap', tag: 'story', note: 'dilla 先于 trap ⇒ rnb-dilla-pocket' },
+  { name: 'rnb_trap_beats_motown', style: 'RNB',
+    idStr: 'probe_trap_motown', tag: 'story', note: 'trap 先于 motown ⇒ trap-soul-halftime' },
+  // lofi clause: late 先于 halftime 先于 lazy|dusty。LOFI fallback = lofi-dusty-pocket(4)
+  { name: 'lofi_late_beats_halftime', style: 'LOFI',
+    idStr: 'probe_late_halftime', tag: 'loop', note: 'late 先于 halftime ⇒ lofi-dusty-break' },
+  { name: 'lofi_halftime_beats_lazy', style: 'LOFI',
+    idStr: 'probe_halftime_lazy', tag: 'loop', note: 'halftime 先于 lazy ⇒ lofi-boombap' },
+  // 非 jazz/rnb/lofi clause: citypop 先于 ballad 先于 jpop
+  { name: 'pop_citypop_beats_ballad', style: 'POP',
+    idStr: 'probe_citypop_ballad', tag: 'hook', note: 'citypop 先于 ballad ⇒ citypop-disco-boogie' },
+  { name: 'pop_ballad_beats_jpop', style: 'POP',
+    idStr: 'probe_ballad_jpop', tag: 'story', note: 'ballad 先于 jpop ⇒ ballad-halftime' },
+];
+for (const L of E2_LEAVES) {
+  const picked = pickBaseForSyntheticId(L.idStr, L.style, {});
+  addCase({
+    name: `E2_${L.name}`,
+    note: `E2 双关键字优先级: ${L.note}（合成 id ${L.idStr}，机器选定基底 ${picked}）`,
+    style: L.style,
+    secs: [{ id: 's0', functionTag: L.tag,
+             contract: { base: picked, idStr: L.idStr, drum: null } }],
+    bnds: [{ from: 's0', to: 's0', intensity: 1 }],
+  });
+}
+
+// ---- C2: SectionEntry 域（二轮 F6：此前**全部** section 的 entry 都是 absent，
+//      错误实现忽略 `entry==='lead-in' → full` 仍会全绿）----
+for (const en of [...SECTION_ENTRY_ORDER, undefined]) {
+  for (const role of ['timekeeper', 'pickup', 'breakdown'] as const) {
+    addCase({
+      name: `C2_entry_${en ?? 'absent'}_${role}`,
+      note: `C2: entry=${en ?? 'absent'} role=${role} ⇒ entryForRole 分派`
+        + `（lead-in 须压过 pickup 的 kick-hat）`,
+      style: 'POP',
+      secs: [{ id: 's0', functionTag: ROLE_TAG[role], entry: en,
+               contract: { base: 'pop_radio_straight' } }],
+      bnds: [{ from: 's0', to: 's0', intensity: 1 }],
+    });
+  }
 }
 
 // ---- F: score boundary 选择规则 ----
@@ -697,6 +806,45 @@ const CONTRACT_ENUM = new Map<string, number>([
 
 // ============================================================
 describe('export afe drum performance golden（P2-10A 拆步4）', () => {
+  /** TS 串 → ABI 常量名的**独立推导**（不查上面的映射表）。与 codegen 的 ts_to_abi_name 同规则。 */
+  const ABI_PREFIX: Record<string, string> = {
+    role: 'AFE_DRUM_ROLE_', entryMode: 'AFE_DRUM_ENTRY_', fillPolicy: 'AFE_DRUM_FILL_',
+    timingProfile: 'AFE_DRUM_TIMING_', velocityProfile: 'AFE_DRUM_VEL_',
+    kickPolicy: 'AFE_DRUM_KICK_', snarePolicy: 'AFE_DRUM_SNARE_', hatPolicy: 'AFE_DRUM_HAT_',
+    cymbalPolicy: 'AFE_DRUM_CYMBAL_', tomPolicy: 'AFE_DRUM_TOM_',
+    foregroundGuard: 'AFE_DRUM_GUARD_', feelProfileId: 'AFE_DRUM_FEEL_',
+    openingDrumEntry: 'AFE_DRUM_OPENING_',
+  };
+  const derive = (ts: string, field: string): string =>
+    ABI_PREFIX[field] + ts.replace(/([a-z0-9])(?=[A-Z])/g, '$1_').replace(/-/g, '_').toUpperCase();
+
+  it('枚举映射经独立推导核对（二轮 F1：三层查名字存在挡不住映射错配）', () => {
+    const PAIRS: Array<[string, Record<string, string>]> = [
+      ['role', ROLE_ABI], ['entryMode', ENTRY_MODE_ABI], ['fillPolicy', FILL_POLICY_ABI],
+      ['timingProfile', TIMING_PROFILE_ABI], ['velocityProfile', VELOCITY_PROFILE_ABI],
+      ['kickPolicy', KICK_POLICY_ABI], ['snarePolicy', SNARE_POLICY_ABI],
+      ['hatPolicy', HAT_POLICY_ABI], ['cymbalPolicy', CYMBAL_POLICY_ABI],
+      ['tomPolicy', TOM_POLICY_ABI], ['foregroundGuard', GUARD_ABI],
+      ['feelProfileId', FEEL_ABI], ['openingDrumEntry', OPENING_ENTRY_ABI],
+    ];
+    let n = 0;
+    for (const [field, tbl] of PAIRS) {
+      for (const [ts, abi] of Object.entries(tbl)) {
+        expect(abi, `${field}: TS 串 ${ts} 的映射与独立推导不符`).toBe(derive(ts, field));
+        n++;
+      }
+    }
+    // 63 = 13 张表条目实测总数（**不是手写猜的**——我第一版写 58，被本断言当场抓住；
+    //   这个锚的作用是防表被误删条目，故必须是实测值）
+    expect(n, '映射条目总数（实测锚，防表条目被误删）').toBe(63);
+    // 判据自检：故意错配必须被抓（否则本测试是恒真的摆设）
+    expect(derive('full', 'entryMode')).toBe('AFE_DRUM_ENTRY_FULL');
+    expect(derive('full', 'entryMode')).not.toBe('AFE_DRUM_ENTRY_HAT_ONLY');
+    expect(derive('hatsOnly', 'openingDrumEntry')).toBe('AFE_DRUM_OPENING_HATS_ONLY');
+    expect(derive('ghost-before-backbeat', 'snarePolicy'))
+      .toBe('AFE_DRUM_SNARE_GHOST_BEFORE_BACKBEAT');
+  });
+
   it('导出 (输入, 期望合同) 成对 golden', () => {
     // ① score 读取闭包定理
     const plannerSrc = readFileSync(join(REPO, PLANNER_REL), 'utf8');
@@ -749,6 +897,7 @@ describe('export afe drum performance golden（P2-10A 拆步4）', () => {
       if (enumId === undefined) throw new Error(`池[${i}] 基底 ${s.base} 无 enum`);
       return {
         poolIdx: i, baseId: s.base, baseIdEnum: enumId,
+        idStr: s.idStr ?? null,
         density: s.density ?? null, grid: s.grid ?? null,
         rhythmSwingSource: s.rhythmSwingSource ?? null,
         drum: s.drum === null ? 'REMOVED' : (s.drum ?? null),
