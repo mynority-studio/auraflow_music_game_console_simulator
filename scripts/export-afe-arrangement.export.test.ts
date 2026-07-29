@@ -16,7 +16,7 @@
 //   本靶不重复对账（否则 band 一变本靶就红，归因错位）。
 //
 // ★ 覆盖缺口两类记账（见 meta.coverageGaps）：**不可达** = 生产域无路径，不伪造；
-//   **延后** = 可达但按任务边界归其它靶。ACG 属后者（曲式 owner=P2-11，C 侧 fail-closed）。
+//   **延后** = 可达但按任务边界归其它靶。（原延后项 ACG 已随 P2-11 步0 落地转逐位。）
 //
 // 运行: pnpm exec vitest run --config vitest.export.config.ts scripts/export-afe-arrangement.export.test.ts
 // ============================================================
@@ -512,7 +512,7 @@ describe('export-afe-arrangement', () => {
     });
 
     const byName = new Map(cases.map((c) => [c.name, c]));
-    // P2-5d：聚合断言只跑有 expected 的 case（ACG fail-closed 例只有输入面）
+    // P2-11 步0 起全部 case 皆有 expected（ACG fail-closed 形态退场）；filter 为类型收窄保留
     const planCases = cases.filter((c) => c.expected !== null) as Array<typeof cases[0] & { expected: NonNullable<typeof cases[0]['expected']> }>;
 
     // ============================================================
