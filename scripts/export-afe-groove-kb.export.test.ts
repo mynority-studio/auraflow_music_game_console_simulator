@@ -48,6 +48,7 @@ import {
   projectDrumPitchForKit,
   type DrumKitProgram,
 } from '../src/core/generation/newEngine/knowledge/drumKitCapabilities';
+import { TEXTURE_POOL } from '../src/core/generation/newEngine/knowledge/textureProfiles';
 import {
   DRUM_FEEL_PROFILES,
   drumFeelProfile,
@@ -992,8 +993,10 @@ function buildTimingSafetyGrid() {
 }
 
 // ---- ④ texture-case registry（owner=P2-8a）----
-// distinct textureCase 首现序（POOL 序 × preferred→allowed→forbidden × 数组内序）。groove 侧 [off,count]
-// 引本池；owner=P2-8a 落地时复用不重建/不重编号（afe_foreign_ids.h:afe_texture_case_id_t 落点）。
+// 两段式来源（P2-7 步b 起）：段1 = 合同引用面首现序（POOL 序 × preferred→allowed→forbidden ×
+// 数组内序，恒 0–49 保号不重编）；段2 = TEXTURE_POOL（textureProfiles.ts 声明序）差集追加
+// （append-only；当前差集 = Jazz_Waltz_Hemiola → id=50）。groove 侧 [off,count] 引本池；
+// owner=P2-8a 落地时复用不重建/不重编号（afe_foreign_ids.h:afe_texture_case_id_t 落点）。
 interface TextureCaseEntry { id: number; name: string; }
 function buildTextureCases(): TextureCaseEntry[] {
   const seen = new Set<string>();
@@ -1007,6 +1010,16 @@ function buildTextureCases(): TextureCaseEntry[] {
         out.push({ id: out.length, name });
       }
     }
+  }
+  const contractFaceCount = out.length;
+  for (const t of TEXTURE_POOL) {
+    if (seen.has(t.textureCase)) continue;
+    seen.add(t.textureCase);
+    out.push({ id: out.length, name: t.textureCase });
+  }
+  // fail-closed：段1 计数漂移或差集意外扩张都必须显式改此断言（append-only 见证）。
+  if (contractFaceCount !== 50 || out.length !== 51 || out[50].name !== 'Jazz_Waltz_Hemiola') {
+    throw new Error(`texture registry 两段式来源计数漂移: face=${contractFaceCount} total=${out.length}`);
   }
   return out;
 }
