@@ -222,13 +222,23 @@ describe(`export-afe-instrumentation (${SIDE})`, () => {
         jazzArchetypeId: fx.jazzArchetypeId } as never;
       const sectionIds = arrangement.sections.map((s) => s.id);
       const phraseIds = arrangement.phrases.map((p) => p.id);
-      const proj = project(fx, plan, sectionIds, phraseIds);
+      const projBase = project(fx, plan, sectionIds, phraseIds);
+      const proj = {
+        ...projBase,
+        /* C 侧 5/4 例（P2J-c 前 harmony fail-closed）用转录 harm 驱动 instrumentation：
+         * 仅 instrumentation 消费面 4 字段（secIdx/startBeat/durationBeats/func），beat 整数断言 */
+        harmChords: harmonic.chordTimeline.map((cs) => [
+          sectionIds.indexOf(cs.sectionId),
+          asInt(cs.startBeat, 'harm.startBeat'), asInt(cs.durationBeats, 'harm.durationBeats'),
+          harmonic.chordFunctionTimeline[harmonic.chordTimeline.indexOf(cs)],
+        ]),
+      };
       if (fx.motifBypassCheck) {
         const out2 = buildMotifSongBundle(request as never);
         // 第二调用点：palette 由构建默认承载（bundle 内不传 palette）→ 与直调同 palette 前提下逐位。
         const proj2 = project(fx, out2.bundle.instrumentation,
           out2.bundle.arrangement.sections.map((s) => s.id), out2.bundle.arrangement.phrases.map((p) => p.id));
-        expect(JSON.stringify({ ...proj2, name: proj.name })).toBe(JSON.stringify(proj));
+        expect(JSON.stringify({ ...proj2, name: projBase.name })).toBe(JSON.stringify(projBase));
         stats.motif++;
       }
       stats.styles.add(band.style);
