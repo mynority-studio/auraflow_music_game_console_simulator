@@ -75,6 +75,8 @@ const FIXTURES: readonly Fx[] = [
   { name: 'jazz54_quartet_reject', styleHint: 'jazz', seed: 21, jazzArchetypeId: 'jazz_5_4_reference_quartet',
     why: '5/4 reference quartet（weight=0 仅显式可达——拒绝例, P2J-c）' },
   { name: 'pop_mod', styleHint: 'pop', seed: 73, allowModulation: true, why: 'allowModulation 开（modulation 域探针例）' },
+  { name: 'pop_cand6', styleHint: 'pop', seed: 4, why: '候选 #6 胜出例（C 双变体 1000 组扫描定位——候选拓扑判别, 5/6 候选可分）' },
+  { name: 'jazz_cand6', styleHint: 'jazz', seed: 12, why: '候选 #6 胜出例（jazz 侧同上）' },
   { name: 'jazz_mod', styleHint: 'jazz', seed: 88, allowModulation: true, why: 'allowModulation 开（jazz 侧）' },
 ];
 
