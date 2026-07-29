@@ -76,6 +76,8 @@ const FIXTURES: readonly Fx[] = [
     why: '5/4 reference quartet（weight=0 仅显式可达——拒绝例, P2J-c）' },
   { name: 'pop_mod', styleHint: 'pop', seed: 73, allowModulation: true, why: 'allowModulation 开（modulation 域探针例）' },
   { name: 'pop_cand6', styleHint: 'pop', seed: 4, why: '候选 #6 胜出例（C 双变体 1000 组扫描定位——候选拓扑判别, 5/6 候选可分）' },
+  { name: 'rnb_weight', styleHint: 'rnb', seed: 13, why: '权重判别例（0.75/0.25 vs 0.7/0.3 择优翻转——C 双变体扫描定位）' },
+  { name: 'pop_weight', styleHint: 'pop', seed: 24, why: '权重判别例（pop 侧同上）' },
   { name: 'jazz_cand6', styleHint: 'jazz', seed: 12, why: '候选 #6 胜出例（jazz 侧同上）' },
   { name: 'jazz_mod', styleHint: 'jazz', seed: 88, allowModulation: true, why: 'allowModulation 开（jazz 侧）' },
 ];
