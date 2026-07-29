@@ -39,8 +39,10 @@ import type { BandSpec, InstrumentRoleName } from '../src/core/generation/newEng
 import type { ArrangementPlan } from '../src/core/generation/newEngine/arranger/ArrangementPlan';
 import type { JazzArrangementArchetypeId } from '../src/core/generation/newEngine/arranger/jazzArchetypePlanner';
 import type { FormTemplate } from '../src/core/generation/newEngine/arranger/formPlanner';
+import type { AcgPianoArrangementProfileId } from '../src/core/generation/newEngine/arranger/acgPianoArrangementProfiles';
+import { beatsPerBarOf } from '../src/core/generation/newEngine/arranger/phraseTiming';
 
-const SCHEMA_VERSION = 'arrangement_golden_v1';
+const SCHEMA_VERSION = 'arrangement_golden_v2';
 const ENGINE_BASE_COMMIT = 'fb33e9eaa74cee6a1c882b3d710391e969e0462e'; // Newengine_Demo-v5.0 规格锚（非工装 pin）
 const SPEC_ANCHOR = 'Newengine_Demo-v5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -79,24 +81,33 @@ interface FixtureSpec {
   targetDuration?: number;
   jazzArchetypeId?: JazzArrangementArchetypeId;
   template?: FormTemplate;
-  /** P2-5d：ACG 语料例 —— TS 侧正常产 plan，但 C 侧曲式 owner=P2-11 未落地 ⇒
-   *  golden 只承载输入 + 期望错误码（AFE_ARR_ERR_ACG_FORM_UNSUPPORTED），不承载 plan。 */
-  expectAcgFailClosed?: boolean;
+  /** P2-11 步0：ACG 显式 profile（零抽路径，对锁 arranger.ts:66-70）。 */
+  acgPianoArrangementProfileId?: AcgPianoArrangementProfileId;
+  /** P2-11 步0：期望的 normalized bars——经 probe 取该 seed 实际 tempo/meter 换算成
+   *  targetDuration 秒（time 子流与 duration 无关，同 seed 恒同 tempo），golden 记录的
+   *  仍是生产形态的秒数。仅 ACG 定向 fixtures 使用。 */
+  acgTargetBars?: number;
   /** 该 fixture 存在的理由（判别力：它能抓住哪一类错误实现）。 */
   why: string;
 }
 
 /** 逐 fixture 用生产链构造 band + plan。band 只贡献 lineup 与 style，不入对账面。 */
-function runFixture(f: FixtureSpec): { band: BandSpec; plan: ArrangementPlan } {
+function runFixture(f: FixtureSpec): { band: BandSpec; plan: ArrangementPlan; targetDuration: number | undefined } {
   const band = buildBandSpec({ seed: f.seed, styleHint: f.styleHint } as never);
+  let targetDuration = f.targetDuration;
+  if (f.acgTargetBars !== undefined) {
+    const probe = buildArrangementPlan(band, { rng: createRandomContext(f.seed) });
+    targetDuration = f.acgTargetBars * 60 * beatsPerBarOf(probe.meter) / probe.tempoBpm;
+  }
   const plan = buildArrangementPlan(band, {
     rng: createRandomContext(f.seed),
     mood: f.mood,
-    targetDuration: f.targetDuration,
+    targetDuration,
     jazzArchetypeId: f.jazzArchetypeId,
+    acgPianoArrangementProfileId: f.acgPianoArrangementProfileId,
     template: f.template,
   });
-  return { band, plan };
+  return { band, plan, targetDuration };
 }
 
 /** 把 plan 投影成 golden case 的 expected 面（枚举全部保留 TS 字面量）。 */
@@ -379,11 +390,54 @@ const FIXTURES: readonly FixtureSpec[] = [
     why: '容量紧界：8 段 = AFE_ARR_MAX_SECTIONS' },
   { name: 'template_on_jazz', styleHint: 'jazz', seed: 1, template: 'verse-chorus',
     why: '显式 template 优先于程序化分支，且 jazz archetype 仍生效（合同/resolved 不受 template 影响）' },
+
+  // ---- P2-11 步0：ACG 程序化曲式定向 fixtures（设计 §4 分支矩阵冻结）----
+  { name: 'acg_short12_motif', styleHint: 'acg', seed: 21, acgTargetBars: 12, acgPianoArrangementProfileId: 'motif-first',
+    why: 'short 无 intro（norm 12 < 16）；非 ripple profile——E1-short：coda 必须是 pianoCoda 而非派生列' },
+  { name: 'acg_short16_descending', styleHint: 'acg', seed: 22, acgTargetBars: 16, acgPianoArrangementProfileId: 'descending-memory',
+    why: 'short intro 阈值 >=16 边界；非 ripple' },
+  { name: 'acg_med28_motif', styleHint: 'acg', seed: 23, acgTargetBars: 28, acgPianoArrangementProfileId: 'motif-first',
+    why: 'medium transition=0：lift 条件段缺席' },
+  { name: 'acg_med28_wide', styleHint: 'acg', seed: 24, acgTargetBars: 28, acgPianoArrangementProfileId: 'wide-cinema',
+    why: 'medium transition=0：序列首 prelude 条件段缺席' },
+  { name: 'acg_med32_dialogue', styleHint: 'acg', seed: 25, acgTargetBars: 32, acgPianoArrangementProfileId: 'dialogue-breath',
+    why: 'medium transition=4：breath 插在 themeA 后（五序列互异之一）' },
+  { name: 'acg_med32_descending', styleHint: 'acg', seed: 26, acgTargetBars: 32, acgPianoArrangementProfileId: 'descending-memory',
+    why: 'medium transition=4：reflection 插位 + minorIvHold linkOut' },
+  { name: 'acg_med32_ripple', styleHint: 'acg', seed: 27, acgTargetBars: 32, acgPianoArrangementProfileId: 'ripple-journey',
+    why: 'medium transition=4：intro 插在序列首' },
+  { name: 'acg_c20_dialogue', styleHint: 'acg', seed: 28, acgTargetBars: 20, acgPianoArrangementProfileId: 'dialogue-breath',
+    why: 'dialogue compact（<24 网格上唯一可达点 20）：ext 全给 callIntro' },
+  { name: 'acg_f24_dialogue', styleHint: 'acg', seed: 29, acgTargetBars: 24, acgPianoArrangementProfileId: 'dialogue-breath',
+    why: 'dialogue full 下边界 24：breath 段出现' },
+  { name: 'acg_c20_ripple', styleHint: 'acg', seed: 30, acgTargetBars: 20, acgPianoArrangementProfileId: 'ripple-journey',
+    why: 'ripple compact 20：intro 吸收 ext（与 full 序列差）' },
+  { name: 'acg_f24_ripple', styleHint: 'acg', seed: 31, acgTargetBars: 24, acgPianoArrangementProfileId: 'ripple-journey',
+    why: 'ripple full 下边界 24：pianoLift 出现' },
+  { name: 'acg_c24_wide', styleHint: 'acg', seed: 32, acgTargetBars: 24, acgPianoArrangementProfileId: 'wide-cinema',
+    why: 'wide compact 上边界 24（<32；28/32 被 medium 截走）——统一 <24 判 compact 的错误实现在此转红' },
+  { name: 'acg_f36_wide', styleHint: 'acg', seed: 33, acgTargetBars: 36, acgPianoArrangementProfileId: 'wide-cinema',
+    why: 'wide 首个 full 36：prelude 8+ext 与 wideLift 8' },
+  { name: 'acg_c24_descending', styleHint: 'acg', seed: 34, acgTargetBars: 24, acgPianoArrangementProfileId: 'descending-memory',
+    why: 'descending compact 上边界 24（<28）' },
+  { name: 'acg_f36_descending', styleHint: 'acg', seed: 35, acgTargetBars: 36, acgPianoArrangementProfileId: 'descending-memory',
+    why: 'descending 首个 full 36：lift 段出现（7 段最大序列）' },
+  { name: 'acg_f20_motif', styleHint: 'acg', seed: 36, acgTargetBars: 20, acgPianoArrangementProfileId: 'motif-first',
+    why: 'motif 无 compact：20 也走 full（theme 下钳 4 + lift 4）' },
+  { name: 'acg_h84_motif', styleHint: 'acg', seed: 37, acgTargetBars: 84, acgPianoArrangementProfileId: 'motif-first',
+    why: '84 高值：theme clamp 24 + ext 4（fixed 8 组）' },
+  { name: 'acg_h84_ripple', styleHint: 'acg', seed: 38, acgTargetBars: 84, acgPianoArrangementProfileId: 'ripple-journey',
+    why: '84 高值：theme 24 + ext 0（fixed 12 组）' },
+  { name: 'acg_h84_wide', styleHint: 'acg', seed: 39, acgTargetBars: 84, acgPianoArrangementProfileId: 'wide-cinema',
+    why: '84 高值：theme 20 + ext 4——「全部 clamp 24」的错误实现在此转红' },
+  { name: 'acg_h84_descending', styleHint: 'acg', seed: 40, acgTargetBars: 84, acgPianoArrangementProfileId: 'descending-memory',
+    why: '84 高值：theme 20 + ext 8（fixed 16 组）' },
+  { name: 'acg_nodur_rngprofile', styleHint: 'acg', seed: 41,
+    why: '无 targetDuration：theme=8/ext=0 默认路径 + RNG 抽 profile（arranger 子流首抽，对锁抽序）' },
 ];
 
 // ---- P2-5d：G4 固定语料集 12 例并入（参数机器读自 corpus_set_v5.json，不手抄）----
-//   2 个 ACG 例标 expectAcgFailClosed：TS 正常产 plan，C 侧曲式 owner=P2-11 ⇒
-//   golden 期望 = AFE_ARR_ERR_ACG_FORM_UNSUPPORTED（「12 例全过」= 10 例逐位 + 2 例正确拒绝）。
+//   P2-11 步0：2 个 ACG 例随曲式落地翻转为逐位对账（原 expectAcgFailClosed 退场）。
 const G4_CORPUS = JSON.parse(
   readFileSync(join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json'), 'utf8'),
 ) as { cases: Array<{ id: string; seed: number; styleHint: string; mood: string; targetDuration: number }> };
@@ -394,7 +448,6 @@ const CORPUS_FIXTURES: readonly FixtureSpec[] = G4_CORPUS.cases.map((c) => ({
   seed: c.seed,
   mood: c.mood,
   targetDuration: c.targetDuration,
-  expectAcgFailClosed: c.styleHint === 'acg' || undefined,
   why: `P2-5d G4 固定语料 ${c.id}（真实歌曲参数；手构造 fixture 可能恰好避开的组合）`,
 }));
 
@@ -405,29 +458,7 @@ describe('export-afe-arrangement', () => {
       .digest('hex');
 
     const cases = [...FIXTURES, ...CORPUS_FIXTURES].map((f) => {
-      const { band, plan } = runFixture(f);
-      if (f.expectAcgFailClosed) {
-        // ACG：C 侧 fail-closed（P2-11）。仍跑 TS 证明该例在生产域可产 plan（非坏例），
-        // 但 golden 只承载输入 + 期望错误码。
-        expect(plan.sections.length, `${f.name}: TS 侧须正常产 plan`).toBeGreaterThan(0);
-        return {
-          name: f.name,
-          why: f.why,
-          input: {
-            styleHint: f.styleHint,
-            bandStyle: band.style,
-            lineup: [...band.instrumentPool],
-            seed: f.seed,
-            mood: f.mood ?? null,
-            targetDuration: f.targetDuration ?? null,
-            targetDurationBits: f.targetDuration === undefined ? '0x0' : bits64(f.targetDuration),
-            jazzArchetypeId: f.jazzArchetypeId ?? null,
-            template: f.template ?? null,
-          },
-          expectAcgFailClosed: true,
-          expected: null,
-        };
-      }
+      const { band, plan, targetDuration } = runFixture(f);
       const expectedProj = projectPlan(band, plan);
 
       // ---- 容量 fail-closed（导出侧先拦，勿等 C 侧溢出）----
@@ -470,9 +501,10 @@ describe('export-afe-arrangement', () => {
           lineup: [...band.instrumentPool],
           seed: f.seed,
           mood: f.mood ?? null,
-          targetDuration: f.targetDuration ?? null,
-          targetDurationBits: f.targetDuration === undefined ? '0x0' : bits64(f.targetDuration),
+          targetDuration: targetDuration ?? null,
+          targetDurationBits: targetDuration === undefined ? '0x0' : bits64(targetDuration),
           jazzArchetypeId: f.jazzArchetypeId ?? null,
+          acgPianoArrangementProfileId: f.acgPianoArrangementProfileId ?? null,
           template: f.template ?? null,
         },
         expected: expectedProj,
@@ -647,7 +679,7 @@ describe('export-afe-arrangement', () => {
       withArchetype: planCases.filter((c) => c.expected.resolved !== null).length,
       withDuration: cases.filter((c) => c.input.targetDuration !== null).length,
       corpus: cases.filter((c) => c.name.startsWith('g4_')).length,
-      acgFailClosed: cases.filter((c) => (c as { expectAcgFailClosed?: boolean }).expectAcgFailClosed).length,
+      acg: cases.filter((c) => c.input.styleHint === 'acg').length,
       withTemplate: cases.filter((c) => c.input.template !== null).length,
     };
     expect(cover.styles.size, '覆盖 ≥5 个 band style').toBeGreaterThanOrEqual(5);
@@ -680,10 +712,10 @@ describe('export-afe-arrangement', () => {
           drumPerformance: '段序',
         },
         coverageGaps: [
-          '[延后·可达] ACG 程序化曲式：owner=P2-11（设计 §6-③，form.json 的 acg 行 countCandidates/'
-            + 'durBranches 皆空）。C 侧 afe_arr_plan_form 对 acg 返回 AFE_ARR_ERR_ACG_FORM_UNSUPPORTED，'
-            + '本 golden 的 2 个 ACG 语料例只承载**输入 + 期望错误码**（expectAcgFailClosed），'
-            + '不含 ACG plan 面；P2-11 落地后须补。',
+          '[已闭] ACG 程序化曲式（P2-11 步0，2026-07-29）：2 个语料例翻转逐位对账 + 21 条定向'
+            + ' fixtures 冻结分支矩阵（short 12/16 非 ripple / medium 28·32 五 profile 全命中 /'
+            + ' dialogue·ripple 20c·24f / wide·descending 24c·36f / 84 高值四组 (theme,ext) /'
+            + ' motif 无 compact / 无 duration 默认路径 + RNG profile 抽取）。',
           '[延后·可达] grooveScorePlan 的逐位对账：由 P2-4c 步3/步5 的独立 golden（afe_groove_score_golden / '
             + 'afe_fill_materialize_golden）承担。本靶只锁 arranger 传入后的**规模量与 role_rhythm 三槽**'
             + '（后者是 arranger 侧跨 id 空间桥接的产物，属本层责任）。',
