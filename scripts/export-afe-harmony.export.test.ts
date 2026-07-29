@@ -16,7 +16,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
-import { buildBandSpec } from '../src/core/generation/newEngine/band/bandEngine';
+import { buildBandSpec, withBandMode } from '../src/core/generation/newEngine/band/bandEngine';
 import { buildArrangementPlan } from '../src/core/generation/newEngine/arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../src/core/generation/newEngine/harmony/harmonyEngine';
 import { buildMotifSongBundle } from '../src/core/generation/newEngine/generation/generateSongFromMotif';
@@ -44,6 +44,7 @@ function assertJsonSafe(v: unknown, path: string): void {
 
 interface Fx {
   name: string; styleHint: string; seed: number; mood?: string; targetDuration?: number;
+  allowModulation?: boolean; jazzArchetypeId?: string;
   /** jazz 5/4 policy 例：C 侧期望拒绝（P2J-c），只承载输入。 */
   expectFiveFourRejected?: boolean;
   why: string;
@@ -69,6 +70,12 @@ const FIXTURES: readonly Fx[] = [
   { name: 'modal_b', styleHint: 'modal', seed: 66, why: 'modal 第二 seed' },
   { name: 'pop_c', styleHint: 'pop', seed: 17, why: 'pop 第三 seed（minor 命中备选）' },
   { name: 'jazz_c', styleHint: 'jazz', seed: 29, why: 'jazz 第三 seed（minor/曲式备选）' },
+  { name: 'jazz54_modern_reject', styleHint: 'jazz', seed: 21, jazzArchetypeId: 'jazz_5_4_modern_piano',
+    why: '5/4 modern piano（显式 id；weight=1 但自然域 320 组零命中——拒绝例, P2J-c）' },
+  { name: 'jazz54_quartet_reject', styleHint: 'jazz', seed: 21, jazzArchetypeId: 'jazz_5_4_reference_quartet',
+    why: '5/4 reference quartet（weight=0 仅显式可达——拒绝例, P2J-c）' },
+  { name: 'pop_mod', styleHint: 'pop', seed: 73, allowModulation: true, why: 'allowModulation 开（modulation 域探针例）' },
+  { name: 'jazz_mod', styleHint: 'jazz', seed: 88, allowModulation: true, why: 'allowModulation 开（jazz 侧）' },
 ];
 
 // G4 语料 12 例（参数机器读取, 不手抄）
@@ -82,14 +89,23 @@ const CORPUS: readonly Fx[] = G4.cases.map((c) => ({
 }));
 
 function run(f: Fx) {
-  const band = buildBandSpec({ seed: f.seed, styleHint: f.styleHint } as never);
+  const band = buildBandSpec({ seed: f.seed, styleHint: f.styleHint,
+    allowModulation: f.allowModulation } as never);
   const ctx = createRandomContext(f.seed);
   const arrangement = buildArrangementPlan(band, {
     rng: ctx, mood: f.mood, targetDuration: f.targetDuration,
+    jazzArchetypeId: f.jazzArchetypeId as never,
   });
-  const isFiveFour = arrangement.resolvedArchetype?.harmonyPolicyId === 'jazz-five-four-form-grammar';
-  const plan = buildHarmonicPlanFromArrangement(band, arrangement, ctx);
-  return { band, arrangement, isFiveFour, plan };
+  // ★ 生产序 seam（GenerationController/buildMotifSongBundle 同式, P2-5d 已在 C 落）：
+  //   request.mode 未显式给 + archetype 带 tonalityMode ⇒ withBandMode 后置一致化, 再进 harmony。
+  //   初版漏此 seam, 被 5/4 minor-only throw 当场暴露（jazz 例 band.mode 可能因此变）。
+  const authoredMode = arrangement.resolvedArchetype?.tonalityMode;
+  const bandFinal = authoredMode ? withBandMode(band, authoredMode) : band;
+  const isFiveFour = arrangement.sections.some((sec) =>
+    arrangement.resolvedArchetype?.sectionPolicyById[sec.id]?.harmonyPolicyId
+      === 'harmony.jazz-five-four-form-grammar.v1');   /* 判据=逐段 policy（compiler :40 同式, 设计 §5） */
+  const plan = buildHarmonicPlanFromArrangement(bandFinal, arrangement, ctx);
+  return { band: bandFinal, arrangement, isFiveFour, plan };
 }
 
 function projRoman(r: { degree: number; accidental: string; quality: string;
@@ -143,11 +159,13 @@ describe('export-afe-harmony', () => {
       const { band, arrangement, isFiveFour, plan } = run(f);
       const input = {
         styleHint: f.styleHint, seed: f.seed, mood: f.mood ?? null,
+        allowModulation: f.allowModulation ?? null, jazzArchetypeId: f.jazzArchetypeId ?? null,
         targetDuration: f.targetDuration ?? null,
         targetDurationBits: f.targetDuration === undefined ? '0x0' : bits64(f.targetDuration),
         bandStyle: band.style, bandMode: band.mode, bandKey: band.key,
-        harmonyPolicyId: arrangement.resolvedArchetype?.harmonyPolicyId ?? null,
+        fiveFourPolicyHit: false as boolean,  /* 由下方 isFiveFour 回填 */
       };
+      input.fiveFourPolicyHit = isFiveFour;
       if (isFiveFour) {
         expect(plan.chordTimeline.length, `${f.name}: 5/4 例 TS 侧仍须正常产 plan`).toBeGreaterThan(0);
         return { name: f.name, why: f.why, input, expectFiveFourRejected: true, expected: null };
@@ -184,6 +202,9 @@ describe('export-afe-harmony', () => {
     expect(cover.withBorrow, '≥3 例含借和弦').toBeGreaterThanOrEqual(3);
     expect(cover.modal, '≥2 modal 旁路').toBeGreaterThanOrEqual(2);
     expect(cover.tonicized, '≥2 例含离调').toBeGreaterThanOrEqual(2);
+    expect(cover.fiveFour, '5/4 拒绝例恰 2（双 archetype）').toBe(2);
+    // bassPc：当前 pin **零生产槽**（grep progressions.ts 无 slot 产 bassOffset, 仅接口字段+realizer
+    // 逻辑）⇒ 域不可达, 记账不伪造靶（withBassPc 预期 0; 一旦真源出现即计数变动提示补例）。
 
     const out = {
       meta: {
