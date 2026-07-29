@@ -26,7 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
-import { buildBandSpec } from '../src/core/generation/newEngine/band/bandEngine';
+import { buildBandSpec, withBandMode } from '../src/core/generation/newEngine/band/bandEngine';
 import { buildArrangementPlan } from '../src/core/generation/newEngine/arranger/arranger';
 import { createRandomContext } from '../src/core/generation/newEngine/foundation/randomContext';
 import {
@@ -79,6 +79,9 @@ interface FixtureSpec {
   targetDuration?: number;
   jazzArchetypeId?: JazzArrangementArchetypeId;
   template?: FormTemplate;
+  /** P2-5d：ACG 语料例 —— TS 侧正常产 plan，但 C 侧曲式 owner=P2-11 未落地 ⇒
+   *  golden 只承载输入 + 期望错误码（AFE_ARR_ERR_ACG_FORM_UNSUPPORTED），不承载 plan。 */
+  expectAcgFailClosed?: boolean;
   /** 该 fixture 存在的理由（判别力：它能抓住哪一类错误实现）。 */
   why: string;
 }
@@ -259,8 +262,32 @@ function projectPlan(band: BandSpec, plan: ArrangementPlan) {
     };
   });
 
+  // ---- P2-5d：withBandMode 后置一致化的期望面（controller 层 seam）----
+  //   对锁 GenerationController.ts:213-216：authoredMode 存在且 request.mode 缺省时
+  //   band = withBandMode(requestedBand, authoredMode)。本 exporter 的 request 恒不带 mode
+  //   ⇒ 期望 = authoredMode ? withBandMode 结果 : 原 band。导出改写后的 mode/tonality/scale。
+  const authoredMode = plan.resolvedArchetype?.tonalityMode ?? null;
+  const bandAfter = authoredMode ? withBandMode(band, authoredMode) : band;
+  const withMode = {
+    authoredMode,
+    applied: authoredMode !== null && bandAfter !== band,
+    // before 面（C 测试据此重建改写前的 band；modalModeName null = tonal）
+    before: {
+      key: band.key,
+      mode: band.mode,
+      tonalityKind: band.tonalityKind,
+      modalModeName: (band as { modalModeName?: string }).modalModeName ?? null,
+      primaryScale: [...band.primaryScale],
+    },
+    // after 面（期望输出）
+    mode: bandAfter.mode,
+    tonalityKind: bandAfter.tonalityKind,
+    primaryScale: [...bandAfter.primaryScale],
+  };
+
   const gsp = plan.grooveScorePlan;
   return {
+    withMode,
     nSections: plan.sections.length,
     sections,
     nPhrases: plan.phrases.length,
@@ -354,14 +381,53 @@ const FIXTURES: readonly FixtureSpec[] = [
     why: '显式 template 优先于程序化分支，且 jazz archetype 仍生效（合同/resolved 不受 template 影响）' },
 ];
 
+// ---- P2-5d：G4 固定语料集 12 例并入（参数机器读自 corpus_set_v5.json，不手抄）----
+//   2 个 ACG 例标 expectAcgFailClosed：TS 正常产 plan，C 侧曲式 owner=P2-11 ⇒
+//   golden 期望 = AFE_ARR_ERR_ACG_FORM_UNSUPPORTED（「12 例全过」= 10 例逐位 + 2 例正确拒绝）。
+const G4_CORPUS = JSON.parse(
+  readFileSync(join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json'), 'utf8'),
+) as { cases: Array<{ id: string; seed: number; styleHint: string; mood: string; targetDuration: number }> };
+
+const CORPUS_FIXTURES: readonly FixtureSpec[] = G4_CORPUS.cases.map((c) => ({
+  name: `g4_${c.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+  styleHint: c.styleHint,
+  seed: c.seed,
+  mood: c.mood,
+  targetDuration: c.targetDuration,
+  expectAcgFailClosed: c.styleHint === 'acg' || undefined,
+  why: `P2-5d G4 固定语料 ${c.id}（真实歌曲参数；手构造 fixture 可能恰好避开的组合）`,
+}));
+
 describe('export-afe-arrangement', () => {
   it('writes arrangement plan golden', () => {
     const exporterSha = createHash('sha256')
       .update(readFileSync(join(HERE, 'export-afe-arrangement.export.test.ts')))
       .digest('hex');
 
-    const cases = FIXTURES.map((f) => {
+    const cases = [...FIXTURES, ...CORPUS_FIXTURES].map((f) => {
       const { band, plan } = runFixture(f);
+      if (f.expectAcgFailClosed) {
+        // ACG：C 侧 fail-closed（P2-11）。仍跑 TS 证明该例在生产域可产 plan（非坏例），
+        // 但 golden 只承载输入 + 期望错误码。
+        expect(plan.sections.length, `${f.name}: TS 侧须正常产 plan`).toBeGreaterThan(0);
+        return {
+          name: f.name,
+          why: f.why,
+          input: {
+            styleHint: f.styleHint,
+            bandStyle: band.style,
+            lineup: [...band.instrumentPool],
+            seed: f.seed,
+            mood: f.mood ?? null,
+            targetDuration: f.targetDuration ?? null,
+            targetDurationBits: f.targetDuration === undefined ? '0x0' : bits64(f.targetDuration),
+            jazzArchetypeId: f.jazzArchetypeId ?? null,
+            template: f.template ?? null,
+          },
+          expectAcgFailClosed: true,
+          expected: null,
+        };
+      }
       const expectedProj = projectPlan(band, plan);
 
       // ---- 容量 fail-closed（导出侧先拦，勿等 C 侧溢出）----
@@ -414,6 +480,8 @@ describe('export-afe-arrangement', () => {
     });
 
     const byName = new Map(cases.map((c) => [c.name, c]));
+    // P2-5d：聚合断言只跑有 expected 的 case（ACG fail-closed 例只有输入面）
+    const planCases = cases.filter((c) => c.expected !== null) as Array<typeof cases[0] & { expected: NonNullable<typeof cases[0]['expected']> }>;
 
     // ============================================================
     // 判别力断言 —— 每条对应一种"只看形状看不出来"的错误实现
@@ -438,7 +506,7 @@ describe('export-afe-arrangement', () => {
     //    （本仓栽过：把"我构造不出"写成"不可表示"）。只数，不放死断言（D10）。
     {
       let silentReachable = 0;
-      for (const c of cases) {
+      for (const c of planCases) {
         if (!c.expected.resolved) continue;
         for (const p of c.expected.resolved.diagBySection)
           if (!p.activeRoles.includes('drum')) silentReachable++;
@@ -451,7 +519,7 @@ describe('export-afe-arrangement', () => {
     //     须 active=false 且 entryMode/densityBudget/continuity 等受保护字段归零。
     {
       let overridden = 0;
-      for (const c of cases) {
+      for (const c of planCases) {
         if (!c.expected.resolved) continue;
         const lineup = new Set(c.input.lineup);
         const n = c.expected.nSections;
@@ -482,7 +550,7 @@ describe('export-afe-arrangement', () => {
     }
 
     // ③ §4-C9-③ archetype 覆写：有 resolvedArchetype 时**所有** role 合同 fillPolicy 恒 none。
-    for (const c of cases) {
+    for (const c of planCases) {
       if (!c.expected.resolved) continue;
       const bad = (c.expected.roleContracts as Array<{ fillPolicy: string }>)
         .filter((rc) => rc.fillPolicy !== 'none');
@@ -502,7 +570,7 @@ describe('export-afe-arrangement', () => {
     }
 
     // ⑤ opening：不在 lineup 的 role 必须是 null（C 侧 0xFF），在 lineup 的必须有值。
-    for (const c of cases) {
+    for (const c of planCases) {
       const lineup = new Set(c.input.lineup);
       for (const [i, r] of ALL_ROLES.entries()) {
         const v = (c.expected.opening.roleDelayBars as (number | null)[])[i];
@@ -555,7 +623,7 @@ describe('export-afe-arrangement', () => {
     expect(byName.get('template_verse_chorus_bridge')!.expected.nSections, 'vcb 用满 8 段').toBe(8);
 
     // ⑪ 发射序合同：role 外层 × section 内层（§4-C2）
-    for (const c of cases) {
+    for (const c of planCases) {
       const rcs = c.expected.roleContracts as Array<{ role: string; sectionIndex: number }>;
       const n = c.expected.nSections;
       for (const [k, rc] of rcs.entries()) {
@@ -566,18 +634,20 @@ describe('export-afe-arrangement', () => {
 
     // ⑫ 覆盖面统计（机器计数，非手写）——**且逐项断言下界**，缺覆盖即红
     const cover = {
-      styles: new Set(cases.map((c) => c.expected.styleName)),
-      endings: new Set(cases.map((c) => c.expected.endingStyle)),
-      openingModes: new Set(cases.map((c) => c.expected.opening.mode)),
-      grooveKinds: new Set(cases.flatMap((c) => c.expected.sections.map((s) => s.grooveKind))),
-      functionTags: new Set(cases.flatMap((c) => c.expected.sections.map((s) => s.functionTag))),
-      entries: new Set(cases.flatMap((c) => c.expected.sections.map((s) => s.entry))),
-      continuities: new Set(cases.flatMap((c) =>
+      styles: new Set(planCases.map((c) => c.expected.styleName)),
+      endings: new Set(planCases.map((c) => c.expected.endingStyle)),
+      openingModes: new Set(planCases.map((c) => c.expected.opening.mode)),
+      grooveKinds: new Set(planCases.flatMap((c) => c.expected.sections.map((s) => s.grooveKind))),
+      functionTags: new Set(planCases.flatMap((c) => c.expected.sections.map((s) => s.functionTag))),
+      entries: new Set(planCases.flatMap((c) => c.expected.sections.map((s) => s.entry))),
+      continuities: new Set(planCases.flatMap((c) =>
         (c.expected.roleContracts as Array<{ continuity: string }>).map((r) => r.continuity))),
-      keyboardMotions: new Set(cases.flatMap((c) =>
+      keyboardMotions: new Set(planCases.flatMap((c) =>
         (c.expected.roleContracts as Array<{ keyboardMotion: string }>).map((r) => r.keyboardMotion))),
-      withArchetype: cases.filter((c) => c.expected.resolved !== null).length,
+      withArchetype: planCases.filter((c) => c.expected.resolved !== null).length,
       withDuration: cases.filter((c) => c.input.targetDuration !== null).length,
+      corpus: cases.filter((c) => c.name.startsWith('g4_')).length,
+      acgFailClosed: cases.filter((c) => (c as { expectAcgFailClosed?: boolean }).expectAcgFailClosed).length,
       withTemplate: cases.filter((c) => c.input.template !== null).length,
     };
     expect(cover.styles.size, '覆盖 ≥5 个 band style').toBeGreaterThanOrEqual(5);
@@ -612,7 +682,8 @@ describe('export-afe-arrangement', () => {
         coverageGaps: [
           '[延后·可达] ACG 程序化曲式：owner=P2-11（设计 §6-③，form.json 的 acg 行 countCandidates/'
             + 'durBranches 皆空）。C 侧 afe_arr_plan_form 对 acg 返回 AFE_ARR_ERR_ACG_FORM_UNSUPPORTED，'
-            + '本 golden 不含 ACG fixture；P2-11 落地后须补。',
+            + '本 golden 的 2 个 ACG 语料例只承载**输入 + 期望错误码**（expectAcgFailClosed），'
+            + '不含 ACG plan 面；P2-11 落地后须补。',
           '[延后·可达] grooveScorePlan 的逐位对账：由 P2-4c 步3/步5 的独立 golden（afe_groove_score_golden / '
             + 'afe_fill_materialize_golden）承担。本靶只锁 arranger 传入后的**规模量与 role_rhythm 三槽**'
             + '（后者是 arranger 侧跨 id 空间桥接的产物，属本层责任）。',
@@ -645,7 +716,7 @@ describe('export-afe-arrangement', () => {
 
     // 「foregroundRoleFor 末位兜底不可达」这条记账的**事实依据**：逐 fixture 实测 lineup
     // 恒含 lead/comp/bass 之一 ⇒ `activeRoles[0] ?? 'comp'` 分支取不到输入。
-    for (const c of cases) {
+    for (const c of planCases) {
       const lineup = new Set(c.input.lineup);
       expect(lineup.has('lead') || lineup.has('comp') || lineup.has('bass'),
         `${c.name}: 实测 lineup 含 lead/comp/bass 之一（末位兜底分支因此取不到输入）`)
