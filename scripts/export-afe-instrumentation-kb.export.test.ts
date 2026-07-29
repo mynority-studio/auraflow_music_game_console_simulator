@@ -20,7 +20,8 @@ import { createHash } from 'node:crypto';
 import {
   instrumentInfo, timbreSource, isPolyphonic, isSustainedInstrument, canPlayComp,
   isKeyboardFamily, isBassRoleProgram, preferredRegisterForRole, sameFamilyAlternates,
-  dream5504OrchestrationBank,
+  dream5504OrchestrationBank, enforceRoleFamilies,
+  type InstrumentFamily,
 } from '../src/core/generation/newEngine/knowledge/instruments';
 import {
   CHAIN_PROFILES, chooseOrchestrationChain, isHarshLead,
@@ -424,6 +425,27 @@ function buildOracles() {
       }
     }
   }
+  // enforceRoleFamilies 探针（P2-7 实现门 F1：忠实 FFRC 叶的 TS oracle；constraint 传递面归 P2-3c）
+  const FAMS: InstrumentFamily[] = ['keyboard', 'mallet', 'bass', 'pad', 'guitar', 'strings', 'wind', 'percussion', 'other'];
+  const enforceProbes: unknown[] = [];
+  const provCases = [
+    { lead: 0, comp: 0, bass: 32 }, { lead: 5, comp: 5, bass: 38 }, { lead: 66, comp: 0, bass: 32 },
+    { lead: 108, comp: 25, bass: 33 }, { lead: 25, comp: 4, bass: 39 }, { lead: 40, comp: 1, bass: 43 },
+  ];
+  for (const s2 of ALL_STYLES) {
+    for (const prov of provCases) {
+      for (const role of ['lead', 'comp', 'bass'] as const) {
+        for (const fam of FAMS) {
+          const rp = { lead: prov.lead, comp: prov.comp, bass: prov.bass, pad: 89, drum: 8 } as Record<InstrumentRoleName, number>;
+          const out2 = enforceRoleFamilies(rp, { [role]: [fam] } as never, s2);
+          enforceProbes.push([s2, prov.lead, prov.comp, prov.bass, role, fam,
+            out2.lead, out2.comp, out2.bass, out2.pad, out2.drum]);
+        }
+      }
+    }
+  }
+  if (enforceProbes.length !== 7 * 6 * 3 * 9) die('enforce 探针数漂移');
+
   // isAcousticPianoVoice 见证（bank0×PC{0,1,3} 域）
   const acousticPianoTrue = PROGRAMS.filter((p) => isAcousticPianoVoice(0, p));
   if (JSON.stringify(acousticPianoTrue) !== JSON.stringify([0, 1, 3])) die('isAcousticPianoVoice 域漂移');
@@ -440,7 +462,7 @@ function buildOracles() {
     const v = selectGMBK5X128Voice({ style: c.style, role: c.role, program: c.program, bank: c.bank });
     voiceProbes.push([c.role, c.program, c.bank ?? null, c.style ?? null, v.program, v.bank ?? null]);
   }
-  return { gestures, dreamMap, orchBank, alternates, voiceProbes };
+  return { gestures, dreamMap, orchBank, alternates, voiceProbes, enforceProbes };
 }
 
 // ---- 汇总 ----

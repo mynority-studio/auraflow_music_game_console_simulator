@@ -50,8 +50,19 @@ interface Fx {
   why: string;
 }
 
+// G4 corpus 12 例机器读取（冻结 §7.2：两 palette 侧 ×12；请求逐字段并入）
+import { readFileSync } from 'node:fs';
+const CORPUS = JSON.parse(readFileSync(join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json'), 'utf-8')) as {
+  cases: Array<{ id: string; seed: number; styleHint: string; mood?: string; targetDuration?: number }>;
+};
+if (CORPUS.cases.length !== 12) die(`G4 corpus ${CORPUS.cases.length} != 12`);
+const CORPUS_FIXTURES: readonly Fx[] = CORPUS.cases.map((c) => ({
+  name: `g4_${c.id}`, styleHint: c.styleHint, seed: c.seed, mood: c.mood,
+  targetDuration: c.targetDuration, why: 'G4 语料（设计 §7.2 冻结 12 例）',
+}));
+
 // 桶：判别力优先（设计 §7.2）。覆盖统计文末机器断言。
-const FIXTURES: readonly Fx[] = [
+const DIRECTED_FIXTURES: readonly Fx[] = [
   { name: 'pop_a', styleHint: 'pop', seed: 11, why: 'pop 基线（cityPop ensemble 分派+DARC 弧）' },
   { name: 'pop_b_dur', styleHint: 'pop', seed: 12, targetDuration: 95, why: 'pop + duration（段数变化→transition/ending）' },
   { name: 'rock_default', styleHint: 'rock', seed: 13, why: '未知 styleHint → default（legacy chain 路径+非 rich 风格跳过）' },
@@ -73,6 +84,7 @@ const FIXTURES: readonly Fx[] = [
   { name: 'pop_dur_long', styleHint: 'pop', seed: 14, targetDuration: 180, why: '多段（boundaries 满+fade 域）' },
   { name: 'lofi_dur_short', styleHint: 'lofi', seed: 36, targetDuration: 45, why: '短曲（无 intro→staged-first-bar 域）' },
 ];
+const FIXTURES: readonly Fx[] = [...CORPUS_FIXTURES, ...DIRECTED_FIXTURES];
 
 function projGesture(g: InstrumentationPlan['gestureExpressionByRole'][InstrumentRoleName]) {
   return {
@@ -251,6 +263,27 @@ describe(`export-afe-instrumentation (${SIDE})`, () => {
     if (SIDE === 'fm' && stats.richSwitch < 1) die('无 verse-variation 命中例');
     if (stats.resolved < 2) die('resolved archetype 例不足');
     if (stats.motif !== 2) die('motif 例 ≠ 2');
+    {
+      // override 旁路 sentinel（冻结 §7.2）：注入 harmony 须被产品入口原样采用（引用相等），
+      // 且 instrumentation 消费注入 plan（与直调同 plan 输入的 instrumentation 逐位一致）。
+      const sReq = { seed: 991, styleHint: 'pop' } as never;
+      const band0 = buildBandSpec({ seed: 991, styleHint: 'pop' } as never);
+      const ctx0 = createRandomContext(991);
+      const arr0 = buildArrangementPlan(band0, { rng: ctx0 });
+      const authored0 = arr0.resolvedArchetype?.tonalityMode;
+      const bandF = authored0 ? withBandMode(band0, authored0) : band0;
+      const sentinel = buildHarmonicPlanFromArrangement(bandF, arr0, ctx0);
+      const ov = buildMotifSongBundle(sReq, { harmony: sentinel });
+      if (ov.bundle.harmonic !== sentinel) die('override 旁路：注入 harmony 未被采用（builder 未旁路）');
+      const direct = buildInstrumentationPlan(ov.bundle.band, ov.bundle.arrangement,
+        createRandomContext(991).substream('timbre'), sentinel,
+        createRandomContext(991).substream('acgPianoVoice'), PALETTE);
+      const pj1 = project({ name: 'ovr', styleHint: 'pop', seed: 991, why: '' }, ov.bundle.instrumentation,
+        ov.bundle.arrangement.sections.map((x) => x.id), ov.bundle.arrangement.phrases.map((x) => x.id));
+      const pj2 = project({ name: 'ovr', styleHint: 'pop', seed: 991, why: '' }, direct,
+        ov.bundle.arrangement.sections.map((x) => x.id), ov.bundle.arrangement.phrases.map((x) => x.id));
+      if (JSON.stringify(pj1) !== JSON.stringify(pj2)) die('override 旁路：instrumentation 未消费注入 harmony 传导');
+    }
     const payload = { schema: SCHEMA_VERSION, palette: PALETTE, roleOrder: ROLES, cases };
     const json = JSON.stringify(payload, null, 1) + '\n';
     mkdirSync(dirname(OUT), { recursive: true });
