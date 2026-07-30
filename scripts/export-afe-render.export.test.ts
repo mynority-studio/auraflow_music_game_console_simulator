@@ -30,13 +30,20 @@ import {
 } from '../src/core/generation/newEngine/knowledge/grooveBassPatterns';
 
 // ---- 捕获槽（vi.hoisted：mock 工厂闭包在 import 提升前可见） ----
-const CAP = vi.hoisted(() => ({
-  sched: [] as Array<{ args: any; ret: any }>,
-  pad: [] as Array<{ args: any[]; ret: any }>,
-  bass: [] as Array<{ args: any[]; ret: any }>,
-  apply: [] as Array<{ args: any[]; ret: any }>,
-  accomp: [] as Array<{ args: any[]; ret: any }>,
-}));
+const CAP = vi.hoisted(() => {
+  // ★ 捕获点立即深拷贝 ret（notes 级）：coordinator 后段（swing/humanize/排序）会【就地】
+  //   改叶返回的同一数组——按引用捕获会在序列化时读到「站 31+ 之后」的序/值（首版实证：
+  //   comp 的 needsDownbeat 锚被稳定排序前移；pad/bass 因单调 tick 序恒等而假绿）。
+  const cloneTrack = (t: any) => ({ role: t.role, notes: t.notes.map((n: any) => ({ ...n })) });
+  return {
+    sched: [] as Array<{ args: any; ret: any }>,
+    pad: [] as Array<{ args: any[]; ret: any }>,
+    bass: [] as Array<{ args: any[]; ret: any }>,
+    apply: [] as Array<{ args: any[]; ret: any }>,
+    accomp: [] as Array<{ args: any[]; ret: any }>,
+    cloneTrack,
+  };
+});
 
 vi.mock('../src/core/generation/newEngine/render/textureSchedule', async (orig) => {
   const m = (await orig()) as any;
@@ -44,7 +51,7 @@ vi.mock('../src/core/generation/newEngine/render/textureSchedule', async (orig) 
     ...m,
     buildTextureSchedule: (args: any) => {
       const ret = m.buildTextureSchedule(args);
-      CAP.sched.push({ args, ret });
+      CAP.sched.push({ args, ret, snap: { ...ret } } as any);
       return ret;
     },
   };
@@ -55,7 +62,7 @@ vi.mock('../src/core/generation/newEngine/render/padRenderer', async (orig) => {
     ...m,
     renderPad: (...a: any[]) => {
       const ret = m.renderPad(...a);
-      CAP.pad.push({ args: a, ret });
+      CAP.pad.push({ args: a, ret, snap: CAP.cloneTrack(ret) } as any);
       return ret;
     },
   };
@@ -66,7 +73,7 @@ vi.mock('../src/core/generation/newEngine/render/bassRenderer', async (orig) => 
     ...m,
     renderBass: (...a: any[]) => {
       const ret = m.renderBass(...a);
-      CAP.bass.push({ args: a, ret });
+      CAP.bass.push({ args: a, ret, snap: CAP.cloneTrack(ret) } as any);
       return ret;
     },
   };
@@ -77,7 +84,7 @@ vi.mock('../src/core/generation/newEngine/render/bassPatternSchedule', async (or
     ...m,
     applyBassPatternSchedule: (...a: any[]) => {
       const ret = m.applyBassPatternSchedule(...a);
-      CAP.apply.push({ args: a, ret });
+      CAP.apply.push({ args: a, ret, snap: CAP.cloneTrack(ret) } as any);
       return ret;
     },
   };
@@ -88,7 +95,7 @@ vi.mock('../src/core/generation/newEngine/render/accompanimentRenderer', async (
     ...m,
     renderAccompaniment: (...a: any[]) => {
       const ret = m.renderAccompaniment(...a);
-      CAP.accomp.push({ args: a, ret });
+      CAP.accomp.push({ args: a, ret, snap: (ret as any[]).map(CAP.cloneTrack) } as any);
       return ret;
     },
   };
@@ -140,7 +147,7 @@ const projContract = (c: any) =>
 interface CaseRec { [k: string]: unknown }
 
 function runCase(seed: number, styleHint: string): CaseRec {
-  for (const k of Object.keys(CAP) as Array<keyof typeof CAP>) CAP[k].splice(0);
+  CAP.sched.splice(0); CAP.pad.splice(0); CAP.bass.splice(0); CAP.apply.splice(0); CAP.accomp.splice(0);
   const req = { seed, styleHint, mood: 'build', targetDuration: 90 } satisfies GenerationRequest;
   const bundle = buildSongBundle(req);
   expect(bundle.band.style.toLowerCase(), `${seed}/${styleHint}: 语料排除 ACG`).not.toBe('acg');
@@ -184,7 +191,7 @@ function runCase(seed: number, styleHint: string): CaseRec {
     return sw ? { atFraction: bits64(sw.atFraction), toTexture: sw.toTexture as string } : null;
   });
   const contractBySec = sections.map((s) => projContract(sa.grooveContractBySection?.[s.id]));
-  const schedule = plan.chordTimeline.map((s) => (sc.ret[s.id] ?? null) as string | null);
+  const schedule = plan.chordTimeline.map((s) => (((sc as any).snap)[s.id] ?? null) as string | null);
   expect(sa.acgBarFamilyBySpan, '非 ACG 无 family intent').toBeUndefined();
 
   // ---- chords（叶消费投影；enum 留 TS 字符串, gen 映射） ----
@@ -235,7 +242,7 @@ function runCase(seed: number, styleHint: string): CaseRec {
         : null,
       pedalAnchor: !!opts.pedalAnchor,
       tonicPc: (opts.tonicPc ?? null) as number | null,
-      notes: projNotes((CAP.pad[0].ret as TrackIR).notes),
+      notes: projNotes(((CAP.pad[0] as any).snap as TrackIR).notes),
     };
   }
 
@@ -259,12 +266,12 @@ function runCase(seed: number, styleHint: string): CaseRec {
     bass = {
       patternIdBySec,
       registerRange: reg ? { lo: reg.lowMidi as number, hi: reg.highMidi as number } : null,
-      raw: projNotes((CAP.bass[0].ret as TrackIR).notes),
+      raw: projNotes(((CAP.bass[0] as any).snap as TrackIR).notes),
       intentFamilies: (ap[3].sections as any[]).map(
         (x) => (x.bassPatternSchedule?.slots?.[0]?.family ?? null) as string | null,
       ),
       patternOwnedSecIdx: [...(ap[6] as Set<number>)].sort((x, y) => x - y),
-      scheduled: projNotes((CAP.apply[0].ret as TrackIR).notes),
+      scheduled: projNotes(((CAP.apply[0] as any).snap as TrackIR).notes),
     };
   }
 
@@ -314,8 +321,8 @@ function runCase(seed: number, styleHint: string): CaseRec {
       needsDownbeat: sections.map((s) => !!ctx.needsDownbeatCompAnchorBySection?.[s.id]),
       grooveComp,
       padOccupiedBySpan: padOcc,
-      notes: projNotes(((CAP.accomp[0].ret as TrackIR[])[0] ?? { notes: [] }).notes),
-      nTracks: (CAP.accomp[0].ret as TrackIR[]).length,
+      notes: projNotes((((CAP.accomp[0] as any).snap as TrackIR[])[0] ?? { notes: [] }).notes),
+      nTracks: ((CAP.accomp[0] as any).snap as TrackIR[]).length,
     };
     expect(accomp.nTracks, 'accomp 恒单 comp 轨').toBe(1);
   }
