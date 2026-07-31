@@ -16,6 +16,7 @@ import {
   type AcgPianoArrangementProfile,
   type AcgPianoArrangementProfileId,
 } from './acgPianoArrangementProfiles';
+import { ACG_PIANO_FORM_KNOWLEDGE } from '../knowledge/acgPianoArrangementKnowledge';
 
 export type FormTemplate = 'verse-chorus' | 'verse-chorus-bridge' | 'double-verse' | 'compact';
 
@@ -257,7 +258,13 @@ function assembleJazzFiveFourReferenceQuartet(): Section[] {
 // 隐藏总谱 profile：都保留 A/A′/return 的可辨识主题，但开场、发展位置和 coda
 // 不是同一条固定模板。profile 只在 Arranger 内使用，不增加 UI 风格。
 function acgIntro(id: string, bars: number): Section {
-  return { id, role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars, hookPolicy: 'none' };
+  // ACG piano intros are motif/hand-shape seeds, not duration absorbers.
+  // Overflow is assigned to a scored development or lift below.
+  const boundedBars = Math.min(
+    ACG_PIANO_FORM_KNOWLEDGE.maxIntroBars,
+    Math.max(0, bars),
+  );
+  return { id, role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: boundedBars, hookPolicy: 'none' };
 }
 
 function acgThemeA(bars: number): Section {
@@ -302,6 +309,36 @@ function allocateAcgThemeBars(requestedBars: number | undefined, fixedBars: numb
   return {
     themeBars,
     transitionExtensionBars: Math.max(0, requestedBars - fixedBars - themeBars * 3),
+  };
+}
+
+/**
+ * Ripple/wide forms share the same musical priority:
+ *   intro(≤4) + three equal themes + optional audible development + coda.
+ * The two edge sections are fixed at eight bars; the theme gets the largest
+ * equal 4-bar allocation first, and only the remaining 0/4/8 bars become a
+ * development. No remainder can flow back into the prelude.
+ */
+function allocateAcgThemeAndDevelopment(
+  requestedBars: number | undefined,
+  defaultDevelopmentBars = 4,
+): { themeBars: number; developmentBars: number } {
+  if (requestedBars === undefined) {
+    return {
+      themeBars: ACG_PIANO_FORM_KNOWLEDGE.preferredThemeStatementBars,
+      developmentBars: defaultDevelopmentBars,
+    };
+  }
+  const allocation = allocateAcgThemeBars(
+    requestedBars,
+    ACG_PIANO_FORM_KNOWLEDGE.defaultIntroBars + 4,
+  );
+  return {
+    themeBars: allocation.themeBars,
+    developmentBars: Math.min(
+      ACG_PIANO_FORM_KNOWLEDGE.maxDevelopmentBars,
+      allocation.transitionExtensionBars,
+    ),
   };
 }
 
@@ -393,8 +430,9 @@ function assembleDialogueBreathAcg(profile: AcgPianoArrangementProfile, requeste
   const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
   if (compact) {
     return [
-      acgIntro('pianoCallIntro', 4 + transitionExtensionBars),
+      acgIntro('pianoCallIntro', ACG_PIANO_FORM_KNOWLEDGE.defaultIntroBars),
       acgThemeA(themeBars),
+      ...(transitionExtensionBars > 0 ? [acgBreath('pianoBreath', transitionExtensionBars)] : []),
       acgThemeA2(themeBars),
       acgThemeReturn(themeBars),
       acgCoda(profile.codaStrategy === 'sigh-tag' ? 'pianoSighCoda' : 'pianoCoda', 4),
@@ -411,46 +449,24 @@ function assembleDialogueBreathAcg(profile: AcgPianoArrangementProfile, requeste
 }
 
 function assembleRippleJourneyAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
-  const compact = requestedBars !== undefined && requestedBars < 24;
-  const fixedBars = compact ? 8 : 12;
-  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
-  if (compact) {
-    return [
-      acgIntro('pianoIntro', 4 + transitionExtensionBars),
-      acgThemeA(themeBars),
-      acgThemeA2(themeBars),
-      acgThemeReturn(themeBars),
-      acgCoda('pianoCoda', 4),
-    ];
-  }
+  const { themeBars, developmentBars } = allocateAcgThemeAndDevelopment(requestedBars);
   return [
-    acgIntro('pianoIntro', 4),
+    acgIntro('pianoIntro', ACG_PIANO_FORM_KNOWLEDGE.defaultIntroBars),
     acgThemeA(themeBars),
     acgThemeA2(themeBars),
-    acgLift('pianoLift', 4 + transitionExtensionBars),
+    ...(developmentBars > 0 ? [acgLift('pianoLift', developmentBars)] : []),
     acgThemeReturn(themeBars),
     acgCoda(profile.codaStrategy === 'pedal-dissolve' ? 'pianoCoda' : 'pianoReleaseCoda', 4),
   ];
 }
 
 function assembleWideCinemaAcg(profile: AcgPianoArrangementProfile, requestedBars?: number): Section[] {
-  const compact = requestedBars !== undefined && requestedBars < 32;
-  const fixedBars = compact ? 8 : 20;
-  const { themeBars, transitionExtensionBars } = allocateAcgThemeBars(requestedBars, fixedBars);
-  if (compact) {
-    return [
-      acgIntro('pianoWidePrelude', 4 + transitionExtensionBars),
-      acgThemeA(themeBars),
-      acgThemeA2(themeBars),
-      acgThemeReturn(themeBars),
-      acgCoda(profile.codaStrategy === 'frame-arrival' ? 'pianoFrameCoda' : 'pianoCoda', 4),
-    ];
-  }
+  const { themeBars, developmentBars } = allocateAcgThemeAndDevelopment(requestedBars);
   return [
-    acgIntro('pianoWidePrelude', 8 + transitionExtensionBars),
+    acgIntro('pianoWidePrelude', ACG_PIANO_FORM_KNOWLEDGE.defaultIntroBars),
     acgThemeA(themeBars),
     acgThemeA2(themeBars),
-    acgLift('pianoWideLift', 8),
+    ...(developmentBars > 0 ? [acgLift('pianoWideLift', developmentBars)] : []),
     acgThemeReturn(themeBars),
     acgCoda(profile.codaStrategy === 'frame-arrival' ? 'pianoFrameCoda' : 'pianoCoda', 4),
   ];

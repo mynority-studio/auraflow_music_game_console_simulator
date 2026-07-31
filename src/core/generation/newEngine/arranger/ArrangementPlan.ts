@@ -32,6 +32,12 @@ import type { ResolvedArrangementArchetypePlan } from './arrangementArchetypeCon
 import type { JazzFiveFourHarmonicDirective } from './jazzFiveFourHarmonyScore';
 import type { LeadPhraseDirective } from './jazzFiveFourLeadScore';
 import type { JazzFiveFourEnsembleScore } from './jazzFiveFourEnsembleScore';
+import type { LofiFoundationPlan } from './lofiFoundationPlanner';
+import type {
+  LofiLeadPhraseBlueprint,
+  LofiLeadPhraseRole as LofiLeadPhraseRoleKnowledge,
+} from '../knowledge/lofiLeadPhraseBlueprints';
+import type { LofiLeadRoadMapPlan } from '../knowledge/lofiLeadRoadMapKnowledge';
 
 export type SectionId = string;
 export type PhraseId = string;
@@ -159,6 +165,7 @@ export type DrumPatternFamily =
   | 'tr808-lofi-boombap'
   | 'tr808-lofi-dusty-break'
   | 'tr808-lofi-minimal'
+  | 'tr808-lofi-soul-halftime'
   | 'rnb-neo-soul-pocket'
   | 'rnb-dilla-pocket'
   | 'rnb-gospel-triplet'
@@ -293,6 +300,22 @@ export interface GrooveBarScore {
   trajectory?: GrooveBarTrajectory;
   /** Materialized from the same GrooveContract; optional only for legacy fixtures. */
   drumInteraction?: GrooveDrumInteractionScore;
+  /** LOFI only: Arranger-selected, indivisible two-bar Hip Hop phrase. */
+  drumPhraseId?: string;
+  /** Position inside the selected two-bar phrase. */
+  drumPhraseBarIndex?: 0 | 1;
+  /** The phrase-level dramatic job; core masks repeat until an explicit cadence. */
+  drumPhraseRole?: 'core' | 'turnaround' | 'breakdown';
+  /** True only when Arranger authorizes a structural onset-mask mutation. */
+  structuralMutation?: boolean;
+  /** LOFI only: the shared phrase sentence projected into this groove bar. */
+  lofiPhraseInteraction?: LofiPhraseBarInteraction;
+  /** LOFI only: stable inter-instrument timing relationships for this song. */
+  lofiPocket?: LofiSystemicPocket;
+  /** LOFI only: independently selected four-bar upper-percussion identity. */
+  drumTopLoopId?: string;
+  /** Position inside the selected four-bar upper-percussion loop. */
+  drumTopLoopBarIndex?: 0 | 1 | 2 | 3;
 }
 
 /** A form boundary authored by Arranger from the selected GrooveContract vocabulary. */
@@ -333,6 +356,77 @@ export interface GrooveScorePlan {
   grooveContractId: string;
   bySection: Readonly<Record<SectionId, GrooveSectionScore>>;
   boundaries: readonly GrooveBoundaryScore[];
+}
+
+export interface LofiLeadSilenceWindow {
+  sectionId: SectionId;
+  startBarInSection: number;
+  endBarInSection: number;
+  startBeat: number;
+  endBeat: number;
+}
+
+/** Arranger-owned main-loop breathing plan, consumed before lead realization. */
+export interface LofiLeadPresencePlan {
+  activeBarsBySection: Readonly<Record<SectionId, readonly number[]>>;
+  silenceWindows: readonly LofiLeadSilenceWindow[];
+  /** One off-downbeat response entry for every Arranger-active bar. */
+  entryBeats: readonly number[];
+}
+
+export type LofiPhraseArcPhase = 'settle' | 'grow' | 'crest' | 'release';
+export type LofiLeadPhraseRole = LofiLeadPhraseRoleKnowledge;
+export type LofiCompPhraseRole = 'bed' | 'support' | 'answer';
+export type LofiBassPhraseRole = 'anchor' | 'lock' | 'release';
+export type LofiDrumPhraseInteractionRole = 'core' | 'answer' | 'settle';
+export type LofiTensionIntent = 'stable' | 'open' | 'build' | 'resolve';
+
+/**
+ * One Arranger-authored bar of LOFI ensemble syntax. Every role consumes this
+ * same decision; renderers may project it but may not infer another call /
+ * response plan from already-rendered notes.
+ */
+export interface LofiPhraseBarInteraction {
+  sectionId: SectionId;
+  barInSection: number;
+  absoluteBar: number;
+  phraseId?: string;
+  motifId?: string;
+  phraseBarIndex: number;
+  arcPhase: LofiPhraseArcPhase;
+  leadRole: LofiLeadPhraseRole;
+  compRole: LofiCompPhraseRole;
+  /**
+   * Arranger-authored late entry for a Comp answer, relative to its bar.
+   * Absent for support/bed bars; renderers must not infer a replacement from
+   * already-rendered Lead notes.
+   */
+  compAnswerEntryBeat?: number;
+  bassRole: LofiBassPhraseRole;
+  drumRole: LofiDrumPhraseInteractionRole;
+  tensionIntent: LofiTensionIntent;
+  velocityScaleByRole: Readonly<{
+    lead: number;
+    comp: number;
+    bass: number;
+    drum: number;
+  }>;
+}
+
+/** Stable relative pocket: anchors and relationships, not per-hit random drift. */
+export interface LofiSystemicPocket {
+  kickAnchorMs: 0;
+  kickOffbeatMs: number;
+  snareDragMs: number;
+  hatOnbeatMs: number;
+  hatOffbeatMs: number;
+}
+
+export interface LofiPhraseInteractionPlan {
+  phraseBars: number;
+  bars: readonly LofiPhraseBarInteraction[];
+  bySection: Readonly<Record<SectionId, readonly LofiPhraseBarInteraction[]>>;
+  pocket: Readonly<LofiSystemicPocket>;
 }
 
 export interface PhraseBreathing {
@@ -400,6 +494,19 @@ export interface ArrangementPlanData {
    * is deliberately not selected by any current product archetype.
    */
   jazzFiveFourEnsembleScore?: JazzFiveFourEnsembleScore;
+  /** LOFI only: one immutable, compatible musical foundation identity per song. */
+  lofiFoundationPlan?: LofiFoundationPlan;
+  /** LOFI only: song-level melodic carrier, presence sentence and motif cell. */
+  lofiLeadBlueprintPlan?: LofiLeadPhraseBlueprint;
+  /**
+   * LOFI only: Arranger-authored bar-by-bar Lead brick route. Harmony resolves
+   * its texture lanes; Render may not replace or re-select them.
+   */
+  lofiLeadRoadMapPlan?: LofiLeadRoadMapPlan;
+  /** LOFI only: intentional main-loop lead rests authored before MG scheduling. */
+  lofiLeadPresencePlan?: LofiLeadPresencePlan;
+  /** LOFI only: shared phrase arc, call/response, motif and pocket contract. */
+  lofiPhraseInteractionPlan?: LofiPhraseInteractionPlan;
   songGrooveContract: GrooveContract;
   songGrooveContractId: string;
   grooveContractBySection: Record<SectionId, GrooveContract>;

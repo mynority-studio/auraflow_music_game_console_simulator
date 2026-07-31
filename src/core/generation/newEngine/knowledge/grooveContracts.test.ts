@@ -27,9 +27,9 @@ describe('knowledge/grooveContracts(MG 升级 Phase 1)', () => {
 
   it('locks the production GrooveContract and concrete base-drum inventory by style', () => {
     const expected = {
-      POP: { contracts: 4, families: 5, patterns: 15 },
-      LOFI: { contracts: 3, families: 3, patterns: 9 },
-      RNB: { contracts: 5, families: 5, patterns: 15 },
+      POP: { contracts: 4, families: 5, patterns: 18 },
+      LOFI: { contracts: 5, families: 4, patterns: 11 },
+      RNB: { contracts: 5, families: 5, patterns: 17 },
       JAZZ: { contracts: 1, families: 3, patterns: 8 },
     } as const;
 

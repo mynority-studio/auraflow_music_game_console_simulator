@@ -34,17 +34,27 @@ describe('render/acgPianoScoreExecution · arranger score is the timing owner', 
       harmonicTarget: 'current', role: 'underlay',
     }]), VOICING, undefined, 4);
     expect(hits.map((hit) => hit.midis[0])).toEqual(VOICING);
-    hits.forEach((hit, index) => expect(hit.tRel).toBeCloseTo(0.25 + index * 0.08, 8));
+    hits.forEach((hit, index) => expect(hit.tRel).toBeCloseTo(0.25 + index * 0.05, 8));
+    expect(hits.at(-1)!.tRel - hits[0]!.tRel).toBeCloseTo(0.15, 8);
   });
 
-  it('realizes an authored roll-down in strictly descending pitch and score step order', () => {
-    const hits = realizeAcgPianoScoreCompEvents(directive([{
-      id: 'down', gesture: 'rolled-block', atBeat: 0.5, durationBeats: 1.2,
-      voices: 'all', attack: 'roll-down', velocity: 0.3,
-      harmonicTarget: 'current', role: 'answer',
-    }]), VOICING, undefined, 4);
-    expect(hits.map((hit) => hit.midis[0])).toEqual([...VOICING].reverse());
-    hits.forEach((hit, index) => expect(hit.tRel).toBeCloseTo(0.5 + index * 0.08, 8));
+  it('caps complete roll spread at 0.15 beat for 2/3/4 voices without expanding a smaller authored step', () => {
+    for (const voicing of [
+      [48, 55],
+      [48, 52, 55],
+      [48, 52, 55, 59],
+    ]) {
+      const hits = realizeAcgPianoScoreCompEvents(directive([{
+        id: `down-${voicing.length}`, gesture: 'rolled-block', atBeat: 0.5, durationBeats: 1.2,
+        voices: 'all', attack: 'roll-down', velocity: 0.3,
+        harmonicTarget: 'current', role: 'answer',
+      }]), voicing, undefined, 4);
+      const expectedStep = Math.min(0.08, 0.15 / (voicing.length - 1));
+      expect(hits.map((hit) => hit.midis[0])).toEqual([...voicing].reverse());
+      hits.forEach((hit, index) =>
+        expect(hit.tRel).toBeCloseTo(0.5 + index * expectedStep, 8));
+      expect(hits.at(-1)!.tRel - hits[0]!.tRel).toBeLessThanOrEqual(0.15 + 1e-8);
+    }
   });
 
   it('executes the production planner’s arp-down as a strict descent for 2/3/4 voice chords', () => {

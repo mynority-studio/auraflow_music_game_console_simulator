@@ -140,6 +140,7 @@ function isMalletLeadProgram(program: number | undefined): boolean {
 }
 
 function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix, style: string): TrackMix {
+  if ((style ?? '').toLowerCase() === 'lofi') return { ...mix };
   if (isDream5504DryBaselineStyle(style)) {
     return {
       ...mix,

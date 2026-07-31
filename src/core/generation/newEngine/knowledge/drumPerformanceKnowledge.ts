@@ -2,6 +2,8 @@ import type { GrooveContract, GroovePhraseBarRole, GrooveStyleName } from './gro
 
 export type DrumFeelProfileId =
   | 'pop-tight-backbeat'
+  | 'pop-live-lounge'
+  | 'pop-ballad-soft'
   | 'pop-driving-rock'
   | 'rnb-laidback-pocket'
   | 'rnb-dilla-voices'
@@ -17,7 +19,13 @@ export type DrumKnowledgeSourceId =
   | 'ableton-grooves'
   | 'drumeo-rock'
   | 'drumeo-fills'
+  | 'pgmusic-pop-ballad'
+  | 'mystic-pop-ballad'
   | 'musicradar-midi-drums'
+  | 'toontrack-ghost-notes'
+  | 'native-instruments-drum-patterns'
+  | 'rhythmnotes-drum-styles'
+  | 'drumstheword-sixteenths'
   | 'roland-tr808'
   | 'sixty-must-know-fills';
 
@@ -66,10 +74,46 @@ export const DRUM_KNOWLEDGE_SOURCES: readonly DrumKnowledgeSource[] = [
     supports: ['one-beat, half-bar and full-bar fill durations', 'crescendo builds', 'crash landing on the next downbeat'],
   },
   {
+    id: 'pgmusic-pop-ballad',
+    title: 'Country / Pop Ballad Drums',
+    url: 'https://www.pgmusic.com/forums/ubbthreads.php?Number=705962&ubb=showflat',
+    supports: ['soft brush 16ths', 'side-stick verse accents', 'simple pop ballad drum parts'],
+  },
+  {
+    id: 'mystic-pop-ballad',
+    title: 'Creating Catchy Pop Drum Patterns',
+    url: 'https://mysticalankar.com/blogs/blog/rhythm-makers-crafting-irresistible-pop-drum-patterns',
+    supports: ['slower emotional songs use softer dynamics', 'minimal kick and soft snare', 'fewer drum elements'],
+  },
+  {
     id: 'musicradar-midi-drums',
     title: 'How to program MIDI drums that sound like the real thing',
     url: 'https://www.musicradar.com/tutorials/music-production-tutorials/midi-drums-program-drum-week',
     supports: ['two-hand physical limit', 'subtle timing', 'accent/ghost contrast', 'fill stroke decay', 'multisample requirement'],
+  },
+  {
+    id: 'toontrack-ghost-notes',
+    title: 'How to program drums',
+    url: 'https://www.toontrack.com/blog/how-to-program-drums/',
+    supports: ['ghost notes live in low velocity bands', 'programmed drums need accent and ghost contrast'],
+  },
+  {
+    id: 'native-instruments-drum-patterns',
+    title: '7 drum patterns every producer should know',
+    url: 'https://blog.native-instruments.com/drum-patterns/',
+    supports: ['popular music uses a small vocabulary of reusable drum feels', 'house and funk patterns inform pop programming'],
+  },
+  {
+    id: 'rhythmnotes-drum-styles',
+    title: 'Drumming Styles - 28 Beats Every Drummer Should Know',
+    url: 'https://rhythmnotes.net/drumming-styles/',
+    supports: ['pop rock variations depend on subtle kick changes', 'disco uses four-on-floor with upbeat hats', 'bossa and bolero provide lighter lounge/pop ballad adaptations'],
+  },
+  {
+    id: 'drumstheword-sixteenths',
+    title: 'Sixteenth Note Hi-Hat: Syncopated Upbeat Sixteenths',
+    url: 'https://www.drumstheword.com/free-drum-lesson-intermediate-lesson-7-sixteenth-note-hi-hat-single-double-handed-syncopated-upbeat/',
+    supports: ['upbeat sixteenth notes between kick and snare create funkier syncopation', 'sixteenth hats need coordination with kick and snare patterns'],
   },
   {
     id: 'roland-tr808',
@@ -167,6 +211,52 @@ export const DRUM_FEEL_PROFILES: Readonly<Record<DrumFeelProfileId, DrumFeelProf
       openHatRoles: ['lift', 'turnaround'], allowInternalTurnaround: true, fillCadenceBars: [8, 16],
     },
     physical: physical(),
+  },
+  'pop-live-lounge': {
+    id: 'pop-live-lounge', style: 'POP',
+    evidence: [
+      'google-gmd',
+      'google-groovae',
+      'musicradar-midi-drums',
+      'toontrack-ghost-notes',
+      'native-instruments-drum-patterns',
+      'rhythmnotes-drum-styles',
+      'drumstheword-sixteenths',
+    ],
+    velocity: {
+      kickAnchor: { min: 88, max: 108 }, kickResponse: { min: 56, max: 84 },
+      snareAccent: { min: 82, max: 104 }, snareGhost: { min: 22, max: 44 },
+      timekeeperAccent: { min: 42, max: 62 }, timekeeperTap: { min: 24, max: 44 },
+      tomFill: { min: 58, max: 92 }, crash: { min: 76, max: 98 },
+    },
+    timing: {
+      kickAnchorMs: 0, kickOffbeatMs: -2, snareAccentMs: 5, snareGhostMs: 3,
+      timekeeperOnbeatMs: 1, timekeeperOffbeatMs: 4, phraseDriftMs: [0, 1, 0, 1.5], maxAbsoluteMs: 13,
+    },
+    phrase: {
+      velocityContour: [0.96, 0.99, 1.01, 1.03], ghostRoles: ['answer', 'lift', 'turnaround'],
+      openHatRoles: ['lift', 'turnaround'], allowInternalTurnaround: true, fillCadenceBars: [8, 16],
+    },
+    physical: physical('alternating', 'left'),
+  },
+  'pop-ballad-soft': {
+    id: 'pop-ballad-soft', style: 'POP',
+    evidence: ['google-gmd', 'google-groovae', 'ableton-grooves', 'pgmusic-pop-ballad', 'mystic-pop-ballad'],
+    velocity: {
+      kickAnchor: { min: 62, max: 84 }, kickResponse: { min: 44, max: 66 },
+      snareAccent: { min: 54, max: 72 }, snareGhost: { min: 18, max: 34 },
+      timekeeperAccent: { min: 28, max: 46 }, timekeeperTap: { min: 18, max: 32 },
+      tomFill: { min: 38, max: 62 }, crash: { min: 52, max: 74 },
+    },
+    timing: {
+      kickAnchorMs: 1, kickOffbeatMs: 2, snareAccentMs: 6, snareGhostMs: 4,
+      timekeeperOnbeatMs: 2, timekeeperOffbeatMs: 5, phraseDriftMs: [0, 1, 0.5, 1.5], maxAbsoluteMs: 14,
+    },
+    phrase: {
+      velocityContour: [0.94, 0.97, 0.99, 1], ghostRoles: ['answer'],
+      openHatRoles: [], allowInternalTurnaround: false, fillCadenceBars: [8, 16],
+    },
+    physical: physical('alternating', 'alternating'),
   },
   'pop-driving-rock': {
     id: 'pop-driving-rock', style: 'POP',
@@ -304,18 +394,20 @@ export const DRUM_FEEL_PROFILES: Readonly<Record<DrumFeelProfileId, DrumFeelProf
 };
 
 const PROFILE_BY_CONTRACT_ID: Readonly<Record<string, DrumFeelProfileId>> = {
-  pop_radio_straight: 'pop-tight-backbeat',
+  pop_radio_straight: 'pop-live-lounge',
   pop_citypop_boogie: 'pop-driving-rock',
-  pop_jpop_push_8ths: 'pop-driving-rock',
-  pop_ballad_halftime: 'pop-tight-backbeat',
+  pop_jpop_push_8ths: 'pop-live-lounge',
+  pop_ballad_halftime: 'pop-ballad-soft',
   rnb_neo_soul_laidback: 'rnb-laidback-pocket',
   rnb_dilla_pocket: 'rnb-dilla-voices',
   rnb_gospel_triplet: 'rnb-laidback-pocket',
   rnb_motown_backbeat: 'pop-tight-backbeat',
   rnb_trap_soul_halftime: 'rnb-laidback-pocket',
   lofi_lazy_dilla: 'lofi-dusty-pocket',
+  lofi_soul_boombap: 'pop-tight-backbeat',
   lofi_tape_late_chords: 'lofi-dusty-pocket',
-  lofi_halftime_dusty: 'lofi-dusty-pocket',
+  lofi_halftime_dusty: 'rnb-laidback-pocket',
+  lofi_ambient_study: 'pop-tight-backbeat',
   jazz_combo_swing: 'jazz-swing-ride',
   jazz_medium_swing: 'jazz-swing-ride',
   jazz_smooth_backbeat: 'rnb-laidback-pocket',

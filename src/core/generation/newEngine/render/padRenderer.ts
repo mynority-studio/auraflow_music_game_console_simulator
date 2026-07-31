@@ -18,6 +18,7 @@
 import { beats, midi, mod12, ticks, type Timebase } from '../foundation';
 import type { HarmonicPlan, ChordSpan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
+import { minimumVoiceLeadingDistance } from '../instrumental/foundationVoiceLeading';
 import type { PadCompDecision } from './padCompPolicy';
 
 const PAD_LOW = 48;          // C3:给 3-4 声部留出开放排列空间；仍高于常规 bass 主体
@@ -35,6 +36,8 @@ export interface PadOptions {
   //   铺一条 anchor 长 pedal + 一条随和弦走的 guide tone；无共同音则回退逐和弦选音。
   pedalAnchor?: boolean;
   tonicPc?: number;
+  /** Sections in the same repeat group share voicing memory and may tie common tones. */
+  continuityGroupBySection?: Readonly<Record<string, string>>;
 }
 
 interface RolePcs { root?: number; third?: number; fifth?: number; seventh?: number }
@@ -156,12 +159,12 @@ function padVoicingCost(midis: readonly number[], previous: readonly number[] | 
   for (const pitch of sorted) if (pitch < 52) cost += (52 - pitch) * 0.7;
 
   if (previous?.length) {
-    for (const pitch of sorted) {
-      const nearest = Math.min(...previous.map((prev) => Math.abs(pitch - prev)));
-      cost += nearest * 1.8;
-      if (previous.includes(pitch)) cost -= 7;
-    }
-    for (const prev of previous) cost += Math.min(...sorted.map((pitch) => Math.abs(pitch - prev))) * 0.55;
+    // Use a real one-to-one voice assignment.  The former two-sided nearest
+    // heuristic allowed several new voices to "reuse" one previous voice,
+    // understating jumps and producing locally smooth but globally crossed
+    // connections.
+    cost += minimumVoiceLeadingDistance(previous, sorted, 5) * 2.35;
+    for (const pitch of sorted) if (previous.includes(pitch)) cost -= 7;
     cost += Math.abs(sorted[sorted.length - 1] - previous[previous.length - 1]) * 0.7;
   }
   return cost;
@@ -218,7 +221,14 @@ function innerLineMidis(
 }
 
 /** cluster-mist:锚一个 chord/color 音 + 其上方相邻 chordScale 音(二度簇),高区、紧排、≤2。 */
-function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: number, high: number): number[] {
+function clusterMidis(
+  span: ChordSpan,
+  plan: HarmonicPlan,
+  roles: RolePcs,
+  previous: readonly number[] | undefined,
+  low: number,
+  high: number,
+): number[] {
   const scale = (plan.chordScaleMap[span.id] ?? plan.stableToneMap[span.id] ?? []) as readonly number[];
   const avoid = new Set<number>(plan.avoidNoteMap[span.id] ?? []);
   const anchorPc = roles.third ?? roles.seventh ?? scale[0];
@@ -229,12 +239,8 @@ function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: 
     const iv = mod12(pc - anchorPc);
     if (iv >= 1 && iv <= 2 && iv < bestIv && !avoid.has(pc)) { bestIv = iv; neighborPc = pc; }
   }
-  let anchorMidi = pcToMidiInRangeStrict(anchorPc, low, high);
-  if (anchorMidi === undefined) return [];
-  if (neighborPc === undefined) return [anchorMidi];
-  if (anchorMidi + bestIv > high && anchorMidi - 12 >= low) anchorMidi -= 12; // 腾出二度空间(留高区)
-  const neighborMidi = anchorMidi + bestIv;
-  return neighborMidi <= high ? [anchorMidi, neighborMidi].sort((a, b) => a - b) : [anchorMidi];
+  if (neighborPc === undefined) return placePadMidis([anchorPc], previous, low, high);
+  return placePadMidis([anchorPc, neighborPc], previous, low, high);
 }
 
 /** 每段所有和弦稳定音的【严格共同音】(有主音时优先主音);无共同音则返回 undefined。 */
@@ -269,17 +275,18 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
   const commonBySection = commonToneBySection(timeline, plan.stableToneMap, opts.tonicPc);
   let prevTop: number | undefined;       // inner-line 线条记忆
   let prevVoicing: number[] | undefined; // chord-bed/full-support 声部连接记忆
-  let prevSection: string | undefined;   // 段落边界 → 重置 prevTop(守 repeatGroup)
+  let prevContinuityGroup: string | undefined;
 
   // —— 第一遍:逐 span 算 pad voicing + 力度 + 是否 gated(inner-line 线条记忆在此推进)——
   const perSpan: SpanPad[] = [];
   for (let i = 0; i < timeline.length; i++) {
     const span = timeline[i];
     const dec = decisionBySection[span.sectionId];
-    if (span.sectionId !== prevSection) {
+    const continuityGroup = opts.continuityGroupBySection?.[span.sectionId] ?? span.sectionId;
+    if (continuityGroup !== prevContinuityGroup) {
       prevTop = undefined;
       prevVoicing = undefined;
-      prevSection = span.sectionId;
+      prevContinuityGroup = continuityGroup;
     }
     const startTick = timebase.beatToTick(span.startBeat) as number;
     const endTick = startTick + (timebase.beatToTick(span.durationBeats) as number);
@@ -301,7 +308,7 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
       midis = innerLineMidis(span, dec, plan, roles, prevTop, low, hi);
       if (midis.length) prevTop = midis[midis.length - 1];
     } else if (dec.padMode === 'cluster-mist') {
-      midis = clusterMidis(span, plan, roles, low, hi).slice(0, dec.padMaxVoices);
+      midis = clusterMidis(span, plan, roles, prevVoicing, low, hi).slice(0, dec.padMaxVoices);
     } else if (dec.padMode === 'drone') {
       // Drone 必须真的是整段共同音；否则休息，不能逐和弦跟着 3rd 平移。
       const commonPc = commonBySection[span.sectionId];
@@ -351,7 +358,13 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
         const runStart = perSpan[i].startTick;
         const vel = perSpan[i].vel; // run 取首 span 力度
         let j = i;
-        while (j + 1 < perSpan.length && perSpan[j + 1].startTick === perSpan[j].endTick && perSpan[j + 1].sectionId === perSpan[j].sectionId && has(j + 1)) j++; // ★ 段边界断开 tie:pad 每段重新起音(pedal/共同音不跨段连成全曲 drone)
+        while (
+          j + 1 < perSpan.length
+          && perSpan[j + 1].startTick === perSpan[j].endTick
+          && (opts.continuityGroupBySection?.[perSpan[j + 1].sectionId] ?? perSpan[j + 1].sectionId)
+            === (opts.continuityGroupBySection?.[perSpan[j].sectionId] ?? perSpan[j].sectionId)
+          && has(j + 1)
+        ) j++;
         notes.push({ pitch: midi(p), startTick: ticks(runStart), durationTicks: ticks(perSpan[j].endTick - runStart), velocity: vel });
         i = j + 1;
       } else i++;

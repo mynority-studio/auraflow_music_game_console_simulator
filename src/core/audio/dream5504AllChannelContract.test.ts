@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { hashSeedToInt } from '../../state/MusicGenerationSeedStore';
 import { generateSong } from '../generation/newEngine/generation/GenerationController';
 import type { InstrumentRole, TrackIR } from '../generation/newEngine/ir/MusicalIR';
-import { DREAM5504_DEFAULT_CHANNEL_VOLUME } from '../generation/newEngine/knowledge/gmMixProfile';
+import {
+  DREAM5504_DEFAULT_CHANNEL_VOLUME,
+  DREAM5504_LOFI_CHANNEL_MIX,
+} from '../generation/newEngine/knowledge/gmMixProfile';
 import {
   DEFAULT_CHANNELS,
   midiEventToRoutedMessage,
@@ -15,12 +18,11 @@ import { isAcousticPianoVoice } from '../sound/GMBK5X128Voices';
 
 const STYLES = ['pop', 'lofi', 'jazz', 'rnb'] as const;
 const FORMAL_CHANNELS = new Set(Object.values(ROLE_CHANNEL));
-// Raw-default audition: every channel resets to Firm5504's defaults with
-// CC121. CC0 is part of a melodic GMBK full address; only audited Bank-0
-// acoustic pianos may add score-authored CC11/CC64.
+// Every generated channel resets to Firm5504 defaults with CC121. CC7 and
+// CC11 stay at their power-up values; Bank-0 pianos may add sustain CC64.
 
 function guardedEvents(style: string, ir: NonNullable<ReturnType<typeof generateSong>['ir']>): MidiEvent[] {
-  return applyPopFiveTrackMidiGuard(musicalIRToMidiEvents(ir, roomWetFor(style)), style);
+  return applyPopFiveTrackMidiGuard(musicalIRToMidiEvents(ir, roomWetFor(style), style), style);
 }
 
 function sortedEvents(style: string, ir: NonNullable<ReturnType<typeof generateSong>['ir']>): MidiEvent[] {
@@ -40,10 +42,10 @@ function addressAtTick(track: TrackIR, tick: number): { bank: number; program: n
   return { bank, program };
 }
 
-function isAllowedController(track: TrackIR, event: MidiEvent): boolean {
+function isAllowedController(track: TrackIR, event: MidiEvent, style?: string): boolean {
   if (event.data1 === 0 || event.data1 === 121) return true;
+  if (style === 'lofi' && [7, 10, 91, 93].includes(event.data1)) return true;
   const current = addressAtTick(track, event.ticks);
-  if (event.data1 === 11) return track.role !== 'drum' && isAcousticPianoVoice(current.bank, current.program);
   if (event.data1 === 64) {
     const previous = addressAtTick(track, event.ticks - 1);
     return track.role !== 'drum' && (isAcousticPianoVoice(current.bank, current.program)
@@ -52,15 +54,18 @@ function isAllowedController(track: TrackIR, event: MidiEvent): boolean {
   return false;
 }
 
-function assertTrackContract(track: TrackIR, events: readonly MidiEvent[]): void {
+function assertTrackContract(track: TrackIR, events: readonly MidiEvent[], style: string): void {
   const channel = ROLE_CHANNEL[track.role];
   const channelEvents = events.filter((event) => event.channel === channel);
   const programTicks = new Set([0, ...(track.programChanges ?? []).map((change) => change.atTick as number)]);
   expect((track.mixChanges ?? []).every((change) => programTicks.has(change.atTick as number)), `${track.role} CC7 boundary`).toBe(true);
   expect(channelEvents.some((event) => event.type === 'programChange' && event.ticks === 0), `${track.role} initial PC`).toBe(true);
   expect(channelEvents.some((event) => event.type === 'cc' && event.ticks === 0 && event.data1 === 121 && event.data2 === 0), `${track.role} CC121 default`).toBe(true);
-  expect(channelEvents.filter((event) => event.type === 'cc').every((event) => isAllowedController(track, event)), `${track.role} supported CC only`).toBe(true);
-  expect(channelEvents.some((event) => event.type === 'cc' && [1, 7, 10, 72, 74, 91, 93].includes(event.data1)), `${track.role} no unsupported shaping`).toBe(false);
+  expect(channelEvents.filter((event) => event.type === 'cc').every((event) => isAllowedController(track, event, style)), `${track.role} supported CC only`).toBe(true);
+  expect(channelEvents.some((event) => event.type === 'cc' && [1, 72, 74].includes(event.data1)), `${track.role} no unsupported shaping`).toBe(false);
+  expect(channelEvents.filter((event) => event.type === 'cc' && event.data1 === 7), `${style}/${track.role} CC7 macro`)
+    .toHaveLength(style === 'lofi' ? 1 : 0);
+  expect(channelEvents.filter((event) => event.type === 'cc' && event.data1 === 11), `${style}/${track.role} CC11 default`).toEqual([]);
 
   if (track.role === 'drum') {
     expect(channel).toBe(9); // scheduler raw n=9 -> documented MIDI Channel 10
@@ -80,11 +85,18 @@ function assertTrackContract(track: TrackIR, events: readonly MidiEvent[]): void
       expect(bankIndex).toBeLessThan(pcIndex);
       const controllerEvents = atTick.filter((event) => event.type === 'cc');
       expect(controllerEvents.filter((event) => event.data1 === 0)).toHaveLength(1);
-      expect(controllerEvents.every((event) => isAllowedController(track, event))).toBe(true);
+      expect(controllerEvents.every((event) => isAllowedController(track, event, style))).toBe(true);
     } else {
-      expect(atTick.filter((event) => event.type === 'cc')).toEqual(tick === 0
-        ? [{ ticks: 0, type: 'cc', channel, data1: 121, data2: 0 }]
-        : []);
+      const drumControllers = atTick.filter((event) => event.type === 'cc');
+      if (tick !== 0) expect(drumControllers).toEqual([]);
+      else if (style === 'lofi') {
+        const mix = track.mix!;
+        expect(drumControllers.map((event) => [event.data1, event.data2])).toEqual([
+          [121, 0], [7, mix.volume], [10, mix.pan], [91, mix.reverb], [93, mix.chorus],
+        ]);
+      } else {
+        expect(drumControllers).toEqual([{ ticks: 0, type: 'cc', channel, data1: 121, data2: 0 }]);
+      }
     }
   }
 }
@@ -107,14 +119,14 @@ describe('Dream 5504 manual-backed all-channel contract', () => {
     expect(resolveSchedulerOutputChannel(15, 'five-port')).toBe(16);
   });
 
-  it('四风格多seed逐轨只发送 CC121、CC0、原声钢琴 CC11/CC64、PC/Note，并保持通道隔离', () => {
+  it('四风格多seed逐轨只发送 CC121、CC0、原声钢琴 CC64、PC/Note，并保持默认音量和通道隔离', () => {
     for (const style of STYLES) {
       for (const seed of [0, 1, 2, 4, 5, 7, 11, hashSeedToInt('w5q300')]) {
         const result = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 90 });
         expect(result.ir, `${style}/${seed}`).toBeTruthy();
         const events = sortedEvents(style, result.ir!);
         expect(events.every((event) => FORMAL_CHANNELS.has(event.channel)), `${style}/${seed} formal channels`).toBe(true);
-        for (const track of result.ir!.tracks as readonly TrackIR[]) assertTrackContract(track, events);
+        for (const track of result.ir!.tracks as readonly TrackIR[]) assertTrackContract(track, events, style);
       }
     }
   }, 30_000);
@@ -147,7 +159,10 @@ describe('Dream 5504 manual-backed all-channel contract', () => {
           expect([comp.bank, comp.program], `${seedName} LOFI Comp 地址`).toEqual(expectedLofiVoices[seedName].comp);
         }
         for (const track of result.ir!.tracks) {
-          expect(track.mix?.volume, `${style}/${seedName}/${track.role} CC7`).toBe(DREAM5504_DEFAULT_CHANNEL_VOLUME);
+          const expectedVolume = style === 'lofi'
+            ? DREAM5504_LOFI_CHANNEL_MIX[track.role].volume
+            : DREAM5504_DEFAULT_CHANNEL_VOLUME;
+          expect(track.mix?.volume, `${style}/${seedName}/${track.role} CC7`).toBe(expectedVolume);
         }
       }
     }

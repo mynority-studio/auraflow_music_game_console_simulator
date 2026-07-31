@@ -71,9 +71,13 @@ export function musicalIRToSMF(ir: MusicalIR, bpm: number, style?: string): Uint
   // as 4/4 even when the MusicalIR itself is an explicit 5/4 score.
   const meter = ir.timebase.meter;
   const denominatorPower = Math.round(Math.log2(meter.denominator));
+  const midiClocksPerMetronomeClick =
+    meter.denominator === 8 && meter.numerator >= 6 && meter.numerator % 3 === 0
+      ? 36 // compound meter: dotted-quarter click
+      : 24;
   timed.push({
     tick: 0, order: 0,
-    bytes: [0xff, 0x58, 0x04, meter.numerator & 0xff, denominatorPower & 0xff, 24, 8],
+    bytes: [0xff, 0x58, 0x04, meter.numerator & 0xff, denominatorPower & 0xff, midiClocksPerMetronomeClick, 8],
   });
   for (const ev of events) {
     const bytes = eventBytes(ev);

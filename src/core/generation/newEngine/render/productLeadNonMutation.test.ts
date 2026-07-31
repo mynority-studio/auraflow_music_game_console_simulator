@@ -4,7 +4,7 @@
 // musicgenerative_strict_newengine_migration_directive.md Loop 9:
 //   动作:audit 只产 finding · retry budget 在 Controller 消费 · audit 不改 lead · audit 不直接写 MIDI。
 //   验收:audit 前后 MusicalIR 不变 · retry 后 lead 仍 exact。终止:audit 不破坏 strict parity。
-// ★ 结构性事实(本测试锁):① lead = renderMgMelody(plan, band, tb, songSeed),只依赖 song seed;
+// ★ 结构性事实(本测试锁):① lead = renderMgMelody(plan, band, tb, songSeed, Arranger presence),只依赖冻结 score + song seed;
 //   retry 的 rng.advance() 保持 seed 不变(randomContext.advance 只推子流 count)→ lead 跨重跑恒等。
 //   ② 终 IR = freezeMusicalIR(深冻结);两审计在冻结 IR 上跑 → 改写即抛 → 只读由结构强制。
 // ============================================================
@@ -181,6 +181,13 @@ function renderExpectedRawLead(
     undefined,
     arrangement.grooveContractBySection,
     instrumentation.strictRegisterByRole?.lead,
+    undefined,
+    undefined,
+    arrangement.tempoBpm,
+    arrangement.lofiLeadPresencePlan?.silenceWindows,
+    arrangement.lofiLeadPresencePlan?.entryBeats,
+    undefined,
+    arrangement.lofiPhraseInteractionPlan,
   );
 }
 
@@ -190,7 +197,9 @@ function applyExpectedReplayPolicy(
   plan: ReturnType<typeof buildHarmonicPlanFromArrangement>,
   tb: ReturnType<typeof createTimebase>,
 ) {
-  const gapFilled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arrangement.meter));
+  const gapFilled = arrangement.lofiLeadPresencePlan
+    ? [raw]
+    : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arrangement.meter));
   const motifReplayed = arrangement.resolvedArchetype?.motifPolicyId === MOTIF_POLICY_REPEAT_GROUP
     ? applyMotifBindingReplay(gapFilled, arrangement, plan.chordTimeline, tb)
     : gapFilled;
@@ -202,7 +211,7 @@ function applyExpectedReplayPolicy(
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
 
 describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
-  // ① production lead === raw MG lead 经 repeatGroup 重放，再按目标段重投影 lead-in velocity；
+  // ① production lead === Arranger-scored MG lead 经 repeatGroup 重放，再按目标段重投影 lead-in velocity；
   //   audit/swing/dynamics/humanize/ending 仍不改 lead 的 pitch/onset/duration。
   for (const [seed, style] of MATRIX) {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {

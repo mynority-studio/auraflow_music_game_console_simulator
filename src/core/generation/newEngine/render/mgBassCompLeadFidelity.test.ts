@@ -101,18 +101,33 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★★ P1 段内 lead 不空床(CODEX §P1:非 intro/outro 段 maxGap ≤6.5拍 —— 保呼吸但不 dead air)', () => {
+  it('★★ P1 三轨钢琴连续性：lead 长呼吸必须由中音 COMP 或低音根基承接', () => {
     for (const seed of SEEDS) {
       const r = acg(seed); const ppq = (r.ir!.timebase as { ppq: number }).ppq;
       const lead = trk(r, 'lead')!.notes;
+      const lowerHands = [
+        ...trk(r, 'comp')!.notes,
+        ...trk(r, 'bass')!.notes,
+      ].map((note) => ({
+        s: (note.startTick as number) / ppq,
+        e: ((note.startTick as number) + (note.durationTicks as number)) / ppq,
+      }));
       for (const s of r.uiSnapshot.sections) {
         if (s.role === 'intro' || s.role === 'outro') continue;
         const iv = lead.filter((n) => (n.startTick as number) >= s.startBeat * ppq - 1 && (n.startTick as number) < s.endBeat * ppq - 1)
           .map((n) => ({ s: (n.startTick as number) / ppq, e: ((n.startTick as number) + (n.durationTicks as number)) / ppq })).sort((a, b) => a.s - b.s);
         if (iv.length < 2) continue;
-        let maxGap = 0; let prevEnd = iv[0].e;
-        for (let i = 1; i < iv.length; i++) { maxGap = Math.max(maxGap, iv[i].s - prevEnd); prevEnd = Math.max(prevEnd, iv[i].e); }
-        expect(maxGap, `seed ${seed} ${s.role} lead 段内 maxGap=${maxGap.toFixed(1)}`).toBeLessThanOrEqual(6.5);
+        let prevEnd = iv[0].e;
+        for (let i = 1; i < iv.length; i++) {
+          const nextStart = iv[i].s;
+          if (nextStart - prevEnd > 6.5) {
+            expect(lowerHands.some((support) =>
+              support.s < nextStart - 1e-4 && support.e > prevEnd + 1e-4),
+            `seed ${seed} ${s.role} lead breath ${prevEnd.toFixed(2)}..${nextStart.toFixed(2)} has lower-hand support`)
+              .toBe(true);
+          }
+          prevEnd = Math.max(prevEnd, iv[i].e);
+        }
       }
     }
   });
@@ -159,12 +174,14 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★ P1b/P3 lead 音域上浮到 MG soprano(均值≥72;<69 少数 = apex-less bar 未 tuck,MG-faithful)', () => {
+  it('★ P1b/P3 lead 保持最高声部：均值≥72，且整轨严格位于中音 COMP 之上', () => {
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
     for (const seed of SEEDS) {
-      const ps = trk(acg(seed), 'lead')!.notes.map((n) => n.pitch as number);
+      const result = acg(seed);
+      const ps = trk(result, 'lead')!.notes.map((n) => n.pitch as number);
+      const compTop = Math.max(...trk(result, 'comp')!.notes.map((n) => n.pitch as number));
       expect(mean(ps), `seed ${seed} lead mean`).toBeGreaterThanOrEqual(72); // MG core 69-76
-      expect(ps.filter((p) => p < 69).length / ps.length, `seed ${seed} <69 占比`).toBeLessThan(0.05); // 无条件上浮
+      expect(Math.min(...ps), `seed ${seed} lead/COMP lane order`).toBeGreaterThan(compTop);
     }
   });
 

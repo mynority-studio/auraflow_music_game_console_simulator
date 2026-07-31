@@ -48,6 +48,7 @@ export interface ResolvedChord {
   quality: ChordQuality;
   durationBeats: number;
   sectionId: string;
+  sourcePrototypeId?: string;
   func: HarmonicFunction;
   borrowed?: BorrowInfo;
   sectionKeyPc?: PitchClass; // 转调段落的实际调中心(undefined = 主调);chord-scale 据此解析
@@ -81,6 +82,7 @@ export function assemble(
   keyMode: DiatonicMode,
   modalScalePcs?: PitchClass[],
   modulationMap: Record<string, ModulationInfo> = {},
+  progressionPrototypeId?: string,
 ): HarmonicPlan {
   if (resolved.length === 0) throw new RangeError('assemble(): 空和弦序列');
   const modalSet = modalScalePcs ? new Set<number>(modalScalePcs) : undefined;
@@ -113,6 +115,7 @@ export function assemble(
       startBeat: beats(beat),
       durationBeats: beats(rc.durationBeats),
       sectionId: rc.sectionId,
+      sourcePrototypeId: rc.sourcePrototypeId,
       // Loop 2 prototype 定义层字段(均可选;degree-picker 路径多为 undefined,chordType 回退 quality)
       chordType: rc.chordType ?? rc.quality,
       borrowedSource: rc.borrowedSource,
@@ -164,6 +167,7 @@ export function assemble(
   });
 
   const data: HarmonicPlanData = {
+    progressionPrototypeId,
     romanProgression,
     chordTimeline,
     chordFunctionTimeline,
@@ -432,10 +436,18 @@ export function buildHarmonicPlanFromArrangement(
 
   // 产 N 候选 → coherence 择优。advance('harmony') → 每候选不同子流且确定性;
   // 候选0 = 原 substream(与旧行为同),严格 > 才换 → 单调改进(无更优候选即回旧)。
+  //
+  // LOFI is the deliberate exception: its curated progression registry
+  // already owns the style distribution. Running six weighted pool draws and
+  // then taking the best coherence score turned the pool into an implicit
+  // ranking (two corpus-derived major cells won nearly half a 500-seed
+  // population), effectively discarding the declared weights. One draw keeps
+  // every old and corpus-derived prototype an ordinary weighted candidate.
   let ctx = rng;
+  const candidateCount = styleName === 'LOFI' ? 1 : NUM_HARMONY_CANDIDATES;
   // Loop 8:择优分 = coherence(进行逻辑)0.75 + voice-leading(导音/属解决)0.25。
   let best: { resolved: ResolvedChord[]; score: number } | null = null;
-  for (let k = 0; k < NUM_HARMONY_CANDIDATES; k++) {
+  for (let k = 0; k < candidateCount; k++) {
     const cand = buildResolvedProgression(band, arrangement, ctx.substream('harmony'), sectionKeyOf, beatsPerBar);
     const coh = evaluateHarmony(resolvedToCoherenceChords(cand, band.key), styleName, band.key as number).score;
     const vl = evaluateVoiceLeading(resolvedToLedgerChords(cand)).overallScore;
@@ -444,7 +456,13 @@ export function buildHarmonicPlanFromArrangement(
     ctx = ctx.advance('harmony');
   }
 
-  return assemble(best!.resolved, band.key, band.mode, undefined, modulationMap);
+  return assemble(
+    best!.resolved,
+    band.key,
+    band.mode,
+    undefined,
+    modulationMap,
+  );
 }
 
 /** 一条候选进行(给定 harmony 子流)→ resolved 序列(确定性)。 */
@@ -479,10 +497,10 @@ function buildResolvedProgression(
       beatsPerBar,
     });
     if (picked) {
-      let protoChords = realizeProgressionSlots({
+      let protoChords: ResolvedChord[] = realizeProgressionSlots({
         slots: picked.slots, section, sectionKey, isModulated, beatsPerBar,
         style: toHarmonyStyle(band.style), colorBudget: band.styleProfile.colorBudget, random: hrng,
-      });
+      }).map((chord) => ({ ...chord, sourcePrototypeId: picked.prototypeId }));
       // ★ 卡农变体(JPOP):prototype 显式 transformPolicy.allowTonicization → 在已实化和弦上叠加 secondary ii-V/V
       //   (per-song 预算 + per-group 缓存,repeatGroup 复用不重复消耗;planner 给离调和弦 forcedScale 守不变量)。
       if (picked.transformPolicy?.allowTonicization && tonMaxSong > 0) {

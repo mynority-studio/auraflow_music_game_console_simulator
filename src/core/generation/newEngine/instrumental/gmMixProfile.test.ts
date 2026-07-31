@@ -41,12 +41,12 @@ describe('knowledge/gmMixProfile — pickSpaceProfile', () => {
   });
 });
 
-describe('knowledge/gmMixProfile — 四风格采用 Dream 默认通道音量', () => {
-  it('POP/LOFI/JAZZ/RNB 的所有 role+program 都固定 CC7=100，且不按风格设例外', () => {
-    const styles = ['pop', 'lofi', 'jazz', 'rnb'] as const;
+describe('knowledge/gmMixProfile — Dream 风格硬件混音合同', () => {
+  it('POP/JAZZ/RNB 保持默认通道；LOFI 使用独立硬件宏', () => {
+    const dryStyles = ['pop', 'jazz', 'rnb'] as const;
     for (const role of ['lead', 'comp', 'bass', 'pad', 'drum'] as const) {
       for (const program of PALETTE.pop[role] ?? [0]) {
-        const mixes = styles.map((style) => mixForProgram({
+        const mixes = dryStyles.map((style) => mixForProgram({
           style,
           timbreWorld: undefined,
           role,
@@ -55,15 +55,16 @@ describe('knowledge/gmMixProfile — 四风格采用 Dream 默认通道音量', 
           space: pickSpaceProfile(style, undefined, true),
         }));
         for (const [index, mix] of mixes.entries()) {
-          expect(mix.volume, `${styles[index]}/${role}/GM${program}`).toBe(100);
-          expect(mix.reverb, `${styles[index]}/${role}/GM${program}`).toBe(0);
-          expect(mix.chorus, `${styles[index]}/${role}/GM${program}`).toBe(0);
+          expect(mix.volume, `${dryStyles[index]}/${role}/GM${program}`).toBe(100);
+          expect(mix.reverb, `${dryStyles[index]}/${role}/GM${program}`).toBe(0);
+          expect(mix.chorus, `${dryStyles[index]}/${role}/GM${program}`).toBe(0);
         }
-        expect(mixes[1], `${role}/GM${program}/lofi`).toEqual(mixes[0]);
-        expect(mixes[2], `${role}/GM${program}/jazz`).toEqual(mixes[0]);
-        expect(mixes[3], `${role}/GM${program}/rnb`).toEqual(mixes[0]);
+        expect(mixes[1], `${role}/GM${program}/jazz`).toEqual(mixes[0]);
+        expect(mixes[2], `${role}/GM${program}/rnb`).toEqual(mixes[0]);
       }
     }
+    expect(mixForProgram({ style: 'lofi', timbreWorld: undefined, role: 'drum', program: 0, hasPad: true, space: 'dryFront' }))
+      .toEqual({ volume: 97, pan: 64, reverb: 16, chorus: 0 });
   });
 });
 
@@ -129,7 +130,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('comp', 5)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
     expect(mk('lead', 5)).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
     expect(mixForProgram({ style: 'lofi', timbreWorld: undefined, role: 'lead', program: 5, hasPad: true, space: 'dryFront' }))
-      .toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
+      .toMatchObject({ volume: 96, reverb: 28, chorus: 7 });
   });
 
   it('Rhodes 与 Electric Grand 的共享空间均归零', () => {
@@ -302,8 +303,8 @@ describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lea
     expect(mAcg('bass', 32).volume, 'ACG bass 仍保托底').toBeGreaterThanOrEqual(60);
   });
 
-  it('★ LOFI bass 不再由风格单独前移', () => {
-    expect(mLofi('bass', 32).volume).toBe(mPop('bass', 32).volume);
+  it('★ LOFI bass 使用独立硬件宏并保持低频空间集中', () => {
+    expect(mLofi('bass', 32)).toMatchObject({ volume: 92, pan: 64, reverb: 4, chorus: 0 });
   });
 
   it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {

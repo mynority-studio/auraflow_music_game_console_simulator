@@ -1,0 +1,8 @@
+reference_id,title,url,evidence,confidence,review_status,reviewer_notes
+REF-A,"rly Beats — user-provided YouTube Short",https://www.youtube.com/shorts/Dlum-dlNz24,manual-plus-onset-review,0.9,reviewed,
+REF-B,"Lofi Girl — Best of lofi hip hop 2021",https://www.youtube.com/watch?v=n61ULEU7CO0,curated-family-anchor,0.65,family-anchor,
+REF-C,"Chillhop Essentials — Spring 2021",https://www.youtube.com/watch?v=lve6KTZTKDw,curated-family-anchor,0.65,family-anchor,
+REF-D,"J Dilla — Time: The Donut of the Heart",https://www.youtube.com/watch?v=c6qOBFkvdG0,curated-style-boundary,0.7,family-anchor,
+REF-E,"Nujabes — Feather",https://www.youtube.com/watch?v=hQ5x8pHoIPA,curated-style-boundary,0.7,family-anchor,
+REF-F,"idealism — Sit In Silence",https://www.youtube.com/watch?v=VXzjpjANMOc,curated-style-boundary,0.65,family-anchor,
+REF-G,"saib. — West Lake",https://www.youtube.com/watch?v=wbysDvxmgd0,curated-style-boundary,0.65,family-anchor,

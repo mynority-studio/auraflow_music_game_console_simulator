@@ -11,7 +11,7 @@ import { phraseCellRole, densityForCell, energyForCell, pickTextureForBarWithGro
 import { acgRenderProfile, resolveAcgBarFamily } from '../knowledge/acgRenderProfile';
 import { hasTextureRenderer } from './textureRenderer';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
-import type { SectionRole } from '../arranger/ArrangementPlan';
+import type { LofiCompPhraseRole, SectionRole } from '../arranger/ArrangementPlan';
 
 // style → texture style 名;非 rich(blues/default)→ undefined,各 renderer 回退老逻辑。
 export const TEXTURE_STYLE: Record<string, TextureStyleName> = { pop: 'POP', lofi: 'LOFI', rnb: 'RNB', jazz: 'JAZZ', acg: 'ACG' };
@@ -66,6 +66,9 @@ export function buildTextureSchedule(args: {
   grooveContract?: GrooveTextureContract; // ★ §4:ACG 逐-bar 织体选择消费 GrooveContract(preferred/allowed/forbidden)
   grooveContractBySection?: Readonly<Record<string, GrooveTextureContract>>;
   acgBarFamilyBySpan?: Record<string, 'drive' | 'sparse'>; // ★ Phase 3A:ACG family intent(enforce);缺省→内联派生(fallback)
+  /** LOFI Arranger score: answer bars require a real late Comp attack. */
+  lofiCompRoleByAbsoluteBar?: Readonly<Record<number, LofiCompPhraseRole>>;
+  beatsPerBar?: number;
 }): TextureSchedule {
   const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection, grooveContract } = args;
   const txStyle = TEXTURE_STYLE[style.toLowerCase()];
@@ -80,6 +83,26 @@ export function buildTextureSchedule(args: {
     return (!contract?.allowedTextureCases || contract.allowedTextureCases.includes(textureCase))
       && !contract?.forbiddenTextureCases?.includes(textureCase);
   };
+  const lofiAnswerTexture = 'Piano_Lofi_Late_Chord_Answer';
+  const spanNeedsLofiAnswer = (span: HarmonicPlan['chordTimeline'][number]): boolean => {
+    if (txStyle !== 'LOFI' || !args.lofiCompRoleByAbsoluteBar) return false;
+    const beatsPerBar = Math.max(1, args.beatsPerBar ?? 4);
+    const startBar = Math.floor((span.startBeat as number) / beatsPerBar);
+    const endBeat = (span.startBeat as number) + (span.durationBeats as number);
+    const endBar = Math.floor(Math.max(startBar, (endBeat - 1e-4) / beatsPerBar));
+    for (let bar = startBar; bar <= endBar; bar++) {
+      if (args.lofiCompRoleByAbsoluteBar[bar] === 'answer') return true;
+    }
+    return false;
+  };
+  const applyLofiAnswerTexture = (
+    span: HarmonicPlan['chordTimeline'][number],
+    textureCase: string,
+  ): string => spanNeedsLofiAnswer(span)
+    && allows(span.sectionId, lofiAnswerTexture)
+    && hasTextureRenderer(lofiAnswerTexture)
+    ? lofiAnswerTexture
+    : textureCase;
 
   const timeline = plan.chordTimeline;
   const funcBySpan: Record<string, HarmonicFunction> = {};
@@ -142,7 +165,8 @@ export function buildTextureSchedule(args: {
       const cnt = countInSec[span.sectionId] || 1;
       const switched = sw && idxInSec[span.id] / cnt >= sw.atFraction ? sw.toTexture : planned;
       const tc = allows(span.sectionId, switched) ? switched : planned;
-      if (hasTextureRenderer(tc)) schedule[span.id] = tc;
+      const selected = applyLofiAnswerTexture(span, tc);
+      if (hasTextureRenderer(selected)) schedule[span.id] = selected;
       continue;
     }
     // 回退:逐 span 选(LOFI / blues / 无段级下发)
@@ -155,7 +179,8 @@ export function buildTextureSchedule(args: {
     });
     const tc = prof?.textureCase;
     if (tc && tc === prevTex) rep += 1; else { rep = 0; prevTex = tc; }
-    if (tc && hasTextureRenderer(tc)) schedule[span.id] = tc;
+    const selected = tc ? applyLofiAnswerTexture(span, tc) : undefined;
+    if (selected && hasTextureRenderer(selected)) schedule[span.id] = selected;
   }
   return schedule;
 }

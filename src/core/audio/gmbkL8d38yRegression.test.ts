@@ -30,7 +30,7 @@ describe('Dream 5504 · POP seed l8d38y', () => {
     expect(dream5504VoiceName(bass.bank, bass.program, 'bass')).toBe('Synth Bass 1');
   });
 
-  it('keeps mix metadata internal, restores board defaults, and only emits piano-owned expression', () => {
+  it('keeps all generated volume controllers at the Firm5504 defaults', () => {
     const result = generateSong({
       seed: hashSeedToInt('l8d38y'),
       styleHint: 'pop',
@@ -38,7 +38,7 @@ describe('Dream 5504 · POP seed l8d38y', () => {
       targetDuration: 90,
     });
     const ir = result.ir!;
-    const events = musicalIRToMidiEvents(ir, roomWetFor('pop'));
+    const events = musicalIRToMidiEvents(ir, roomWetFor('pop'), 'pop');
 
     for (const track of ir.tracks) {
       expect(track.mix, track.role).toMatchObject({ volume: 100, reverb: 0, chorus: 0 });
@@ -46,11 +46,11 @@ describe('Dream 5504 · POP seed l8d38y', () => {
       const channelEvents = events.filter(event => event.channel === channel);
       const allowed = new Set([0, 121]);
       if ((track.bank ?? 0) === 0 && [0, 1, 3].includes(track.program ?? -1)) {
-        allowed.add(11);
         allowed.add(64);
       }
       expect(channelEvents.filter(event => event.type === 'cc').every(event => allowed.has(event.data1)), `${track.role} raw CC`).toBe(true);
-      expect(channelEvents.some(event => event.type === 'cc' && [1, 7, 10, 72, 74, 91, 93, 98, 99].includes(event.data1)), `${track.role} no unsupported shaping CC`).toBe(false);
+      expect(channelEvents.some(event => event.type === 'cc' && [7, 11].includes(event.data1)), `${track.role} default volume/expression`).toBe(false);
+      expect(channelEvents.some(event => event.type === 'cc' && [1, 10, 72, 74, 91, 93, 98, 99].includes(event.data1)), `${track.role} no unsupported shaping CC`).toBe(false);
     }
 
     const leadSetup = events.filter(event => event.channel === ROLE_CHANNEL.lead && event.ticks === 0);
@@ -59,6 +59,7 @@ describe('Dream 5504 · POP seed l8d38y', () => {
       { type: 'cc', data1: 0, data2: 0 },
       { type: 'programChange', data1: 5 },
     ]);
+    expect(leadSetup.some(event => event.type === 'cc' && [7, 11].includes(event.data1))).toBe(false);
     expect(events.some(event => event.type === 'cc' && [72, 74, 98, 99].includes(event.data1))).toBe(false);
   });
 });

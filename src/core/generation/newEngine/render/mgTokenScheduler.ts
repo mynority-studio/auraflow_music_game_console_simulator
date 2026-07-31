@@ -57,6 +57,108 @@ export interface AcgReturnGestureIntent {
   dyad?: AcgDyadIntent & { partnerPc: number; partnerRole: AcgStableRole };
 }
 
+/**
+ * LOFI's detailed score remains a token-time contract.  This sidecar is
+ * intentionally separate from `AbstractMelodyToken`: the grammar vocabulary
+ * is shared by several styles, while the score ownership (motif/release and
+ * a pre-proved cross-harmony carrier) belongs only to LOFI's arranger plan.
+ *
+ * The realizer may consume this contract to choose the exact stable tone / a
+ * pre-proved common tone.  Until then, retaining it on `ScheduledToken`
+ * keeps the ownership visible to all pre-NoteIR stages without inventing a
+ * new grammar terminal.
+ */
+export type LofiLeadScoreTokenRole =
+  | 'rest'
+  | 'statement-carrier'
+  | 'answer-riff'
+  | 'return-hold';
+
+export type LofiLeadScorePhraseRole = 'rest' | 'statement' | 'variation' | 'return';
+
+export type LofiLeadScoreShortGestureClass =
+  | 'answer-riff'
+  | 'connected-crawl'
+  | 'approach-target';
+
+export type LofiLeadScoreReleaseReason =
+  | 'score-rest'
+  | 'unresolved-short-gesture'
+  | 'unsafe-exposed-fragment'
+  | 'no-safe-carrier';
+
+/** A scheduler-issued long-tone decision, never a rendered-note repair. */
+export type LofiLeadScoreCarrierIntent =
+  | {
+    kind: 'breath';
+    minimumDurationBeats: number;
+  }
+  | {
+    kind: 'common-tone';
+    minimumDurationBeats: number;
+    targetChordIndex: number;
+    targetSpanId: string;
+    continuationPc: number;
+  };
+
+/** Token-level motif identity: rhythm is copied before pitch realization. */
+export interface LofiLeadScoreMotifIntent {
+  motifId: string;
+  sourceBarId: string;
+  role: 'statement' | 'variation' | 'return';
+  eventIndex: number;
+  eventCount: number;
+  relativeStartBeats: number;
+  sourceDurationBeats: number;
+}
+
+/**
+ * A fully executable LOFI lead score decision.  `stableRoles` describes the
+ * source chord; `harmonicScope` becomes `common-tone-next-chord` only after
+ * a `boundaryBridges` proof from the Arranger has been selected.
+ */
+export interface LofiLeadScoreTokenIntent {
+  slotId: string;
+  phraseId: string;
+  sourceSpanId: string;
+  role: LofiLeadScoreTokenRole;
+  phraseRole: LofiLeadScorePhraseRole;
+  harmonicScope: 'current-chord' | 'common-tone-next-chord';
+  stableRoles: readonly ('root' | 'third' | 'fifth' | 'seventh')[];
+  motif?: LofiLeadScoreMotifIntent;
+  shortGesture?: {
+    class: LofiLeadScoreShortGestureClass;
+    targetStartBeat: number;
+    targetSlotId: string;
+  };
+  carrier?: LofiLeadScoreCarrierIntent;
+  release?: { reason: LofiLeadScoreReleaseReason };
+  /** True only for the score-authored off-downbeat fallback C. */
+  entryFallback?: true;
+  /** Post-harmony score pitch. The realizer validates, then emits it verbatim. */
+  exactPitchMidi?: number;
+  exactPitchClass?: number;
+  scoreEventId?: string;
+  sourceCellId?: string;
+  sourceEventIndex?: number;
+  leadRoadMapBrickId?: string;
+  leadBrickKind?: 'silence-bed' | 'motif-statement' | 'motif-variation' | 'motif-return';
+  leadTextureTag?: string;
+  leadTextureResolution?: 'explicit-rest' | 'exact-harmonic-brick' | 'harmonic-family' | 'texture-projection';
+  sourceGrammarRuleId?: string;
+  sourceGrammarBrickType?: string;
+  scoreTransform?:
+    | 'statement'
+    | 'delay-tail'
+    | 'omit-middle'
+    | 'neighbor-tail'
+    | 'exact'
+    | 'terminal-hold'
+    | 'last-note-tag';
+  harmonicRole?: 'anchor' | 'neighbor' | 'passing' | 'color' | 'terminal';
+  admittedSpanIds?: readonly string[];
+}
+
 /** 一个已落拍的 token:token 本体 + 绝对起拍。
  *  ★ MG full-parity Phase 3·D:brick 元数据(scheduleBrickExpansions 盖,realizeTokens 透到 NoteEvent)。
  *    缺省 undefined(如 scheduleTokens 直出 / ACG 调度)→ shapeMelodyHarmony 的 eventBrickSpansBoundary no-op。 */
@@ -71,6 +173,16 @@ export interface ScheduledToken {
   brickFamily?: string;
   /** ACG 专属一次式回归意图；没有它的 token 仍走通用 MG 语义。 */
   acgReturn?: AcgReturnGestureIntent;
+  /**
+   * Arranger-owned ACG metric identity.  The cycle scheduler attaches this
+   * while rhythm is still token data so realization can shape an accent
+   * without rediscovering (or moving) the score's shared piano anchor.
+   */
+  acgMetricAnchorId?: string;
+  acgMetricStrength?: number;
+  acgMetricRole?: 'structural' | 'flow';
+  /** LOFI score ownership emitted before pitch realization. */
+  lofiScore?: LofiLeadScoreTokenIntent;
 }
 
 export interface ScheduledLeadOwnershipSpan {
@@ -108,6 +220,7 @@ export function reserveScheduledTokensForAuthoredSpans(
         ...entry,
         token: { kind: 'R', duration: token.duration } as AbstractMelodyToken,
         acgReturn: undefined,
+        lofiScore: undefined,
       });
       continue;
     }
@@ -115,6 +228,52 @@ export function reserveScheduledTokensForAuthoredSpans(
   }
   for (const span of owned) {
     out.push({ token: { kind: 'SlopeExit', duration: 0 }, startBeat: span.startBeat });
+  }
+  return out.sort((a, b) => a.startBeat - b.startBeat
+    || (a.token.kind === 'SlopeExit' ? -1 : 0)
+    || (b.token.kind === 'SlopeExit' ? 1 : 0));
+}
+
+/**
+ * Convert Arranger-authored breathing windows into real rest tokens before
+ * pitch realization. This intentionally shares the same slope-state safety as
+ * user-owned spans, but it does not delete finished NoteIR events.
+ */
+export function applyScheduledLeadSilence(
+  entries: readonly ScheduledToken[],
+  windows: readonly ScheduledLeadOwnershipSpan[],
+): ScheduledToken[] {
+  return reserveScheduledTokensForAuthoredSpans(entries, windows);
+}
+
+/**
+ * Every Arranger-active LOFI response bar must contain at least one scheduled
+ * melodic onset. Missing entries receive a single chord-tone token at the
+ * authored off-downbeat; pitch remains the Realizer's responsibility.
+ */
+export function ensureScheduledLeadEntries(
+  entries: readonly ScheduledToken[],
+  entryBeats: readonly number[],
+  beatsPerBar: number,
+): ScheduledToken[] {
+  if (entryBeats.length === 0) return [...entries];
+  const out = [...entries];
+  for (const entryBeat of entryBeats) {
+    const barStart = Math.floor((entryBeat + 1e-6) / beatsPerBar) * beatsPerBar;
+    const barEnd = barStart + beatsPerBar;
+    const hasMelodicOnset = out.some((entry) =>
+      entry.token.duration > 0
+      && entry.token.kind !== 'R'
+      && entry.token.kind !== 'SlopeEnter'
+      && entry.token.kind !== 'SlopeExit'
+      && entry.startBeat >= barStart - 1e-6
+      && entry.startBeat < barEnd - 1e-6);
+    if (!hasMelodicOnset) {
+      out.push({
+        token: { kind: 'C', duration: 0.75 },
+        startBeat: entryBeat,
+      });
+    }
   }
   return out.sort((a, b) => a.startBeat - b.startBeat
     || (a.token.kind === 'SlopeExit' ? -1 : 0)

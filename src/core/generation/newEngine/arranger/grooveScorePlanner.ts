@@ -16,6 +16,11 @@ import {
   isRegisteredBassPatternReference,
 } from '../knowledge/grooveBassPatterns';
 import {
+  lofiDrumPhraseById,
+  lofiDrumPhrases,
+  type LofiDrumPhrase,
+} from '../knowledge/grooves';
+import {
   bassRoleRhythmPattern,
   compRoleRhythmPattern,
   leadRoleRhythmPattern,
@@ -39,11 +44,13 @@ import type {
   GrooveDrumInteractionScore,
   GrooveScorePlan,
   GrooveSectionScore,
+  LofiPhraseInteractionPlan,
   OpeningGesturePlan,
   Section,
   SectionEntry,
   SectionId,
 } from './ArrangementPlan';
+import type { LofiFoundationPlan } from './lofiFoundationPlanner';
 
 export interface GrooveScoreOptions {
   strictDownbeatBoundaries?: boolean;
@@ -54,9 +61,17 @@ export interface GrooveScoreOptions {
   bassPatternIdBySection?: Readonly<Record<SectionId, string | undefined>>;
   /** Typed role-pattern references resolved into GrooveSectionScore snapshots. */
   rolePatternBySection?: Readonly<Record<SectionId, Readonly<RoleRhythmPatternReferenceByRole> | undefined>>;
+  /** LOFI only: one song-level identity selected before the bar score exists. */
+  lofiFoundationPlan?: Readonly<LofiFoundationPlan>;
+  /** LOFI only: shared phrase roles/arcs and stable pocket relationships. */
+  lofiPhraseInteractionPlan?: Readonly<LofiPhraseInteractionPlan>;
 }
 
 const ROLE_RHYTHM_ROLES = ['bass', 'comp', 'lead'] as const;
+
+function isPopBalladContract(contract: Pick<GrooveContract, 'id'>): boolean {
+  return contract.id === 'pop_ballad_halftime';
+}
 
 function cloneBassRoleRhythmPattern(pattern: BassRoleRhythmPattern): BassRoleRhythmPattern {
   return {
@@ -198,6 +213,10 @@ function structuralSnareBeats(contract: GrooveContract, role: GroovePhraseBarRol
 
 function kickResponseLimit(contract: GrooveContract, role: GroovePhraseBarRole): number {
   if (contract.drum?.kickFollow !== 'bass') return 0;
+  // LOFI Hip Hop keeps one song-level kick phrase. Bass may reinforce that
+  // phrase, but it must not rewrite the kick onset mask independently in
+  // every bar.
+  if (contract.style === 'LOFI') return 0;
   const base = contract.density === 'active' ? 3 : contract.density === 'medium' ? 2 : 1;
   if (role === 'breakdown') return Math.max(1, base - 1);
   if (role === 'answer' || role === 'lift') return Math.min(4, base + 1);
@@ -254,6 +273,16 @@ function stableVariant(...parts: readonly (string | number | undefined)[]): numb
   return hash;
 }
 
+function lofiPhraseForContract(
+  contract: GrooveContract,
+  fillVariantSeed: number,
+): LofiDrumPhrase | undefined {
+  if (contract.style !== 'LOFI') return undefined;
+  const phrases = lofiDrumPhrases(contract.drum?.timekeeperFamily);
+  if (phrases.length === 0) return undefined;
+  return phrases[stableVariant(fillVariantSeed, contract.id, 'two-bar-drum-phrase') % phrases.length];
+}
+
 function popRockFillScore(args: {
   contract: GrooveContract;
   fn: GrooveDrumFillFunction;
@@ -265,6 +294,7 @@ function popRockFillScore(args: {
   variantSeed: number;
 }): GrooveDrumFillScore | undefined {
   if (args.contract.drum?.fillVocabulary !== POP_ROCK_FILL_VOCABULARY_ID) return undefined;
+  if (isPopBalladContract(args.contract)) return undefined;
   const intensity = args.contract.density === 'sparse' && args.intensity === 3 ? 2 : args.intensity;
   return materializeFunctionalPopRockFill({
     function: args.fn,
@@ -288,6 +318,7 @@ function popRockLanding(
 ): GrooveBoundaryScore['landing'] {
   if (contract.drum?.fillVocabulary !== POP_ROCK_FILL_VOCABULARY_ID) return contract.drum?.landing ?? 'none';
   if (next.functionTag === 'outro' || next.functionTag === 'tag') return 'none';
+  if (isPopBalladContract(contract)) return 'kick';
   if (fn === 'climax' || fn === 'lift' || fn === 'setup') return 'kick-crash';
   return 'kick';
 }
@@ -352,6 +383,10 @@ function planSectionBoundary(args: {
   fillVariantSeed: number;
 }): GrooveBoundaryScore | undefined {
   if (args.strict) return undefined;
+  // LOFI form changes use Arranger-authored layer subtraction and the
+  // DrumPhrase mutation budget.  No generic boundary fill may overwrite the
+  // selected two-bar groove.
+  if (args.contract.style === 'LOFI') return undefined;
   const drum = args.contract.drum;
   if (!drum) return undefined;
   const profile = grooveRhythmProfileForContract(args.contract);
@@ -369,9 +404,13 @@ function planSectionBoundary(args: {
     pickup,
     args.climaxTarget,
   );
-  const intensity = boundaryIntensity(fillFunction, args.section);
-  const strong = intensity >= 2;
-  const fillFamily = pickup
+  const rawIntensity = boundaryIntensity(fillFunction, args.section);
+  const ballad = isPopBalladContract(args.contract);
+  const intensity = ballad ? 1 : rawIntensity;
+  const strong = !ballad && intensity >= 2;
+  const fillFamily = ballad
+    ? drum.fillFamilies.light
+    : pickup
     ? drum.fillFamilies.pickup
     : strong ? drum.fillFamilies.strong : drum.fillFamilies.light;
   const durationBeats = strong ? profile.transition.strongBeats : profile.transition.lightBeats;
@@ -409,11 +448,14 @@ function planOpeningBoundary(
   fillVariantSeed: number,
 ): GrooveBoundaryScore | undefined {
   if (!first || !contract?.drum || opening.mode !== 'pickupFill' || opening.pickupBars === 0 || first.bars < 2) return undefined;
+  if (contract.style === 'LOFI') return undefined;
   const profile = grooveRhythmProfileForContract(contract);
-  const intensity = opening.intensity === 'bold' ? 3 : opening.intensity === 'medium' ? 2 : 1;
+  const ballad = isPopBalladContract(contract);
+  const intensity = ballad ? 1 : opening.intensity === 'bold' ? 3 : opening.intensity === 'medium' ? 2 : 1;
   const durationBeats = profile.transition.openingPickupBeats;
+  const fillFamily = ballad ? contract.drum.fillFamilies.light : contract.drum.fillFamilies.pickup;
   return {
-    id: `opening->${first.id}:${contract.drum.fillFamilies.pickup}`,
+    id: `opening->${first.id}:${fillFamily}`,
     toSectionId: first.id,
     sourceBar: 0,
     landingBar: 1,
@@ -421,7 +463,7 @@ function planOpeningBoundary(
     intensity,
     durationBeats,
     baseMask: 'replace-bar',
-    drumFillFamily: contract.drum.fillFamilies.pickup,
+    drumFillFamily: fillFamily,
     fillFunction: 'opening',
     fillScore: popRockFillScore({
       contract,
@@ -432,7 +474,7 @@ function planOpeningBoundary(
       toSectionId: first.id,
       variantSeed: fillVariantSeed,
     }),
-    landing: contract.drum.landing,
+    landing: ballad ? 'kick' : contract.drum.landing,
     opening: true,
   };
 }
@@ -459,7 +501,7 @@ function planInternalCadences(
     const drum = contract.drum;
     const profile = grooveRhythmProfileForContract(contract);
     const cadenceBars = profile.transition.cadenceEveryBars;
-    if (drum && allowsInternalCadence(section)) {
+    if (drum && contract.style !== 'LOFI' && allowsInternalCadence(section)) {
       // Never replace the final bar here: the section-boundary gesture owns it.
       for (let sourceInSection = cadenceBars - 1; sourceInSection < section.bars - 1; sourceInSection += cadenceBars) {
         const sourceBar = sectionStartBar + sourceInSection;
@@ -538,6 +580,11 @@ export function planGrooveScore(
     assertRoleRhythmMeter(contract, roleRhythmByRole);
     const profile = grooveRhythmProfileForContract(contract);
     const phraseBars = profile.phraseShape.length;
+    const lofiDrumPhrase = section.functionTag === 'loop'
+      ? options.lofiFoundationPlan
+        ? lofiDrumPhraseById(options.lofiFoundationPlan.drumPhraseId)
+        : lofiPhraseForContract(contract, fillVariantSeed)
+      : undefined;
     const energy = energyBySection[section.id] ?? 0.5;
     const nextEnergy = next ? (energyBySection[next.id] ?? energy) : energy;
     const climaxIntensity = climaxBySection.get(section.id) ?? 0;
@@ -549,6 +596,17 @@ export function planGrooveScore(
       bars: Array.from({ length: section.bars }, (_, barInSection) => {
         const phraseBarIndex = barInSection % phraseBars;
         const role = sectionBarRole(section, profile.phraseShape[phraseBarIndex]);
+        const drumPhraseBarIndex = (barInSection % 2) as 0 | 1;
+        const lofiPhraseInteraction = options.lofiPhraseInteractionPlan
+          ?.bySection[section.id]?.[barInSection];
+        const mutationBudget = options.lofiFoundationPlan?.mutationBudget;
+        const structuralMutation = !!lofiDrumPhrase
+          && lofiPhraseInteraction?.drumRole === 'answer'
+          && (
+          mutationBudget
+            ? mutationBudget.barOffsets.includes(barInSection % mutationBudget.cycleBars)
+            : barInSection % 8 === 6
+        );
         const trajectory = barTrajectory({
           section,
           next,
@@ -573,6 +631,18 @@ export function planGrooveScore(
           energy: barEnergy(trajectory, section, barInSection, energy, nextEnergy, climaxIntensity),
           trajectory,
           drumInteraction: drumInteractionForBar(contract, role),
+          drumPhraseId: lofiDrumPhrase?.id,
+          drumPhraseBarIndex: lofiDrumPhrase ? drumPhraseBarIndex : undefined,
+          drumPhraseRole: lofiDrumPhrase
+            ? lofiPhraseInteraction?.drumRole === 'answer' ? 'turnaround' : 'core'
+            : undefined,
+          structuralMutation: lofiDrumPhrase ? structuralMutation : undefined,
+          lofiPhraseInteraction,
+          lofiPocket: lofiDrumPhrase ? options.lofiPhraseInteractionPlan?.pocket : undefined,
+          drumTopLoopId: lofiDrumPhrase ? options.lofiFoundationPlan?.topLoopId : undefined,
+          drumTopLoopBarIndex: lofiDrumPhrase && options.lofiFoundationPlan?.topLoopId
+            ? (barInSection % 4) as 0 | 1 | 2 | 3
+            : undefined,
         };
       }),
     };

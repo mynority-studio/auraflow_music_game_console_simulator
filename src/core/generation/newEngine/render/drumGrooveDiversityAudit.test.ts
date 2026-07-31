@@ -86,8 +86,13 @@ describe('drum groove diversity audit', () => {
       expect(scoredBars).toBe(plannedBars);
       expect(contentSections).toBeGreaterThan(0);
       expect(variedContentSections).toBe(contentSections);
-      expect(boundaryCount).toBeGreaterThan(0);
-      expect(fillFamilies.size).toBeGreaterThan(0);
+      if (style === 'lofi') {
+        expect(boundaryCount).toBe(0);
+        expect(fillFamilies.size).toBe(0);
+      } else {
+        expect(boundaryCount).toBeGreaterThan(0);
+        expect(fillFamilies.size).toBeGreaterThan(0);
+      }
       expect(finalDrumSongs).toBe(expectedFinalDrumSongs);
       expect(finalVariedSongs).toBe(expectedFinalDrumSongs);
     }, 15000);

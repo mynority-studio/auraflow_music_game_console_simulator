@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { parseMidiMessage } from './webMidi';
+import {
+  canReceiveMidiInput,
+  claimMidiInputExclusive,
+  getMidiInputExclusiveOwner,
+  inferMidiInputTransport,
+  midiInputTransportLabel,
+  parseMidiMessage,
+  subscribeMidiInputExclusive,
+} from './webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 
 describe('motifSandbox/webMidi parseMidiMessage', () => {
@@ -20,6 +28,41 @@ describe('motifSandbox/webMidi parseMidiMessage', () => {
   });
   it('其它消息(clock 等)= other', () => {
     expect(parseMidiMessage([0xf8]).type).toBe('other');
+  });
+});
+
+describe('motifSandbox/webMidi input device transport', () => {
+  it('identifies Bluetooth MIDI names for the device picker without excluding unknown devices', () => {
+    expect(inferMidiInputTransport('CME WIDI Master')).toBe('bluetooth');
+    expect(inferMidiInputTransport('My Bluetooth MIDI Keyboard')).toBe('bluetooth');
+    expect(inferMidiInputTransport('USB MIDI Device')).toBe('usb');
+    expect(inferMidiInputTransport('CoreMIDI Port')).toBe('unknown');
+    expect(midiInputTransportLabel({ transport: 'bluetooth' })).toBe('BT');
+  });
+});
+
+describe('motifSandbox/webMidi exclusive input ownership', () => {
+  it('announces Q+T takeover ownership and releases it deterministically', () => {
+    const seen: Array<'takeover' | null> = [];
+    const unsubscribe = subscribeMidiInputExclusive((owner) => seen.push(owner));
+    const release = claimMidiInputExclusive('takeover');
+
+    expect(getMidiInputExclusiveOwner()).toBe('takeover');
+    release();
+    unsubscribe();
+
+    expect(getMidiInputExclusiveOwner()).toBeNull();
+    expect(seen).toEqual(['takeover', null]);
+  });
+
+  it('delivers input only to Q+T while takeover owns the transport', () => {
+    const release = claimMidiInputExclusive('takeover');
+
+    expect(canReceiveMidiInput()).toBe(false);
+    expect(canReceiveMidiInput('takeover')).toBe(true);
+
+    release();
+    expect(canReceiveMidiInput()).toBe(true);
   });
 });
 

@@ -235,6 +235,57 @@ describe('arranger · 曲式多样 (3.5)', () => {
     expect(legacy.sections.map((section) => section.id)).toEqual(['intro', 'verse1', 'chorus1', 'verse2', 'chorus2', 'outro']);
   });
 
+  it('★ ACG 钢琴 KB 限制 intro，并把 wide/ripple 的余量交给主题或发展段', () => {
+    const targets = [20, 24, 28, 32, 36, 40, 44, 48, 60, 84];
+    for (const profile of ACG_PIANO_ARRANGEMENT_PROFILES) {
+      for (const targetBars of targets) {
+        const sections = planForm({
+          style: 'acg',
+          rng: createRandomContext(17).substream('arranger'),
+          targetBars,
+          acgPianoArrangementProfileId: profile.id,
+        });
+        const intros = sections.filter((section) => section.role === 'intro');
+        expect(intros.every((section) => section.bars <= 4),
+          `${profile.id}/${targetBars} intro`).toBe(true);
+        const firstThemeIndex = sections.findIndex((section) => section.id === 'themeA');
+        expect(firstThemeIndex, `${profile.id}/${targetBars} themeA`).toBeGreaterThanOrEqual(0);
+        expect(sections.slice(0, firstThemeIndex).reduce((sum, section) => sum + section.bars, 0),
+          `${profile.id}/${targetBars} theme entrance`).toBeLessThanOrEqual(4);
+
+        const themes = sections.filter((section) => section.repeatGroup === 'A');
+        if (themes.length === 3) {
+          expect(new Set(themes.map((section) => section.bars)).size,
+            `${profile.id}/${targetBars} A/A'/return`).toBe(1);
+        }
+
+        if (profile.id === 'wide-cinema' || profile.id === 'ripple-journey') {
+          expect(sections.reduce((sum, section) => sum + section.bars, 0),
+            `${profile.id}/${targetBars} exact budget`).toBe(targetBars);
+          const development = sections.find((section) =>
+            section.id === 'pianoWideLift' || section.id === 'pianoLift');
+          expect(development?.bars ?? 0, `${profile.id}/${targetBars} development`)
+            .toBeLessThanOrEqual(8);
+        }
+      }
+    }
+
+    const wideForty = planForm({
+      style: 'acg',
+      rng: createRandomContext(17).substream('arranger'),
+      targetBars: 40,
+      acgPianoArrangementProfileId: 'wide-cinema',
+    });
+    expect(wideForty.map((section) => `${section.id}:${section.bars}`)).toEqual([
+      'pianoWidePrelude:4',
+      'themeA:8',
+      'themeA2:8',
+      'pianoWideLift:8',
+      'themeReturn:8',
+      'pianoFrameCoda:4',
+    ]);
+  });
+
   it('★ T4 dynamics:lofi 峰值<0.6 且 < pop hook;jazz 不吃 0.9;breakdown 显著低于邻段;统一 1 chord/bar', () => {
     const peak = (p: ReturnType<typeof styleForm>) => Math.max(...p.sections.map((s) => p.energyBySection[s.id]));
     const lofi = styleForm('lofi', 5);

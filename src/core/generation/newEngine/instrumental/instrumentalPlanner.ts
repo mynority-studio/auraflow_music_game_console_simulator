@@ -11,7 +11,7 @@ import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, OpeningTextureEntry, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf, phraseStartBeats } from '../arranger/phraseTiming';
-import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
+import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, TEXTURE_POOL, type GrooveTextureContract, type PhraseCellRole, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole, dream5504OrchestrationBank } from '../knowledge/instruments';
 import {
   chooseEnsembleWorld,
@@ -19,7 +19,14 @@ import {
   orchestrateRolePrograms,
 } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, isDream5504DryBaselineStyle, type RoleMix } from '../knowledge/gmMixProfile';
-import { drumGrooveVariants, drumPerformanceVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
+import {
+  drumGrooveVariants,
+  drumPerformanceVariants,
+  lofiAuxiliaryTopLoopById,
+  lofiDrumPhraseById,
+  type DrumHit,
+  type GrooveKind,
+} from '../knowledge/grooves';
 import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, gmbkVoiceLabel, isAcousticPianoVoice, mapProgramToDream5504, mapRoleProgramsToDream5504, selectGMBK5X128Voice, type AcgPianoSongVoice, type GM128VoiceSelection } from '../../../sound/GMBK5X128Voices';
 import { buildGestureExpressionByRole } from './gestureExpression';
 import {
@@ -83,17 +90,19 @@ function pedalPlanForRole(args: {
   activeRolesBySection: Record<string, readonly InstrumentRoleName[]>;
   sharedPianoMotionRole?: InstrumentRoleName;
   playerGroup?: 'shared-piano';
+  scoreOwnsTiming?: boolean;
 }): RolePedalPlan {
-  const { role, arrangement, harmonic, programByRoleSection, bankByRoleSection, activeRolesBySection, sharedPianoMotionRole, playerGroup } = args;
+  const { role, arrangement, harmonic, programByRoleSection, bankByRoleSection, activeRolesBySection, sharedPianoMotionRole, playerGroup, scoreOwnsTiming = false } = args;
   const disabledBySection: RolePedalPlan['disabledBySection'] = {};
   const events: PedalBeatEvent[] = [];
+  const authorizedSectionIds: string[] = [];
   const motionRole = sharedPianoMotionRole ?? role;
 
   for (const section of arrangement.sections) {
     const sectionId = section.id;
     const program = programByRoleSection[role]?.[sectionId];
     const motion = arrangement.rolePerformanceBySection[motionRole]?.[sectionId]?.keyboardMotion;
-    if (!(activeRolesBySection[sectionId] ?? []).includes(role)) {
+    if (!(activeRolesBySection[sectionId] ?? []).includes(role) && !scoreOwnsTiming) {
       disabledBySection[sectionId] = 'inactive';
       continue;
     }
@@ -106,11 +115,20 @@ function pedalPlanForRole(args: {
       disabledBySection[sectionId] = 'non-piano-voice';
       continue;
     }
-    if (isFastKeyboardMotion(motion)) {
+    // ACG's fast-run exception belongs to a concrete local score gesture,
+    // never to a coarse whole-section keyboardMotion label.
+    if (isFastKeyboardMotion(motion) && !scoreOwnsTiming) {
       disabledBySection[sectionId] = 'fast-keyboard-motion';
       continue;
     }
-    if (!isPedalKeyboardMotion(motion) || !harmonic) continue;
+    if (!harmonic || (!scoreOwnsTiming && !isPedalKeyboardMotion(motion))) continue;
+
+    if (scoreOwnsTiming) {
+      if (harmonic.chordTimeline.some((chord) => chord.sectionId === sectionId)) {
+        authorizedSectionIds.push(sectionId);
+      }
+      continue;
+    }
 
     for (const chord of harmonic.chordTimeline) {
       if (chord.sectionId !== sectionId) continue;
@@ -124,7 +142,14 @@ function pedalPlanForRole(args: {
   }
 
   events.sort((a, b) => a.atBeat - b.atBeat || Number(a.down) - Number(b.down));
-  return { role, playerGroup, events, disabledBySection };
+  return {
+    role,
+    playerGroup,
+    timingOwner: scoreOwnsTiming ? 'arranger-piano-score' : 'instrumentation',
+    ...(scoreOwnsTiming ? { authorizedSectionIds } : {}),
+    events,
+    disabledBySection,
+  };
 }
 
 function buildPedalPlanByRole(args: {
@@ -154,6 +179,7 @@ function buildPedalPlanByRole(args: {
         activeRolesBySection,
         sharedPianoMotionRole: 'comp',
         playerGroup: 'shared-piano',
+        scoreOwnsTiming: style.toLowerCase() === 'acg',
       });
     }
   }
@@ -373,6 +399,89 @@ const TIMBRE_SWITCH_PROB = 0.12; // 偶尔(每首掷一次):~12% 歌切,88% 全�
 // verse 段内织体变化概率(每首掷一次):LOFI 段内变化是风格的一部分(高)、现代风格保守(低)。
 const VERSE_VARIATION_PROB: Record<string, number> = { POP: 0.35, RNB: 0.35, JAZZ: 0.2, LOFI: 0.6 };
 const ACG_PIANO_ROLES: readonly InstrumentRoleName[] = ['lead', 'comp', 'bass'];
+const POP_BALLAD_CONTRACT_ID = 'pop_ballad_halftime';
+
+function popBalladTextureTag(section: Section): SectionFunctionTag {
+  if (section.functionTag) return section.functionTag;
+  if (section.role === 'intro') return 'setup';
+  if (section.role === 'chorus') return 'hook';
+  if (section.role === 'bridge') return 'breakdown';
+  if (section.role === 'outro') return 'outro';
+  return 'story';
+}
+
+function applyPopBalladVideoTextureArc(args: {
+  arrangement: ArrangementPlan;
+  richTextureBySection: Record<string, string>;
+  richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }>;
+}): void {
+  if (args.arrangement.songGrooveContractId !== POP_BALLAD_CONTRACT_ID) return;
+  for (const section of args.arrangement.sections) {
+    const contract = args.arrangement.grooveContractBySection?.[section.id] ?? args.arrangement.songGrooveContract;
+    if (contract.id !== POP_BALLAD_CONTRACT_ID) continue;
+    delete args.richTextureSwitchBySection[section.id];
+    switch (popBalladTextureTag(section as Section)) {
+      case 'setup':
+        args.richTextureBySection[section.id] = 'Lyrical_Felt_Piano_Sparse';
+        args.richTextureSwitchBySection[section.id] = { atFraction: 0.5, toTexture: 'Ambient_Pad_Breath' };
+        break;
+      case 'story':
+        args.richTextureBySection[section.id] = 'Lyrical_Felt_Piano_Sparse';
+        args.richTextureSwitchBySection[section.id] = { atFraction: 0.5, toTexture: 'Soft_Guitar_Pluck_8ths' };
+        break;
+      case 'build':
+        args.richTextureBySection[section.id] = 'Lyrical_10th_Broken';
+        args.richTextureSwitchBySection[section.id] = { atFraction: 0.7, toTexture: 'Ambient_Reverse_Swell' };
+        break;
+      case 'hook':
+      case 'headOut':
+        args.richTextureBySection[section.id] = 'Piano_Wide_Color_Motion';
+        args.richTextureSwitchBySection[section.id] = { atFraction: 0.62, toTexture: 'Pop_Ballad_158_Sweep' };
+        break;
+      case 'breakdown':
+      case 'solo':
+        args.richTextureBySection[section.id] = 'Ambient_Pad_Breath';
+        args.richTextureSwitchBySection[section.id] = { atFraction: 0.5, toTexture: 'Piano_Question_Answer' };
+        break;
+      case 'tag':
+      case 'outro':
+        args.richTextureBySection[section.id] = 'Low_Pedal_Color_Wash';
+        break;
+      default:
+        args.richTextureBySection[section.id] = 'Lyrical_Felt_Piano_Sparse';
+        break;
+    }
+  }
+}
+
+function firstContrastingTextureCase(args: {
+  style: TextureStyleName;
+  phraseRole: PhraseCellRole;
+  density: number;
+  energy: number;
+  isDominantChain: boolean;
+  contract?: GrooveTextureContract;
+  exclude?: ReadonlySet<string>;
+}): string | undefined {
+  const allowed = (textureCase: string): boolean =>
+    (!args.exclude?.has(textureCase))
+    && (!args.contract?.allowedTextureCases || args.contract.allowedTextureCases.includes(textureCase))
+    && !args.contract?.forbiddenTextureCases?.includes(textureCase);
+  const candidates = TEXTURE_POOL.filter((texture) => {
+    if (!allowed(texture.textureCase)) return false;
+    if (!texture.styles.includes(args.style)) return false;
+    if (!texture.phraseRoles.includes(args.phraseRole)) return false;
+    if (args.density < texture.densityRange[0] || args.density > texture.densityRange[1]) return false;
+    if (args.energy < texture.energyRange[0] || args.energy > texture.energyRange[1]) return false;
+    if (texture.avoidOnDominantChain && args.isDominantChain) return false;
+    return true;
+  });
+  const byCase = new Map(candidates.map((texture) => [texture.textureCase, texture]));
+  for (const textureCase of args.contract?.preferredTextureCases ?? []) {
+    if (byCase.has(textureCase)) return textureCase;
+  }
+  return candidates[0]?.textureCase;
+}
 
 /** ACG 用独立随机子流按权重挑一架琴；无子流时回退默认大钢琴，保住直接调用的兼容性。 */
 function pickAcgPianoSongVoice(rng?: Rng): AcgPianoSongVoice {
@@ -607,6 +716,19 @@ export function buildInstrumentationPlan(
     })
     .filter((line): line is string => !!line);
   const gestureExpressionByRole = buildGestureExpressionByRole(ALL_ROLES, roleProgram, band.style);
+  // Arrangement-owned LOFI Comp has already written its key-release behavior
+  // (finger overlap or documented damper) before NoteIR exists. Project that
+  // ownership into InstrumentationPlan so the generic keyboard 0.9 gate does
+  // not shorten the scored connection a second time.
+  if (
+    arrangement.lofiFoundationPlan?.compIntent.brokenChordTechnique === 'anchored-finger-legato'
+    && gestureExpressionByRole.comp.kind === 'keyboard-touch'
+  ) {
+    gestureExpressionByRole.comp = {
+      ...gestureExpressionByRole.comp,
+      gateRatio: 1,
+    };
+  }
   const registerByRole = Object.fromEntries(
     ALL_ROLES.map((role) => {
       const ensembleRange = orch.registerByRole?.[role];
@@ -751,6 +873,20 @@ export function buildInstrumentationPlan(
   const richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }> = {};
   const richStyle = RICH_STYLE[band.style.toLowerCase()];
   if (rng && richStyle) {
+    const requiredCompMelodySpace = richStyle === 'LOFI'
+      ? arrangement.lofiLeadBlueprintPlan?.requiredCompMelodySpace
+      : undefined;
+    const incompatibleLofiTextures = requiredCompMelodySpace && requiredCompMelodySpace !== 'any'
+      ? TEXTURE_POOL
+        .filter((texture) =>
+          texture.styles.includes('LOFI')
+          && texture.partPolicy?.melodySpace !== requiredCompMelodySpace)
+        .map((texture) => texture.textureCase)
+      : [];
+    const baseTextureExclusions = new Set([
+      ...DELAYED_ENTRY_TEXTURES,
+      ...incompatibleLofiTextures,
+    ]);
     // ★ #6:低槽(非 chorus/bridge 段,各风格通用)/高槽(chorus·bridge)若【任一所属段是属链】→ 避让
     //   ambient/pedal 织体(否则糊在属动机上)。pickTextureForBarWithGroove 仍只掷一次 → rng 序列不变,只换更合适织体。
     // ★ Phase E §3.7:texture 选择消费 arranger 下发的 GrooveContract(preferred/allowed/forbidden + density/grid)→
@@ -775,10 +911,23 @@ export function buildInstrumentationPlan(
     for (const group of groups) {
       const lowDom = group.sections.some((s) => !isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
       const highDom = group.sections.some((s) => isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
-      const low = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, contract: group.contract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
-      const high = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, contract: group.contract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+      const low = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, contract: group.contract, exclude: baseTextureExclusions, random: rng });
+      const highDensity = densityForCell('lift', 'CHORUS');
+      const highEnergy = energyForCell('lift', 'CHORUS');
+      const high = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'lift', density: highDensity, energy: highEnergy, isDominantChain: highDom, contract: group.contract, exclude: baseTextureExclusions, random: rng });
       const lowTc = low?.textureCase ?? high?.textureCase;
-      const highTc = high?.textureCase ?? lowTc;
+      let highTc = high?.textureCase ?? lowTc;
+      if (lowTc && highTc === lowTc) {
+        highTc = firstContrastingTextureCase({
+          style: richStyle,
+          phraseRole: 'lift',
+          density: highDensity,
+          energy: highEnergy,
+          isDominantChain: highDom,
+          contract: group.contract,
+          exclude: new Set([...baseTextureExclusions, lowTc]),
+        }) ?? highTc;
+      }
       slotsByContractId.set(group.contract.id, { lowTc, highTc });
       for (const section of group.sections) {
         const tc = isHigh(section.role) ? highTc : lowTc;
@@ -793,7 +942,7 @@ export function buildInstrumentationPlan(
       if (!lowTc || rng.next() >= (VERSE_VARIATION_PROB[richStyle] ?? 0.35)) continue;
       const variant = pickTextureForBarWithGroove({
         style: richStyle, phraseRole: 'develop', density: densityForCell('develop', 'VERSE'), energy: energyForCell('develop', 'VERSE'),
-        isDominantChain: false, contract: group.contract, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
+        isDominantChain: false, contract: group.contract, exclude: new Set([...baseTextureExclusions, lowTc]), random: rng,
       });
       const vtc = variant?.textureCase;
       if (vtc && rateTextureTransition(lowTc, vtc).rating === 'allow') {
@@ -802,6 +951,8 @@ export function buildInstrumentationPlan(
         }
       }
     }
+
+    applyPopBalladVideoTextureArc({ arrangement, richTextureBySection, richTextureSwitchBySection });
   }
 
   // ★ 鼓型变体匹配(器配层):Arranger 下发 DrumPerformanceContract = 鼓手总谱主权威。
@@ -827,6 +978,34 @@ export function buildInstrumentationPlan(
       const baseVariant = variantByPerformanceKey[key] ?? 0;
       drumPatternBySection[s.id] = variants[baseVariant] ?? variants[0];
       const scoreBars = arrangement.grooveScorePlan?.bySection[s.id]?.bars;
+      const arrangerPhrasePatterns = scoreBars?.map((bar) => {
+        const phrase = lofiDrumPhraseById(bar.drumPhraseId);
+        if (!phrase || bar.drumPhraseBarIndex === undefined) return undefined;
+        const core = bar.drumPhraseRole === 'turnaround'
+          ? phrase.turnaroundBar
+          : phrase.bars[bar.drumPhraseBarIndex];
+        const topLoop = lofiAuxiliaryTopLoopById(bar.drumTopLoopId);
+        const top = topLoop && bar.drumTopLoopBarIndex !== undefined
+          ? topLoop.bars[bar.drumTopLoopBarIndex]
+          : [];
+        return [...core, ...top].map((hit) => ({ ...hit }));
+      });
+      if (arrangerPhrasePatterns?.some((pattern) => pattern !== undefined)) {
+        drumPatternBySectionBar[s.id] = arrangerPhrasePatterns.map((pattern) =>
+          pattern ?? drumPatternBySection[s.id].map((hit) => ({ ...hit })));
+        drumPatternBySection[s.id] = drumPatternBySectionBar[s.id][0] ?? drumPatternBySection[s.id];
+        continue;
+      }
+      // LOFI non-loop sections keep one minimal mask. The main loop path
+      // above is owned by the Arranger's two-bar phrase score; neither path
+      // performs an implicit per-bar modulo rotation.
+      if (band.style.toLowerCase() === 'lofi') {
+        drumPatternBySectionBar[s.id] = Array.from(
+          { length: s.bars },
+          () => drumPatternBySection[s.id].map((hit) => ({ ...hit })),
+        );
+        continue;
+      }
       drumPatternBySectionBar[s.id] = (scoreBars ?? Array.from({ length: s.bars }, (_, barInSection) => ({
         role: 'base' as const,
         phraseIndex: Math.floor(barInSection / 4),

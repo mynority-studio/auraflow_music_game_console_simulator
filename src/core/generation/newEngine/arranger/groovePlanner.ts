@@ -21,8 +21,21 @@ function grooveStyleOf(style: string): GrooveStyleName { return STYLE_TO_GROOVE[
 function isLyricalMood(mood?: string): boolean {
   if (!mood) return false;
   const s = mood.toLowerCase();
-  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s)) return false;
-  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s);
+  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s) || /(硬|炸|燃|舞曲|跳舞|高速)/.test(s)) return false;
+  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s)
+    || /(抒情|慢歌|慢板|温柔|柔和|悲伤|伤感|情绪|浪漫|安静|平静|柔)/.test(s);
+}
+
+function isUpbeatMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  return /\b(drive|hype|dance|edm|fast|upbeat|energetic)\b/.test(s) || /(快歌|快速|高速|燃|炸|舞曲|跳舞|元气)/.test(s);
+}
+
+function isCjPopMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  return /\b(cpop|c-pop|mandopop|mandarin|chinese|jpop|j-pop|japanese)\b/.test(s) || /(华语|中文|国语|日系|日式|日本|日语)/.test(s);
 }
 
 function weightedPickContract(pool: readonly GrooveContract[], rng: Rng): GrooveContract {
@@ -66,6 +79,11 @@ function pickGrooveContractForMood(gs: GrooveStyleName, rng: Rng, mood?: string)
       c.id === 'pop_ballad_halftime' || c.density === 'sparse' || c.articulation === 'ballad');
     if (ballad.length > 0) return weightedPickContract(ballad, rng);
   }
+  if (gs === 'POP' && isCjPopMood(mood)) {
+    const cjPop = grooveContractsForStyle(gs).filter((c) =>
+      c.id === 'pop_radio_straight' || c.id === 'pop_jpop_push_8ths' || c.id === 'pop_ballad_halftime');
+    if (cjPop.length > 0) return weightedPickContract(cjPop, rng);
+  }
   return pickGrooveContract(gs, rng);
 }
 
@@ -88,14 +106,25 @@ function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
 /** ★ 选 GrooveContract(Phase D):全 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)→ 真 pool 加权(独立
  *  `grooveContract` 子流,确定性);BLUES/无 rng → legacy 派生兜底。section-level 暂全曲同 contract(段级变化留后续)。 */
 export function planGrooveContract(
-  sections: readonly Section[], style: string, feel: Feel, rng?: RandomContext, mood?: string,
+  sections: readonly Section[],
+  style: string,
+  feel: Feel,
+  rng?: RandomContext,
+  mood?: string,
+  songContractOverride?: GrooveContract,
 ): { song: GrooveContract; bySection: Record<SectionId, GrooveContract> } {
   // ★ MG full-parity Phase D(directive 3.2,推翻零洗牌):所有 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)
   //   都从真 pool 选 GrooveContract(独立 grooveContract 子流,确定性)。BLUES(archived)/ 无 rng → legacy 派生兜底。
   //   render 只消费选中的 contract(pocket 由 applyGroovePocket 消费;feel 由 mgLeadRenderer 消费),不重 pick。
   const gs = grooveStyleOf(style);
   const isMgBacked = gs === 'POP' || gs === 'JAZZ' || gs === 'RNB' || gs === 'LOFI' || gs === 'ACG';
-  const song = isMgBacked && rng ? pickGrooveContractForMood(gs, rng.substream('grooveContract'), mood) : legacyContractForStyle(style, feel);
+  const song = songContractOverride
+    ?? (isMgBacked && rng
+      ? pickGrooveContractForMood(gs, rng.substream('grooveContract'), mood)
+      : legacyContractForStyle(style, feel));
+  if (song.style !== gs) {
+    throw new Error(`GrooveContract override ${song.id} is incompatible with ${gs}`);
+  }
   const bySection: Record<SectionId, GrooveContract> = {};
   for (const s of sections) bySection[s.id] = song;
   return { song, bySection };
@@ -106,6 +135,7 @@ export function planGroove(sections: readonly Section[], style: string, mood?: s
   const styleKey = style.toLowerCase();
   const base = STYLE_BASE[styleKey] ?? 'straight';
   const popLyrical = styleKey === 'pop' && isLyricalMood(mood);
+  const popUpbeat = styleKey === 'pop' && isUpbeatMood(mood);
   const out: Record<SectionId, GrooveKind> = {};
   for (const s of sections) {
     const tag = s.functionTag;
@@ -113,10 +143,15 @@ export function planGroove(sections: readonly Section[], style: string, mood?: s
     if (popLyrical && (tag === 'story' || tag === 'setup' || tag === 'breakdown' || tag === 'outro' || tag === 'tag')) g = 'sparse';
     else if (popLyrical && tag === 'hook') g = 'straight';
     else if (tag === 'setup' || tag === 'breakdown' || tag === 'outro' || tag === 'tag') g = 'sparse';
+    else if (styleKey === 'pop' && tag === 'hook') g = popUpbeat ? 'driving' : 'straight';
     else if (tag === 'hook' || tag === 'solo') g = 'driving';
     else if (tag === 'build') g = 'straight';
     else if (tag) g = base;          // story / loop / head → 风格基底
-    else g = s.role === 'intro' || s.role === 'outro' ? 'sparse' : s.role === 'chorus' ? 'driving' : base; // 无 functionTag → 按 role
+    else g = s.role === 'intro' || s.role === 'outro'
+      ? 'sparse'
+      : s.role === 'chorus'
+        ? styleKey === 'pop' && !popUpbeat ? 'straight' : 'driving'
+        : base; // 无 functionTag → 按 role
     out[s.id] = g;
   }
   return out;

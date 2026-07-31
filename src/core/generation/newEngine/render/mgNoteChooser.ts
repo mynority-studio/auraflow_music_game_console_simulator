@@ -243,8 +243,20 @@ export function chooseNote(
       const belowDist = Math.abs(below - ctx.prevMidi);
       pick = aboveDist <= belowDist ? above : below;
     }
-    while (pick > MELODY_RANGE.HIGH) pick -= 12;
-    while (pick < MELODY_RANGE.LOW) pick += 12;
+    if (ctx.sets.allowChromaticRandom === false) {
+      // The locked target may legitimately sit in IV's lower register
+      // (54–59). Octave-wrapping only the approach turns a semitone gesture
+      // into a minor ninth. Keep both notes in the same register instead.
+      const IV_LOW = 54;
+      const IV_HIGH = 84;
+      if (pick < IV_LOW || pick > IV_HIGH) {
+        const alternate = pick === above ? below : above;
+        if (alternate >= IV_LOW && alternate <= IV_HIGH) pick = alternate;
+      }
+    } else {
+      while (pick > MELODY_RANGE.HIGH) pick -= 12;
+      while (pick < MELODY_RANGE.LOW) pick += 12;
+    }
     return { midi: pick, triadicState: ctx.triadicState };
   }
 
@@ -374,7 +386,7 @@ function chooseMidiViaIvWindow(
   const ivType = ivTypeForKind(token.kind)!;
   const haveChord = byCat.chord.length > 0;
   const haveColor = byCat.color.length > 0;
-  const haveRandom = byCat.random.length > 0;
+  const haveRandom = ctx.sets.allowChromaticRandom !== false && byCat.random.length > 0;
   const cat = ivPickCategory(ivType, haveChord, haveColor, haveRandom, ctx.rng);
 
   // IV SCALE permissive pool — when picking SCALE, chord + color MIDIs are
@@ -388,7 +400,10 @@ function chooseMidiViaIvWindow(
 
   // Fallback chain if chosen category's pool is empty
   if (pool.length === 0) {
-    for (const c of ['chord', 'color', 'scale', 'random'] as IvCat[]) {
+    const fallbackCategories: IvCat[] = ctx.sets.allowChromaticRandom === false
+      ? ['chord', 'color', 'scale']
+      : ['chord', 'color', 'scale', 'random'];
+    for (const c of fallbackCategories) {
       if (byCat[c].length > 0) { pool = byCat[c]; break; }
     }
   }
@@ -461,10 +476,22 @@ function chooseGoalNote(ctx: NoteChooserContext, registerCenter: number): Choice
 }
 
 function candidatePcs(token: AbstractMelodyToken, sets: ChordPitchSets): number[] {
+  const strictLocal = sets.allowChromaticRandom === false;
+  const admittedLocal = [...new Set([
+    ...sets.chordTones,
+    ...sets.colorTones,
+    ...sets.scaleTones,
+  ])];
   // Fallback for non-ivType kinds (A / X / G / B / Slope / R / Triadic).
   // C / L / S / H route through chooseMidiViaIvWindow upstream.
   switch (token.kind) {
-    case 'A': return sets.approachTargets.length > 0 ? sets.approachTargets : sets.scaleTones;
+    case 'A':
+      // Without the immediately-next target locked by the Realizer this is
+      // not a complete approach gesture. LOFI falls back to an admitted
+      // local tone rather than leaving a chromatic note unresolved.
+      return strictLocal
+        ? admittedLocal
+        : (sets.approachTargets.length > 0 ? sets.approachTargets : sets.scaleTones);
     case 'X': {
       if (token.degree !== undefined) {
         // X(degree) — chord-family-aware degree resolution per IV
@@ -472,7 +499,12 @@ function candidatePcs(token: AbstractMelodyToken, sets: ChordPitchSets): number[
         // the resolved pc as-is, no avoid snap.
         const offset = resolveDegree(String(token.degree), sets.chordType);
         const pc = ((sets.rootPc + offset) % 12 + 12) % 12;
-        return [pc];
+        if (!strictLocal || admittedLocal.includes(pc)) return [pc];
+        return admittedLocal.slice().sort((a, b) => {
+          const distanceA = Math.min((a - pc + 12) % 12, (pc - a + 12) % 12);
+          const distanceB = Math.min((b - pc + 12) % 12, (pc - b + 12) % 12);
+          return distanceA - distanceB || a - b;
+        }).slice(0, 1);
       }
       return [...sets.chordTones, ...sets.scaleTones];
     }

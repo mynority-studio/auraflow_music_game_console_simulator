@@ -1,8 +1,8 @@
 // ============================================================
 // leadTakeoverSandbox · rhythm quantizer
 // ------------------------------------------------------------
-// Sandbox-local timing helper for user takeover input. It quantizes user
-// note-on timing to a future grid point inside the current musical bar.
+// Sandbox-local timing helper for user takeover input. It micro-snaps live
+// events to the nearest grooved grid point without hiding them behind latency.
 // ============================================================
 
 export type TakeoverQuantizeGrid = '16th' | '32nd';
@@ -12,9 +12,11 @@ export interface TakeoverQuantizeOptions {
   bpm: number;
   timeSignature: [number, number];
   grid: TakeoverQuantizeGrid;
-  lateGraceMs?: number;
-  strongBeatLateGraceMs?: number;
   grooveContract?: TakeoverQuantizeGrooveContract | null;
+  /** Live-input guard: farther grid points are monitored but not delayed. */
+  maxDelayMs?: number;
+  /** Sequential notes must resolve after this already-assigned target. */
+  afterTargetBeat?: number;
 }
 
 export interface TakeoverQuantizeGrooveContract {
@@ -79,11 +81,17 @@ function isOnBeat(targetBeat: number): boolean {
 }
 
 function swingOffsetBeats(targetBeat: number, contract: TakeoverQuantizeGrooveContract): number {
-  const ratio = Number.isFinite(contract.melodySwingRatio) ? contract.melodySwingRatio! : 0.5;
+  const rawRatio = Number.isFinite(contract.melodySwingRatio) ? contract.melodySwingRatio! : 0.5;
+  const ratio = Math.max(0.5, Math.min(0.8, rawRatio));
   if (Math.abs(ratio - 0.5) < SWING_EPSILON) return 0;
   const frac = beatFraction(targetBeat);
-  if (Math.abs(frac - SWING_EIGHTH_FRAC) > SWING_EPSILON) return 0;
-  return ratio - SWING_EIGHTH_FRAC;
+  if (Math.abs(frac) < SWING_EPSILON) return 0;
+  // Warp every 16th/32nd inside the beat around the swung eighth. Moving only
+  // the eighth itself can put a later 32nd before it and merge rapid notes.
+  const warped = frac <= SWING_EIGHTH_FRAC
+    ? frac * (ratio / SWING_EIGHTH_FRAC)
+    : ratio + (frac - SWING_EIGHTH_FRAC) * ((1 - ratio) / (1 - SWING_EIGHTH_FRAC));
+  return warped - frac;
 }
 
 function groovePocketMs(targetBeat: number, contract: TakeoverQuantizeGrooveContract): number {
@@ -110,33 +118,6 @@ export function grooveTargetForBase(
   };
 }
 
-function applyGrooveContract(
-  baseTargetBeat: number,
-  sourceBeat: number,
-  bpm: number,
-  contract: TakeoverQuantizeGrooveContract | null | undefined,
-): Pick<TakeoverQuantizeResult, 'targetBeat' | 'baseTargetBeat' | 'grooveOffsetMs' | 'grooveContractId'> {
-  const groove = grooveTargetForBase(baseTargetBeat, bpm, contract);
-  return {
-    ...groove,
-    targetBeat: Math.max(sourceBeat, groove.targetBeat),
-  };
-}
-
-function isGrooveStrongBeat(
-  baseBeat: number,
-  barStartBeat: number,
-  contract: TakeoverQuantizeGrooveContract | null | undefined,
-): boolean {
-  if (!isOnBeat(baseBeat)) return false;
-  const beatIndex = Math.max(0, Math.round(baseBeat - barStartBeat));
-  if (beatIndex === 0) return true;
-  const accentPattern = contract?.accentPattern;
-  if (!accentPattern || accentPattern.length === 0) return true;
-  const accent = accentPattern[beatIndex % accentPattern.length];
-  return !Number.isFinite(accent) || accent >= 1;
-}
-
 export function quantizeTakeoverBeat(options: TakeoverQuantizeOptions): TakeoverQuantizeResult {
   const sourceBeat = Number.isFinite(options.beat) ? options.beat : 0;
   const bpm = Number.isFinite(options.bpm) && options.bpm > 0 ? options.bpm : DEFAULT_BPM;
@@ -146,41 +127,63 @@ export function quantizeTakeoverBeat(options: TakeoverQuantizeOptions): Takeover
   const barStartBeat = Math.floor(sourceBeat / beatsPerBar) * beatsPerBar;
   const barEndBeat = barStartBeat + beatsPerBar;
   const localBeat = sourceBeat - barStartBeat;
+  const gridIndex = Math.floor((localBeat + EPSILON) / gridStepBeats);
+  const afterTargetBeat = Number.isFinite(options.afterTargetBeat)
+    ? options.afterTargetBeat!
+    : null;
 
-  const previousGridLocal = Math.floor((localBeat + EPSILON) / gridStepBeats) * gridStepBeats;
-  const previousGridBeat = barStartBeat + previousGridLocal;
-  const lateGraceMs = Math.max(0, options.lateGraceMs ?? 0);
-  const strongBeatLateGraceMs = Math.max(lateGraceMs, options.strongBeatLateGraceMs ?? 0);
-  const previousGroove = grooveTargetForBase(previousGridBeat, bpm, options.grooveContract);
-  const previousGrooveBeat = previousGroove.targetBeat;
-  const previousGraceMs = isGrooveStrongBeat(previousGridBeat, barStartBeat, options.grooveContract)
-    ? strongBeatLateGraceMs
-    : lateGraceMs;
-  const previousCatchEndBeat = previousGrooveBeat + (previousGraceMs / msPerBeat);
-  if (previousGraceMs > 0
-    && sourceBeat >= previousGridBeat - EPSILON
-    && sourceBeat <= previousCatchEndBeat + EPSILON) {
-    const targetBeat = Math.max(sourceBeat, previousGrooveBeat);
-    const delayMs = Math.max(0, (targetBeat - sourceBeat) * msPerBeat);
-    return {
-      sourceBeat,
-      targetBeat,
-      delayMs,
-      gridStepBeats,
-      barStartBeat,
-      barEndBeat,
-      grid: options.grid,
-      baseTargetBeat: previousGroove.baseTargetBeat,
-      grooveOffsetMs: previousGroove.grooveOffsetMs,
-      grooveContractId: previousGroove.grooveContractId,
+  type Candidate = ReturnType<typeof grooveTargetForBase> & {
+    distance: number;
+    actualTargetBeat: number;
+  };
+  let selected: Candidate | null = null;
+
+  // Four neighbours cover the locally warped swing grid. Expand forward when
+  // a rapid sequence has already claimed all nearby targets.
+  for (let offset = -2; offset <= 16; offset++) {
+    const baseTargetBeat = barStartBeat + (gridIndex + offset) * gridStepBeats;
+    const groove = grooveTargetForBase(baseTargetBeat, bpm, options.grooveContract);
+    const actualTargetBeat = Math.max(sourceBeat, groove.targetBeat);
+    if (afterTargetBeat !== null && actualTargetBeat <= afterTargetBeat + EPSILON) continue;
+    const candidate: Candidate = {
+      ...groove,
+      actualTargetBeat,
+      distance: Math.abs(groove.targetBeat - sourceBeat),
     };
+    if (!selected
+      || candidate.distance < selected.distance - EPSILON
+      || (Math.abs(candidate.distance - selected.distance) <= EPSILON
+        && candidate.targetBeat <= sourceBeat
+        && selected.targetBeat > sourceBeat)) {
+      selected = candidate;
+    }
   }
 
-  const targetLocal = Math.ceil((localBeat - EPSILON) / gridStepBeats) * gridStepBeats;
-  const baseTargetBeat = barStartBeat + targetLocal;
-  const groove = applyGrooveContract(baseTargetBeat, sourceBeat, bpm, options.grooveContract);
-  const targetBeat = groove.targetBeat;
-  const delayMs = Math.max(0, (targetBeat - sourceBeat) * msPerBeat);
+  const nearest = selected ?? {
+    ...grooveTargetForBase(sourceBeat, bpm, options.grooveContract),
+    actualTargetBeat: sourceBeat,
+    distance: 0,
+  };
+  let targetBeat = nearest.actualTargetBeat;
+  let delayMs = Math.max(0, (targetBeat - sourceBeat) * msPerBeat);
+  const maxDelayMs = Number.isFinite(options.maxDelayMs)
+    ? Math.max(0, options.maxDelayMs!)
+    : Number.POSITIVE_INFINITY;
+  // A live note may skip a far-away snap, but never jump in front of an
+  // already assigned sequential note.
+  if (delayMs > maxDelayMs) {
+    if (afterTargetBeat === null || sourceBeat > afterTargetBeat + EPSILON) {
+      targetBeat = sourceBeat;
+      delayMs = 0;
+    } else {
+      const maxDelayBeat = sourceBeat + (maxDelayMs / msPerBeat);
+      const audibleSeparationBeat = afterTargetBeat + (12 / msPerBeat);
+      targetBeat = Math.max(audibleSeparationBeat, Math.min(targetBeat, maxDelayBeat));
+      delayMs = Math.max(0, (targetBeat - sourceBeat) * msPerBeat);
+      if (targetBeat <= maxDelayBeat + EPSILON) delayMs = Math.min(delayMs, maxDelayMs);
+    }
+  }
+
   return {
     sourceBeat,
     targetBeat,
@@ -189,8 +192,8 @@ export function quantizeTakeoverBeat(options: TakeoverQuantizeOptions): Takeover
     barStartBeat,
     barEndBeat,
     grid: options.grid,
-    baseTargetBeat: groove.baseTargetBeat,
-    grooveOffsetMs: groove.grooveOffsetMs,
-    grooveContractId: groove.grooveContractId,
+    baseTargetBeat: nearest.baseTargetBeat,
+    grooveOffsetMs: nearest.grooveOffsetMs,
+    grooveContractId: nearest.grooveContractId,
   };
 }

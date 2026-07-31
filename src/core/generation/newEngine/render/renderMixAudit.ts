@@ -109,9 +109,9 @@ export const MASTERING_AUDIT_STANDARD = {
   esp32SamplePeakCeilingDbfs: -1.5,
   referenceWetEnergyForMinus14Lufs: 0.75,
   hardwareMaster: {
-    route: 'Dream 5504/SAM synth + shared FX -> per-song NRPN 3707h MasterPlan -> hardware output',
+    route: 'Dream 5504/SAM synth + shared FX -> default NRPN 3707h Master=127 -> hardware output',
     devicePostChainDefault: 'browser render path disabled; Dream/SAM hardware owns final synth, FX, amp, and speaker protection',
-    masterPolicy: 'No style lift and no per-track CC7 compensation. Final MusicalIR peak only attenuates NRPN 3707h when needed.',
+    masterPolicy: 'No style lift, no per-track CC7/CC11 compensation, and no score-derived Master attenuation.',
     webCompressorAfterDevicePostChain: false,
   },
   esp32Port: {
@@ -339,13 +339,16 @@ export function auditRenderedMix(tracks: readonly TrackIR[], ctx: MixAuditContex
     hardwareReverbBusShare: totalHardwareReverbInputEnergyPerBeat > EPS ? m.hardwareReverbInputEnergyPerBeat / totalHardwareReverbInputEnergyPerBeat : 0,
   }));
   const estimatedIntegratedLufs = estimateLufs(totalWetEnergyPerBeat);
-  const dryBaseline = isDream5504DryBaselineStyle(ctx.style);
+  // LOFI shares the static/no-energy-rebalancing render path with the Dream
+  // baseline styles, but intentionally owns non-default CC7/91/93 values.
+  const dryBaseline = isDream5504DryBaselineStyle(ctx.style)
+    && ctx.style.toLowerCase() !== 'lofi';
   const dream5504MasterPlan = planDream5504Master({
     tracks,
     ppq: ctx.ppq,
     durationTicks: ctx.durationTicks,
   });
-  // 5504 实际下发的是这份最终总谱推导出的 NRPN 3707h；不按 macro 写死总输出。
+  // 实际播放固定下发 5504 默认 Master=127；总谱峰值只用于暴露风险，不再反向改写总线。
   const appliedMasterGain = dream5504MasterPlan.gain;
   const estimatedPlaybackIntegratedLufs = estimatedIntegratedLufs + db(appliedMasterGain);
   const targetPlaybackIntegratedLufs = MASTERING_AUDIT_STANDARD.streamingReferenceIntegratedLufs;

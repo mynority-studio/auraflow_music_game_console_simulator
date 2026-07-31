@@ -17,14 +17,18 @@ interface ChannelVoice {
 }
 
 const CC_BANK_MSB = 0;
-const CC_EXPRESSION = 11;
+const CC_VOLUME = 7;
+const CC_PAN = 10;
+const CC_REVERB_SEND = 91;
+const CC_CHORUS_SEND = 93;
 const CC_SUSTAIN = 64;
 const CC_RESET_ALL_CONTROLLERS = 121;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(本文件即 Q+N 唯一通道约定真源)
-// Every channel returns to the documented board defaults with CC121. The
-// only score-owned controller exceptions are CC11/CC64 on Bank-0 acoustic
-// pianos, after InstrumentationPlan has explicitly authored them.
+// Every generated channel returns to the documented board defaults with
+// CC121. Volume/expression remain at CC7=100 and CC11=127; authored dynamics
+// reach the board through note velocity only. Piano sustain is still musical
+// articulation rather than a bus gain setting.
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
   bass: { channel: 3, program: 33 },
   comp: { channel: 2, program: 0 },
@@ -55,6 +59,20 @@ function pushDream5504DefaultControllerState(events: MidiEvent[], channel: numbe
   events.push({ ticks: 0, type: 'cc', channel, data1: CC_RESET_ALL_CONTROLLERS, data2: 0 });
 }
 
+function pushLofiMix(
+  events: MidiEvent[],
+  tick: number,
+  channel: number,
+  mix: NonNullable<MusicalIR['tracks'][number]['mix']>,
+): void {
+  events.push(
+    { ticks: tick, type: 'cc', channel, data1: CC_VOLUME, data2: clampCC(mix.volume), outputPolicy: 'lofi-channel-mix' },
+    { ticks: tick, type: 'cc', channel, data1: CC_PAN, data2: clampCC(mix.pan), outputPolicy: 'lofi-channel-mix' },
+    { ticks: tick, type: 'cc', channel, data1: CC_REVERB_SEND, data2: clampCC(mix.reverb), outputPolicy: 'lofi-channel-mix' },
+    { ticks: tick, type: 'cc', channel, data1: CC_CHORUS_SEND, data2: clampCC(mix.chorus), outputPolicy: 'lofi-channel-mix' },
+  );
+}
+
 interface ProgramAddress {
   bank: number;
   program: number;
@@ -73,13 +91,15 @@ function programAddressAtTick(track: MusicalIR['tracks'][number], fallback: numb
 
 /**
  * MusicalIR → Dream 5504 events. Every channel starts with CC121 so Firm5504
- * restores its documented defaults (including CC7=100 and CC11=127). The
- * only score expression then admitted is CC11 and CC64 for concrete acoustic
- * piano addresses (PC0/1/3); all mix, FX and non-piano gesture CC stay out.
+ * restores its documented defaults (including CC7=100 and CC11=127).
+ * Generated playback writes channel-mix CC only for the explicit LOFI
+ * hardware profile. Only acoustic piano sustain (CC64) is projected as a
+ * musical articulation.
  */
 export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50, style?: string): MidiEvent[] {
   void roomWet;
   const events: MidiEvent[] = [];
+  const consumeLofiMix = (style ?? '').toLowerCase() === 'lofi';
 
   for (const track of ir.tracks) {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
@@ -88,6 +108,7 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50, style?: strin
     const program = mapProgramToDream5504(track.program ?? voice.program, track.role, style);
     pushDream5504DefaultControllerState(events, voice.channel);
     pushProgramChange(events, 0, voice.channel, track.role, program, track.bank);
+    if (consumeLofiMix && track.mix) pushLofiMix(events, 0, voice.channel, track.mix);
     // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
     for (const pc of track.programChanges ?? []) {
       const tick = pc.atTick as number;
@@ -100,19 +121,16 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50, style?: strin
       }
       pushProgramChange(events, pc.atTick, voice.channel, track.role, mapProgramToDream5504(pc.program, track.role, style), pc.bank);
     }
-    // Do not infer piano expression from the role. A lead can be a violin and
-    // a comp can be an organ; only the resolved program address may receive it.
+    if (consumeLofiMix) {
+      for (const change of track.mixChanges ?? []) {
+        pushLofiMix(events, Math.max(0, Math.round(change.atTick as number)), voice.channel, change.mix);
+      }
+    }
     for (const pedal of track.pedalEvents ?? []) {
       const tick = Math.max(0, Math.round(pedal.atTick as number));
       const address = programAddressAtTick(track, voice.program, tick);
       if (!isAcousticPianoVoice(address.bank, address.program)) continue;
       events.push({ ticks: tick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: pedal.down ? 127 : 0 });
-    }
-    for (const cc of track.ccEvents ?? []) {
-      const tick = Math.max(0, Math.round(cc.atTick as number));
-      const address = programAddressAtTick(track, voice.program, tick);
-      if (cc.controller !== CC_EXPRESSION || !isAcousticPianoVoice(address.bank, address.program)) continue;
-      events.push({ ticks: tick, type: 'cc', channel: voice.channel, data1: CC_EXPRESSION, data2: clampCC(cc.value) });
     }
     for (const n of track.notes) {
       events.push({ ticks: n.startTick, type: 'noteOn', channel: voice.channel, data1: n.pitch, data2: n.velocity });

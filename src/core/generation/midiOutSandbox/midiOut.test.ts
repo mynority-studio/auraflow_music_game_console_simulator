@@ -57,6 +57,28 @@ describe('midiOutSandbox/midiOut', () => {
     expect(midiEventToRoutedMessage({ ticks: 0, type: 'visual', channel: 1, data1: 0, data2: 0 })).toBeNull();
   });
 
+  it('uses one hardware-channel claim model for generated and uploaded MIDI events', () => {
+    const generatedLead = midiEventToRoutedMessage(
+      { ticks: 0, type: 'noteOn', channel: 1, data1: 60, data2: 100 },
+    );
+    const uploadedChannelOne = midiEventToRoutedMessage(
+      { ticks: 0, type: 'noteOn', channel: 0, data1: 60, data2: 100, outputChannel: 1 },
+    );
+    expect(uploadedChannelOne).toEqual(generatedLead);
+    expect(midiEventToRoutedMessage(
+      { ticks: 0, type: 'cc', channel: 9, data1: 91, data2: 72, outputChannel: 10 },
+    )).toEqual({
+      role: 'drum',
+      message: { type: 'cc', channel: 10, data1: 91, data2: 72 },
+    });
+    expect(midiEventToRoutedMessage(
+      { ticks: 0, type: 'pitchBend', channel: 15, data1: 0x2345, data2: 0, outputChannel: 16 },
+    )).toEqual({
+      role: 'lead',
+      message: { type: 'pitchBend', channel: 16, data1: 0x2345, data2: 0 },
+    });
+  });
+
   it('keeps official 5504 role channels in five-port upstream routing', () => {
     expect(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'five-port'))).toEqual([1, 2, 3, 4, 10]);
     expect(midiEventToRoutedMessage(
@@ -120,18 +142,29 @@ describe('midiOutSandbox/midiOut', () => {
     }
   });
 
-  it('raw-default policy admits only piano-role CC11/CC64 plus default-state transport', () => {
+  it('generated raw-default policy admits the LOFI channel mix macro but still blocks unrelated processing', () => {
     expect(DREAM5504_RAW_DEFAULT_OUTPUT).toBe(true);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'noteOn', channel: 1, data1: 60, data2: 90 })).toBe(true);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'programChange', channel: 1, data1: 5 })).toBe(true);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 0, data2: 16 })).toBe(true);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 1, data2: 28 })).toBe(false);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 1, data2: 28 }, 'lead')).toBe(false);
-    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 11, data2: 90 }, 'lead')).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 16, data1: 7, data2: 100 }, 'lead')).toBe(false);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 7, data2: 96 }, 'lead', 'lofi-channel-mix')).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 11, data2: 127 }, 'lead')).toBe(true);
+    expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: 11, data2: 90 }, 'lead')).toBe(false);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 11, data2: 90 }, 'pad')).toBe(false);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 2, data1: 64, data2: 127 }, 'comp')).toBe(true);
     expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 4, data1: 64, data2: 127 }, 'pad')).toBe(false);
-    for (const controller of [7, 10, 71, 72, 74, 78, 91, 93, 98, 99]) {
+    for (const controller of [7, 10, 91, 93]) {
+      expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: controller, data2: 0 }), `unclaimed CC${controller}`).toBe(false);
+      expect(isDream5504RawDefaultMessageAllowed(
+        { type: 'cc', channel: 1, data1: controller, data2: 127 },
+        'lead',
+        'lofi-channel-mix',
+      ), `claimed CC${controller}`).toBe(true);
+    }
+    for (const controller of [71, 72, 74, 78, 98, 99]) {
       expect(isDream5504RawDefaultMessageAllowed({ type: 'cc', channel: 1, data1: controller, data2: 0 }), `CC${controller}`).toBe(false);
     }
     for (const controller of [64, 120, 121, 123]) {

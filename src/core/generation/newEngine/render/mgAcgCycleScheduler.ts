@@ -15,6 +15,8 @@ import type {
   AbstractMelodyToken,
   AcgBorrowedColorIntent,
   AcgDyadIntent,
+  AcgStableRole,
+  AcgSustainedCarrierIntent,
 } from '../knowledge/melodyGrammarTypes';
 import type { AcgReturnGestureIntent, ScheduledToken } from './mgTokenScheduler';
 import { getCurrentChordAtBeat } from './mgChordPart';
@@ -33,7 +35,14 @@ import {
   overlapsAcgLeadSilence,
   type AcgLeadPresencePlan,
 } from './acgLeadPresencePlan';
-import type { AcgPianoReturnShape, AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
+import type {
+  AcgPianoLeadContinuitySlot,
+  AcgPianoMetricAnchor,
+  AcgPianoMetricGrid,
+  AcgPianoPedalHold,
+  AcgPianoReturnShape,
+  AcgPianoScorePlan,
+} from '../arranger/acgPianoScorePlan';
 
 type BrickExpansion = { brickIndex: number; brick: BrickMatch; tokens: AbstractMelodyToken[] };
 
@@ -58,7 +67,13 @@ export function scheduleAcgCycleCadencePhrases(
     const source = local ?? globalCadence;
     const tokens = source?.tokens?.length ? source.tokens : fallbackAcgCycleCadenceTokens();
     const brickMeta = source ? { brickIndex: source.brickIndex, name: source.brick.name, family: source.brick.family } : {};
-    out.push(...spreadTokensAcrossAcgCycle(tokens, cycle.startBeat, cycle.endBeat, brickMeta));
+    out.push(...spreadTokensAcrossAcgCycle(
+      tokens,
+      cycle.startBeat,
+      cycle.endBeat,
+      brickMeta,
+      options.pianoScorePlan?.metricGrid,
+    ));
   }
   // ★ ACG PIANOSONG 主链:语法产生的 R → audible 边界在【仍有 RoadMap + 和声】的
   // scheduler 内变成可执行回归意图。这里不写 NoteIR、不补空档；realizer 只执行这份一次式指令。
@@ -66,14 +81,572 @@ export function scheduleAcgCycleCadencePhrases(
   const phraseSafe = normalizeAcgDeferredApproaches(boundarySafe, chordPart);
   const breathReleased = scheduleAcgBreathReleaseBricks(phraseSafe, expansions, chordPart);
   const presenceScheduled = applyAcgLeadPresencePlan(breathReleased, options.leadPresencePlan);
+  const materialized = materializeAcgReturnGestures(
+    presenceScheduled,
+    expansions,
+    chordPart,
+    options.leadPresencePlan,
+    options.pianoScorePlan,
+  );
+  // A lyrical single must be a written note first.  CC64 can lengthen its
+  // resonance, but cannot turn a 0.5-beat key press into cantabile.  Keep
+  // this in the scheduler, before stable contracts and before realization.
+  const sustained = planAcgSustainedSingleCarriers(materialized, chordPart, options.pianoScorePlan);
   // ACG's ordinary structural carriers are grammar contracts too. The
   // realizer must not be the first place that guesses a long/strong carrier
   // is stable: issue the explicit current-chord role set while token timing
   // and harmonic context are still owned by the scheduler.
-  return attachAcgStructuralTokenContracts(
-    materializeAcgReturnGestures(presenceScheduled, expansions, chordPart, options.leadPresencePlan, options.pianoScorePlan),
-    chordPart,
+  return attachAcgMetricAnchorContracts(
+    attachAcgStructuralTokenContracts(sustained, chordPart),
+    options.pianoScorePlan?.metricGrid,
   );
+}
+
+const ACG_AFTERGLOW_EPSILON = 1e-4;
+const ACG_AFTERGLOW_MIN_REST_BEATS = 1.25;
+const ACG_AFTERGLOW_MIN_TAIL_BEATS = 0.75;
+const ACG_AFTERGLOW_RELEASE_GUARD_BEATS = 0.125;
+/**
+ * Materialize the Arranger's continuity slots while tokens still own rhythm
+ * and harmony.  The slots were compiled from the KB into the PianoScorePlan;
+ * this function may select only their written carrier, common-tone,
+ * pre-proved b9, or explicit release outcomes.  It must not invent a new
+ * musical policy from a rendered gap.
+ */
+export function planAcgSustainedSingleCarriers(
+  entries: readonly ScheduledToken[],
+  chordPart: ChordPart,
+  pianoScorePlan: AcgPianoScorePlan | undefined,
+): ScheduledToken[] {
+  if (!pianoScorePlan || entries.length === 0) return [...entries];
+  const planned = [...entries].sort(compareAcgScheduledOrder);
+
+  // This is a monotone score-plan resolver, not a post-render retry.  A pass
+  // can only turn an unsafe atom into an explicit R or into a fully-contracted
+  // carrier.  Re-running the token pass lets an earlier single see that a
+  // later unsafe fragment has become a rest; without it, traversal order can
+  // leave an otherwise eligible C/L as a click before the newly-created air.
+  for (let pass = 0; pass < planned.length; pass++) {
+    let changed = false;
+    planned.sort(compareAcgScheduledOrder);
+    for (let index = 0; index < planned.length; index++) {
+      const entry = planned[index]!;
+      const sourceChord = getCurrentChordAtBeat(chordPart, entry.startBeat);
+      const slot = sourceChord
+        ? acgLeadContinuitySlotAtBeat(pianoScorePlan, entry.startBeat, sourceChord)
+        : undefined;
+      if (!sourceChord || !slot || !isAcgSustainedSingleCandidate(entry, planned, slot)) continue;
+      const next = nextAcgPlayableEntry(planned, index);
+      // A return approach is atomic with its same-gesture arrival. If a later
+      // scheduling operation leaves only the approach, make the absence
+      // explicit here rather than treating a coincidental next note as an
+      // answer.
+      if (entry.acgReturn?.role === 'approach' && !hasAcgLocalShortGestureResolution(entry, next)) {
+        planned[index] = explicitAcgRelease(entry);
+        changed = true;
+        continue;
+      }
+      const shortGestureClass = acgShortGestureClass(entry);
+      if (shortGestureClass) {
+        // The Arranger, not the scheduler, declares which grammar classes may
+        // remain short in this phrase × harmony slot. A permitted class still
+        // needs a connected answer; otherwise it becomes an explicit release.
+        if (slot.allowedShortGestureClasses.includes(shortGestureClass)
+          && hasAcgLocalShortGestureResolution(entry, next)) continue;
+        planned[index] = explicitAcgRelease(entry);
+        changed = true;
+        continue;
+      }
+      const noteEnd = entry.startBeat + entry.token.duration;
+      // Bass/comp establish the harmonic floor, but a new lower-hand attack is
+      // not a license to turn the highest melodic carrier back into a click.
+      // Only the next lead onset (or song end) ends this top-line breath.
+      // A contiguous (or slightly overlapping) next lead atom is a connected
+      // little line, not silence. Only the absence after its key release is
+      // eligible for the cantabile-carrier rule.
+      const rawLeadGap = next
+        ? Math.max(0, next.entry.startBeat - noteEnd)
+        : chordPart.totalBeats - noteEnd;
+      const nudgeCanExposeCarrier = rawLeadGap + slot.maxOnsetNudgeBeats
+        >= slot.exposedGapBeats - ACG_AFTERGLOW_EPSILON;
+      if (rawLeadGap < slot.exposedGapBeats - ACG_AFTERGLOW_EPSILON && !nudgeCanExposeCarrier) continue;
+
+      const sameHarmony = planSameHarmonyAcgBreathCarrier(
+        entry,
+        index,
+        planned,
+        next,
+        sourceChord,
+        slot,
+      );
+      if (sameHarmony) {
+        planned[index] = sameHarmony.carrier;
+        changed = true;
+        if (sameHarmony.suppressBoundaryOrnamentIndex !== undefined) {
+          const ornament = planned[sameHarmony.suppressBoundaryOrnamentIndex]!;
+          planned[sameHarmony.suppressBoundaryOrnamentIndex] = explicitAcgRelease(ornament);
+        }
+        continue;
+      }
+
+      // Cross-harmony is opt-in and ordered by the arranger's slot: an exact
+      // cadence b9 may be selected first; otherwise only a pre-computed common
+      // tone can cross. Both retain a full written key-down, not just CC64.
+      const dominantB9 = next
+        ? planAcgDominantB9SuspensionCarrier(entry, next, sourceChord, chordPart, pianoScorePlan, slot)
+        : null;
+      if (dominantB9) {
+        planned[index] = dominantB9;
+        changed = true;
+        continue;
+      }
+      const commonTone = planAcgCommonToneCarrier(entry, next, sourceChord, chordPart, slot);
+      if (commonTone) {
+        planned[index] = commonTone;
+        changed = true;
+        continue;
+      }
+
+      // The remaining short atom is an unsafe boundary fragment. Make the
+      // release explicit rather than leaking a click into a long breath.
+      planned[index] = explicitAcgRelease(entry);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+
+  return planned.sort(compareAcgScheduledOrder);
+}
+
+function planSameHarmonyAcgBreathCarrier(
+  entry: ScheduledToken,
+  index: number,
+  entries: readonly ScheduledToken[],
+  next: { index: number; entry: ScheduledToken } | null,
+  sourceChord: ChordBlock,
+  slot: AcgPianoLeadContinuitySlot,
+): { carrier: ScheduledToken; suppressBoundaryOrnamentIndex?: number } | null {
+  const requestedEnd = entry.startBeat + slot.minimumKeyDownBeats;
+  let startBeat = entry.startBeat;
+
+  if (next && next.entry.startBeat < requestedEnd - ACG_AFTERGLOW_EPSILON) {
+    const nudge = requestedEnd - next.entry.startBeat;
+    if (nudge > slot.maxOnsetNudgeBeats + ACG_AFTERGLOW_EPSILON) return null;
+    const shifted = entry.startBeat - nudge;
+    const previousEnd = previousAcgPlayableEnd(entries, index);
+    if (shifted < sourceChord.startBeat - ACG_AFTERGLOW_EPSILON
+      || (previousEnd !== undefined && shifted < previousEnd + slot.reentryGuardBeats)) return null;
+    startBeat = shifted;
+  }
+
+  const endBeat = startBeat + slot.minimumKeyDownBeats;
+  if (endBeat > slot.endBeat + ACG_AFTERGLOW_EPSILON
+    || (next && endBeat > next.entry.startBeat + ACG_AFTERGLOW_EPSILON)) return null;
+
+  const retimed = withAcgSustainedCarrierContract(
+    entry,
+    slot.stableRoles,
+    { kind: 'breath', minimumDurationBeats: slot.minimumKeyDownBeats },
+    startBeat,
+    slot.minimumKeyDownBeats,
+  );
+  return {
+    carrier: retimed,
+    ...(next && isAcgBoundaryMicroOrnament(next.entry, sourceChord) ? { suppressBoundaryOrnamentIndex: next.index } : {}),
+  };
+}
+
+/**
+ * A cycle-spread C can be clipped to the final 1/8 beat of a chord. Once the
+ * preceding stable arrival has been deliberately written as a half note, that
+ * fragment is neither a phrase nor a usable re-articulation; turn it into a
+ * real rest while retaining surrounding slope markers for their later phrase.
+ */
+function isAcgBoundaryMicroOrnament(entry: ScheduledToken, sourceChord: ChordBlock): boolean {
+  return entry.token.kind === 'C'
+    && entry.token.duration <= 0.125 + ACG_AFTERGLOW_EPSILON
+    && !entry.acgReturn
+    && !entry.token.acg
+    && entry.startBeat >= sourceChord.endBeat - 0.125 - ACG_AFTERGLOW_EPSILON
+    && entry.startBeat + entry.token.duration <= sourceChord.endBeat + ACG_AFTERGLOW_EPSILON;
+}
+
+function planAcgDominantB9SuspensionCarrier(
+  entry: ScheduledToken,
+  next: { index: number; entry: ScheduledToken },
+  sourceChord: ChordBlock,
+  chordPart: ChordPart,
+  pianoScorePlan: AcgPianoScorePlan,
+  slot: AcgPianoLeadContinuitySlot,
+): ScheduledToken | null {
+  // Return arrivals already carry an exact source-chord targetPc and may be
+  // consumed atomically with a preceding approach. Do not reinterpret that
+  // separate gesture as a b9 carrier: keeping it boundary-clipped is safer
+  // than allowing the return-materialization branch to bypass this contract.
+  if (entry.acgReturn) return null;
+  const bridge = slot.boundaryBridges.find((candidate) => candidate.kind === 'dominant-b9');
+  const targetChord = getCurrentChordAtBeat(chordPart, sourceChord.endBeat + ACG_AFTERGLOW_EPSILON);
+  const endBeat = entry.startBeat + slot.minimumKeyDownBeats;
+  const continuationPc = bridge?.continuationPcs?.[0];
+  if (!targetChord
+    || !bridge
+    || bridge.targetSpanId !== targetChord.spanId
+    || targetChord.index !== sourceChord.index + 1
+    || sourceChord.functionHint !== 'S'
+    || targetChord.functionHint !== 'D'
+    || !isAcgCadenceCarrier(entry)
+    || endBeat > targetChord.endBeat - slot.reentryGuardBeats
+    || next.entry.startBeat < endBeat + slot.reentryGuardBeats
+    || next.entry.startBeat > targetChord.endBeat + ACG_AFTERGLOW_EPSILON
+    || !isAcgStableResolutionCarrier(next.entry)
+    || !hasScoredLowerHandAttack(chordPart, pianoScorePlan, targetChord.startBeat, targetChord.startBeat + 0.25)
+    || continuationPc === undefined
+    || normalizeAcgPc(targetChord.rootPc + 1) !== continuationPc) return null;
+
+  const roles = entry.token.acg?.stableRoles ?? slot.stableRoles;
+  const source = acgStableToneCandidates(sourceChord, roles)
+    .find((candidate) => candidate.pc === continuationPc);
+  if (!source) return null;
+
+  return withAcgSustainedCarrierContract(
+    entry,
+    [source.role],
+    {
+      kind: 'dominant-b9',
+      minimumDurationBeats: slot.minimumKeyDownBeats,
+      targetChordIndex: targetChord.index,
+      continuationPc,
+    },
+    entry.startBeat,
+    slot.minimumKeyDownBeats,
+  );
+}
+
+function planAcgCommonToneCarrier(
+  entry: ScheduledToken,
+  next: { index: number; entry: ScheduledToken } | null,
+  sourceChord: ChordBlock,
+  chordPart: ChordPart,
+  slot: AcgPianoLeadContinuitySlot,
+): ScheduledToken | null {
+  // Return arrivals own an exact `targetPc` path in the realizer; only a
+  // scheduler-issued non-return carrier may take the generic common-tone path.
+  if (entry.acgReturn) return null;
+  const bridge = slot.boundaryBridges.find((candidate) => candidate.kind === 'common-tone');
+  const targetChord = getCurrentChordAtBeat(chordPart, sourceChord.endBeat + ACG_AFTERGLOW_EPSILON);
+  const endBeat = entry.startBeat + slot.minimumKeyDownBeats;
+  if (!bridge
+    || !targetChord
+    || bridge.targetSpanId !== targetChord.spanId
+    || targetChord.index !== sourceChord.index + 1
+    || endBeat > targetChord.endBeat - slot.reentryGuardBeats
+    || (next && next.entry.startBeat < endBeat + slot.reentryGuardBeats)) return null;
+
+  const roles = entry.token.acg?.stableRoles ?? slot.stableRoles;
+  const source = acgStableToneCandidates(sourceChord, roles)
+    .find((candidate) => bridge.continuationPcs?.includes(candidate.pc));
+  if (!source) return null;
+
+  return withAcgSustainedCarrierContract(
+    entry,
+    [source.role],
+    {
+      kind: 'common-tone',
+      minimumDurationBeats: slot.minimumKeyDownBeats,
+      targetChordIndex: targetChord.index,
+      continuationPc: source.pc,
+    },
+    entry.startBeat,
+    slot.minimumKeyDownBeats,
+  );
+}
+
+function acgLeadContinuitySlotAtBeat(
+  pianoScorePlan: AcgPianoScorePlan,
+  beat: number,
+  sourceChord: ChordBlock,
+): AcgPianoLeadContinuitySlot | undefined {
+  return pianoScorePlan.leadContinuitySlots?.find((candidate) =>
+    candidate.sourceSpanId === sourceChord.spanId
+      && beat >= candidate.startBeat - ACG_AFTERGLOW_EPSILON
+      && beat < candidate.endBeat - ACG_AFTERGLOW_EPSILON);
+}
+
+function explicitAcgRelease(entry: ScheduledToken): ScheduledToken {
+  return {
+    ...entry,
+    token: { kind: 'R', duration: entry.token.duration } as AbstractMelodyToken,
+    acgReturn: undefined,
+  };
+}
+
+function isAcgSustainedSingleCandidate(
+  entry: ScheduledToken,
+  entries: readonly ScheduledToken[],
+  slot: AcgPianoLeadContinuitySlot,
+): boolean {
+  if (!isAcgSingleAfterglowCarrier(entry, entries)
+    // This planner supplies a minimum written duration; it must never shorten
+    // an already intentional long grammar carrier to exactly one half note.
+    || entry.token.duration >= slot.minimumKeyDownBeats - ACG_AFTERGLOW_EPSILON
+    || entry.token.acg?.sustain) return false;
+  return true;
+}
+
+function acgShortGestureClass(entry: ScheduledToken): 'ornament' | 'pulse' | 'suspension' | undefined {
+  if (entry.acgReturn?.role === 'pickup'
+    || entry.acgReturn?.role === 'approach'
+    || entry.token.kind === 'A'
+    || entry.token.kind === 'Triadic') return 'ornament';
+  if (entry.acgReturn?.dyad !== undefined || entry.token.acg?.dyad !== undefined) return 'pulse';
+  if (entry.token.acg?.colorIntent !== undefined) return 'suspension';
+  return undefined;
+}
+
+/** A short ornamental atom is legal only when its answer actually follows. */
+function hasAcgLocalShortGestureResolution(
+  entry: ScheduledToken,
+  next: { index: number; entry: ScheduledToken } | null,
+): boolean {
+  if (!next) return false;
+  if (entry.acgReturn?.role === 'approach') {
+    const approach = entry.acgReturn;
+    const arrival = next.entry.acgReturn;
+    return arrival?.role === 'arrival'
+      && arrival.gestureId === approach.gestureId
+      && Math.abs(next.entry.startBeat - approach.arrivalBeat) <= ACG_AFTERGLOW_EPSILON;
+  }
+  const gapAfterRelease = next.entry.startBeat - (entry.startBeat + entry.token.duration);
+  return gapAfterRelease <= 0.75 + ACG_AFTERGLOW_EPSILON;
+}
+
+function nextAcgPlayableEntry(
+  entries: readonly ScheduledToken[],
+  sourceIndex: number,
+): { index: number; entry: ScheduledToken } | null {
+  const source = entries[sourceIndex]!;
+  for (let index = sourceIndex + 1; index < entries.length; index++) {
+    const entry = entries[index]!;
+    if (isAcgPlayableToken(entry.token) && entry.startBeat > source.startBeat + ACG_AFTERGLOW_EPSILON) {
+      return { index, entry };
+    }
+  }
+  return null;
+}
+
+function previousAcgPlayableEnd(entries: readonly ScheduledToken[], sourceIndex: number): number | undefined {
+  let end: number | undefined;
+  for (let index = 0; index < sourceIndex; index++) {
+    const entry = entries[index]!;
+    if (!isAcgPlayableToken(entry.token)) continue;
+    const candidate = entry.startBeat + Math.max(0, entry.token.duration);
+    if (end === undefined || candidate > end) end = candidate;
+  }
+  return end;
+}
+
+function isAcgCadenceCarrier(entry: ScheduledToken): boolean {
+  return entry.brickFamily === 'Cadence' || /cadence/i.test(entry.brickName ?? '');
+}
+
+function isAcgStableResolutionCarrier(entry: ScheduledToken): boolean {
+  return isAcgPlayableToken(entry.token)
+    && entry.token.kind !== 'A'
+    && entry.token.kind !== 'Triadic'
+    && !entry.token.acg?.colorIntent
+    && (entry.acgReturn?.role === 'arrival'
+      || entry.token.kind === 'G'
+      || entry.token.kind === 'B'
+      || entry.token.duration >= 0.75 - ACG_AFTERGLOW_EPSILON
+      || (entry.token.acg?.harmonicScope === 'current-chord'
+        && (entry.token.acg.stableRoles?.length ?? 0) > 0));
+}
+
+function hasScoredLowerHandAttack(
+  chordPart: ChordPart,
+  pianoScorePlan: AcgPianoScorePlan,
+  startBeat: number,
+  endBeat: number,
+): boolean {
+  for (const block of chordPart.blocks) {
+    if (block.endBeat < startBeat - ACG_AFTERGLOW_EPSILON
+      || block.startBeat > endBeat + ACG_AFTERGLOW_EPSILON) continue;
+    const score = block.spanId ? pianoScorePlan.spanById[block.spanId] : undefined;
+    if (!score) continue;
+    for (const event of [...(score.comp?.events ?? []), ...(score.bass?.events ?? [])]) {
+      const atBeat = block.startBeat + event.atBeat;
+      if (atBeat >= startBeat - ACG_AFTERGLOW_EPSILON
+        && atBeat <= endBeat + ACG_AFTERGLOW_EPSILON) return true;
+    }
+  }
+  return false;
+}
+
+function withAcgSustainedCarrierContract(
+  entry: ScheduledToken,
+  fallbackRoles: readonly AcgStableRole[],
+  sustain: AcgSustainedCarrierIntent,
+  startBeat: number,
+  duration: number,
+): ScheduledToken {
+  const existing = entry.token.acg;
+  const stableRoles = existing?.stableRoles ?? fallbackRoles;
+  const acg = {
+    harmonicScope: existing?.harmonicScope ?? 'current-chord',
+    stableRoles,
+    ...(existing?.dyad ? { dyad: existing.dyad } : {}),
+    sustain,
+  } as AbstractMelodyToken['acg'];
+  return {
+    ...entry,
+    startBeat,
+    token: { ...entry.token, duration, acg } as AbstractMelodyToken,
+    ...(entry.acgReturn ? { acgReturn: { ...entry.acgReturn, arrivalBeat: startBeat } } : {}),
+  };
+}
+
+function normalizeAcgPc(value: number): number {
+  return ((value % 12) + 12) % 12;
+}
+
+/**
+ * Compile a lead single-note → written-rest gesture into a shared-piano
+ * damper intent while tokens still own rhythm and harmonic context.  This is
+ * deliberately not a FinalIR gap scan: the score can veto it when either
+ * lower hand has a new attack, and the renderer still needs an already
+ * authorized CC64 lane to execute it.
+ *
+ * A high piano note naturally loses energy long before an arbitrarily long
+ * rest ends.  At ~80 BPM the ordinary cap is 3 beats (~2.25 s); opening/coda
+ * phrases may use 4 beats (~3 s).  Longer written rests are handled by the
+ * scheduler's existing return-release brick rather than indefinite pedal.
+ */
+export function planAcgLeadAfterglowHolds(
+  entries: readonly ScheduledToken[],
+  chordPart: ChordPart,
+  pianoScorePlan: AcgPianoScorePlan | undefined,
+  tempoBpm: number | undefined,
+): readonly AcgPianoPedalHold[] {
+  if (!pianoScorePlan || entries.length === 0) return [];
+  const ordered = [...entries].sort(compareAcgScheduledOrder);
+  const holds: AcgPianoPedalHold[] = [];
+  const safeTempo = Number.isFinite(tempoBpm) && (tempoBpm ?? 0) > 0 ? tempoBpm! : 80;
+
+  for (let index = 0; index < ordered.length; index++) {
+    const entry = ordered[index]!;
+    if (!isAcgSingleAfterglowCarrier(entry, ordered)) continue;
+    const noteEnd = entry.startBeat + entry.token.duration;
+    const restEnd = continuousExplicitRestEnd(ordered, index, noteEnd, chordPart.totalBeats);
+    if (restEnd === undefined || restEnd - noteEnd < ACG_AFTERGLOW_MIN_REST_BEATS - ACG_AFTERGLOW_EPSILON) continue;
+
+    const lowerHandAttack = nextScoredLowerHandAttack(
+      chordPart,
+      pianoScorePlan,
+      noteEnd,
+      restEnd,
+    );
+    const safeRestEnd = Math.min(restEnd, lowerHandAttack ?? restEnd);
+    const phrase = Object.values(pianoScorePlan.phraseById).find((candidate) =>
+      entry.startBeat >= candidate.startBeat - ACG_AFTERGLOW_EPSILON
+      && entry.startBeat < candidate.endBeat - ACG_AFTERGLOW_EPSILON,
+    );
+    const cadential = phrase?.phase === 'opening' || phrase?.phase === 'coda'
+      || entry.acgReturn?.role === 'arrival';
+    const maxTailBeats = cadential
+      ? Math.max(2.5, Math.min(4, 3 * safeTempo / 60))
+      : Math.max(2, Math.min(3, 2.25 * safeTempo / 60));
+    const endBeat = Math.min(
+      noteEnd + maxTailBeats,
+      safeRestEnd - ACG_AFTERGLOW_RELEASE_GUARD_BEATS,
+    );
+    if (endBeat - noteEnd < ACG_AFTERGLOW_MIN_TAIL_BEATS - ACG_AFTERGLOW_EPSILON) continue;
+    holds.push({
+      startBeat: entry.startBeat,
+      endBeat,
+      reason: 'lead-afterglow',
+      ...(lowerHandAttack === undefined ? {} : { reengageBeat: lowerHandAttack }),
+    });
+  }
+
+  return coalesceAcgAfterglowHolds(holds);
+}
+
+function isAcgSingleAfterglowCarrier(entry: ScheduledToken, entries: readonly ScheduledToken[]): boolean {
+  if (!isAcgPlayableToken(entry.token) || entry.token.duration <= ACG_AFTERGLOW_EPSILON) return false;
+  // An explicitly authored return dyad is already its own miniature phrase;
+  // do not pretend it is a solitary lingering top note.
+  if (entry.acgReturn?.dyad) return false;
+  return !entries.some((other) => other !== entry
+    && isAcgPlayableToken(other.token)
+    && Math.abs(other.startBeat - entry.startBeat) <= ACG_AFTERGLOW_EPSILON);
+}
+
+/** Return only a rest explicitly encoded by the token scheduler. */
+function continuousExplicitRestEnd(
+  entries: readonly ScheduledToken[],
+  sourceIndex: number,
+  noteEnd: number,
+  songEnd: number,
+): number | undefined {
+  let coveredUntil = noteEnd;
+  let sawRest = false;
+
+  for (let index = sourceIndex + 1; index < entries.length; index++) {
+    const entry = entries[index]!;
+    if (entry.token.kind === 'SlopeEnter' || entry.token.kind === 'SlopeExit') continue;
+    if (isAcgPlayableToken(entry.token)) {
+      if (!sawRest || entry.startBeat > coveredUntil + ACG_AFTERGLOW_EPSILON) return undefined;
+      return Math.min(coveredUntil, entry.startBeat, songEnd);
+    }
+    if (entry.token.kind !== 'R' || entry.token.duration <= ACG_AFTERGLOW_EPSILON) continue;
+    if (entry.startBeat > coveredUntil + ACG_AFTERGLOW_EPSILON) return undefined;
+    const restEnd = entry.startBeat + entry.token.duration;
+    if (restEnd > coveredUntil + ACG_AFTERGLOW_EPSILON) {
+      coveredUntil = restEnd;
+      sawRest = true;
+    }
+  }
+  return sawRest ? Math.min(coveredUntil, songEnd) : undefined;
+}
+
+/** A new middle/low-hand onset owns the next pedal change; do not wash it. */
+function nextScoredLowerHandAttack(
+  chordPart: ChordPart,
+  pianoScorePlan: AcgPianoScorePlan,
+  afterBeat: number,
+  beforeBeat: number,
+): number | undefined {
+  let next: number | undefined;
+  for (const block of chordPart.blocks) {
+    if (block.endBeat <= afterBeat + ACG_AFTERGLOW_EPSILON
+      || block.startBeat >= beforeBeat - ACG_AFTERGLOW_EPSILON) continue;
+    const score = block.spanId ? pianoScorePlan.spanById[block.spanId] : undefined;
+    if (!score) continue;
+    const events = [...score.comp.events, ...score.bass.events];
+    for (const event of events) {
+      const atBeat = block.startBeat + event.atBeat;
+      if (atBeat <= afterBeat + ACG_AFTERGLOW_EPSILON
+        || atBeat >= beforeBeat - ACG_AFTERGLOW_EPSILON) continue;
+      if (next === undefined || atBeat < next) next = atBeat;
+    }
+  }
+  return next;
+}
+
+function coalesceAcgAfterglowHolds(holds: readonly AcgPianoPedalHold[]): readonly AcgPianoPedalHold[] {
+  const out: AcgPianoPedalHold[] = [];
+  for (const hold of [...holds].sort((left, right) => left.startBeat - right.startBeat || left.endBeat - right.endBeat)) {
+    const previous = out.at(-1);
+    if (previous && hold.startBeat <= previous.endBeat + ACG_AFTERGLOW_EPSILON) {
+      previous.endBeat = Math.max(previous.endBeat, hold.endBeat);
+      if (hold.reengageBeat !== undefined) {
+        previous.reengageBeat = Math.max(previous.reengageBeat ?? -Infinity, hold.reengageBeat);
+      }
+      continue;
+    }
+    out.push({ ...hold });
+  }
+  return out;
 }
 
 /**
@@ -231,9 +804,10 @@ function normalizeAcgSlopeMarkersForPresence(
 }
 
 /**
- * ACG 的 note identity 属于其 onset 的和弦。长句铺展时，不能把一颗旧和弦的
- * 结构音自然延到下一和弦后再靠末端 resolver 改音；在 scheduler 这里裁到边界，
- * 下一和弦是否开新声由 grammar/RoadMap 决定。
+ * ACG 的 note identity 属于其 onset 的和弦。长句铺展时，普通旧和弦结构音不能
+ * 自然延到下一和弦后再靠末端 resolver 改音；在 scheduler 这里裁到边界，下一
+ * 和弦是否开新声由 grammar/RoadMap 决定。唯一例外是后段由
+ * `planAcgSustainedSingleCarriers` 写入完整合同的 cadence suspension。
  */
 function clipAcgTokensToChordBoundaries(entries: ScheduledToken[], chordPart: ChordPart): ScheduledToken[] {
   return entries.map((entry) => {
@@ -300,7 +874,11 @@ function scheduleAcgBreathReleaseBricks(
   expansions: BrickExpansion[],
   chordPart: ChordPart,
 ): ScheduledToken[] {
-  const MAX_SILENCE_BEATS = 6.25;
+  // A long empty piano tail stops sounding well before a six-beat rest, even
+  // with the damper down.  Keep roughly a three-beat inhale, then let an
+  // existing return brick write a quiet answer/arrival.  The resulting
+  // carrier remains scheduler-authored rather than a NoteIR fill.
+  const MAX_SILENCE_BEATS = 4.25;
   const MIN_BREATH_BEFORE_RELEASE = 3;
   const MIN_RELEASE_DURATION = 0.5;
   const injected: ScheduledToken[] = [];
@@ -544,6 +1122,50 @@ function attachAcgStructuralTokenContracts(
       } as AbstractMelodyToken,
     };
   });
+}
+
+/**
+ * Preserve the shared score-clock identity through pitch realization.  This
+ * does not move a finished note: it annotates the final token-time schedule,
+ * including return gestures introduced inside this scheduler, with the
+ * nearest Arranger anchor and whether that token is an accent-bearing
+ * structure or connective flow.
+ */
+function attachAcgMetricAnchorContracts(
+  entries: readonly ScheduledToken[],
+  grid: AcgPianoMetricGrid | undefined,
+): ScheduledToken[] {
+  if (!grid) return [...entries];
+  return entries.map((entry) => {
+    if (!isAcgPlayableToken(entry.token)) return entry;
+    const anchor = nearestAcgLeadMetricAnchor(grid.anchors, entry.startBeat);
+    if (!anchor) return entry;
+    const inheritedRole = entry.acgMetricRole;
+    const role = entry.acgReturn
+      ? entry.acgReturn.role === 'arrival' ? 'structural' : 'flow'
+      : inheritedRole ?? (isAcgStableArrivalIntent(entry.token) ? 'structural' : 'flow');
+    return {
+      ...entry,
+      acgMetricAnchorId: anchor.id,
+      acgMetricStrength: anchor.strength,
+      acgMetricRole: role,
+    };
+  });
+}
+
+function isAcgStableArrivalIntent(token: AbstractMelodyToken): boolean {
+  return !!token.acg && 'stableRoles' in token.acg;
+}
+
+function nearestAcgLeadMetricAnchor(
+  anchors: readonly AcgPianoMetricAnchor[],
+  beat: number,
+): AcgPianoMetricAnchor | undefined {
+  return [...anchors].sort((left, right) =>
+    Math.abs(left.beat - beat) - Math.abs(right.beat - beat)
+    || right.strength - left.strength
+    || left.beat - right.beat
+    || left.id.localeCompare(right.id))[0];
 }
 
 function isAcgPlayableToken(token: AbstractMelodyToken): boolean {
@@ -1258,23 +1880,32 @@ function spreadTokensAcrossAcgCycle(
   cycleStart: number,
   cycleEnd: number,
   brick: { brickIndex?: number; name?: string; family?: string } = {},
+  metricGrid?: AcgPianoMetricGrid,
 ): ScheduledToken[] {
   const sourceTotal = tokenDurationTotal(tokens);
   const cycleDuration = Math.max(0, cycleEnd - cycleStart);
   if (sourceTotal <= 0 || cycleDuration <= 0) return [];
-  const usableDuration = Math.max(1, cycleDuration - 0.5);
-  const stretch = usableDuration / sourceTotal;
+  // A score-owned grid uses the complete cycle.  The legacy `- 0.5` tail
+  // reserve made every source cursor a different irrational phase
+  // (4.923..., 5.906..., 6.892...) and therefore let the top line drift away
+  // from the two lower hands.  Keep that exact fallback only for compact
+  // callers that do not yet carry an ACG PianoScorePlan.
+  const mappingDuration = metricGrid ? cycleDuration : Math.max(1, cycleDuration - 0.5);
+  const stretch = mappingDuration / sourceTotal;
   const durationScale = Math.max(1, Math.min(1.65, Math.pow(stretch, 0.32)));
   const out: ScheduledToken[] = [];
+  const metricStarts = metricGrid
+    ? mapAcgSourceCursorsToMetricGrid(tokens, cycleStart, cycleEnd, sourceTotal, metricGrid)
+    : undefined;
   let cursor = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const mappedStart = cycleStart + (cursor / sourceTotal) * usableDuration;
+    const mappedStart = cycleStart + (cursor / sourceTotal) * mappingDuration;
     const sourceStructural = isStructuralAcgToken(token, tokens, i);
-    const startBeat = sourceStructural
+    const startBeat = metricStarts?.[i] ?? (sourceStructural
       ? snapToAcgLandingBeat(mappedStart, cycleStart, cycleEnd)
-      : mappedStart;
+      : mappedStart);
 
     if (token.duration === 0) {
       out.push({ token, startBeat });
@@ -1299,6 +1930,137 @@ function spreadTokensAcrossAcgCycle(
   }));
 }
 
+interface AcgSourceCursorGroup {
+  cursor: number;
+  tokenIndices: number[];
+  structural: boolean;
+}
+
+/**
+ * Map grammar cursors into the Arranger's absolute piano clock before NoteIR
+ * exists.  A cursor group deliberately includes zero-duration slope markers:
+ * when its playable token moves to a grid point, the state mutation moves
+ * with it, so quantization cannot invert marker/rest/note semantics.
+ */
+function mapAcgSourceCursorsToMetricGrid(
+  tokens: readonly AbstractMelodyToken[],
+  cycleStart: number,
+  cycleEnd: number,
+  sourceTotal: number,
+  grid: AcgPianoMetricGrid,
+): number[] {
+  const subdivision = Number.isFinite(grid.subdivisionBeats) && grid.subdivisionBeats > 1e-6
+    ? grid.subdivisionBeats
+    : 0.25;
+  const cycleDuration = cycleEnd - cycleStart;
+  const maxStart = lastAcgMetricSlotBefore(cycleEnd, subdivision);
+  const groups: AcgSourceCursorGroup[] = [];
+  let cursor = 0;
+
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    const previous = groups.at(-1);
+    if (previous && Math.abs(previous.cursor - cursor) <= 1e-9) {
+      previous.tokenIndices.push(index);
+      previous.structural ||= isStructuralAcgToken(token, tokens, index);
+    } else {
+      groups.push({
+        cursor,
+        tokenIndices: [index],
+        structural: isStructuralAcgToken(token, tokens, index),
+      });
+    }
+    cursor += Math.max(0, token.duration);
+  }
+
+  const starts = new Array<number>(tokens.length);
+  let previousGroupStart = cycleStart - subdivision;
+  for (const group of groups) {
+    const nominal = cycleStart + (group.cursor / sourceTotal) * cycleDuration;
+    const minimumStart = Math.min(maxStart, previousGroupStart + subdivision);
+    const gridStart = clampAcgMetricStart(
+      snapToAcgSubdivision(nominal, subdivision),
+      minimumStart,
+      maxStart,
+      subdivision,
+    );
+    const structuralAnchor = group.structural
+      ? nearestAvailableAcgStructuralAnchor(grid, nominal, cycleStart, cycleEnd, minimumStart)
+      : undefined;
+    const startBeat = structuralAnchor
+      ? structuralAnchor.beat
+      : gridStart;
+    for (const index of group.tokenIndices) starts[index] = startBeat;
+    previousGroupStart = startBeat;
+  }
+  return starts;
+}
+
+function lastAcgMetricSlotBefore(cycleEnd: number, subdivision: number): number {
+  return Math.floor((cycleEnd - 1e-6) / subdivision) * subdivision;
+}
+
+function snapToAcgSubdivision(beat: number, subdivision: number): number {
+  return Math.round(beat / subdivision) * subdivision;
+}
+
+function clampAcgMetricStart(
+  beat: number,
+  minimum: number,
+  maximum: number,
+  subdivision: number,
+): number {
+  if (minimum > maximum) return maximum;
+  const firstSlot = Math.ceil((minimum - 1e-6) / subdivision) * subdivision;
+  const lastSlot = Math.floor((maximum + 1e-6) / subdivision) * subdivision;
+  if (firstSlot > lastSlot + 1e-6) return maximum;
+  const snapped = snapToAcgSubdivision(beat, subdivision);
+  return Math.max(firstSlot, Math.min(lastSlot, snapped));
+}
+
+function nearestAvailableAcgStructuralAnchor(
+  grid: AcgPianoMetricGrid,
+  nominal: number,
+  cycleStart: number,
+  cycleEnd: number,
+  minimumStart: number,
+): AcgPianoMetricAnchor | undefined {
+  const captureRadius = Math.max(
+    grid.subdivisionBeats,
+    Number.isFinite(grid.beatsPerBar) && grid.beatsPerBar > 0
+      ? grid.beatsPerBar / 2
+      : 2,
+  );
+  return grid.anchors
+    .filter((anchor) => isAcgStructuralMetricAnchor(anchor))
+    .filter((anchor) =>
+      anchor.beat >= cycleStart - 1e-6
+      && anchor.beat < cycleEnd - 1e-6
+      && anchor.beat >= minimumStart - 1e-6
+      && Math.abs(anchor.beat - nominal) <= captureRadius + 1e-6)
+    .sort((left, right) =>
+      Math.abs(left.beat - nominal) - Math.abs(right.beat - nominal)
+      || acgStructuralAnchorPriority(right) - acgStructuralAnchorPriority(left)
+      || right.strength - left.strength
+      || left.beat - right.beat
+      || left.id.localeCompare(right.id))[0];
+}
+
+function isAcgStructuralMetricAnchor(anchor: AcgPianoMetricAnchor): boolean {
+  return anchor.kind === 'phrase-arrival'
+    || anchor.kind === 'harmonic-arrival'
+    || anchor.kind === 'bar-downbeat'
+    || anchor.kind === 'secondary-strong-beat';
+}
+
+function acgStructuralAnchorPriority(anchor: AcgPianoMetricAnchor): number {
+  if (anchor.kind === 'phrase-arrival') return 5;
+  if (anchor.kind === 'harmonic-arrival') return 4;
+  if (anchor.kind === 'bar-downbeat') return 3;
+  if (anchor.kind === 'secondary-strong-beat') return 2;
+  return 1;
+}
+
 function tokenDurationTotal(tokens: AbstractMelodyToken[]): number {
   return tokens.reduce((sum, token) => sum + Math.max(0, token.duration), 0);
 }
@@ -1307,7 +2069,7 @@ function isPlayableToken(token: AbstractMelodyToken): boolean {
   return token.kind !== 'R' && token.kind !== 'SlopeEnter' && token.kind !== 'SlopeExit';
 }
 
-function isStructuralAcgToken(token: AbstractMelodyToken, tokens: AbstractMelodyToken[], index: number): boolean {
+function isStructuralAcgToken(token: AbstractMelodyToken, tokens: readonly AbstractMelodyToken[], index: number): boolean {
   if (!isPlayableToken(token)) return false;
   if (token.kind === 'G') return true;
   if (token.duration >= 1) return true;

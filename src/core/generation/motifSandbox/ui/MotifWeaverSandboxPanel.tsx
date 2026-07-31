@@ -23,8 +23,17 @@ import { MusicGenerationSeedStore } from '../../../../state/MusicGenerationSeedS
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
-import { auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
-import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
+import { auditionNoteOn, auditionNoteOff, auditionControlChange, currentLeadAuditionVoice, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
+import {
+  getMidiInputExclusiveOwner,
+  midiInputTransportLabel,
+  requestMidiAccess,
+  subscribeMidiInputExclusive,
+  type MidiAccessHandle,
+  type MidiDeviceInfo,
+  type MidiSupport,
+  type ParsedMidiMessage,
+} from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
 
@@ -87,6 +96,16 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   useDevPanelChannel('motif', open, setOpen);
 
+  useEffect(() => subscribeMidiInputExclusive((owner) => {
+    if (owner !== 'takeover') return;
+    access.current?.dispose();
+    access.current = null;
+    setMidiStatus('idle');
+    setDevices([]);
+    setDeviceId(null);
+    setStatus('Q+T 用户接管已独占 MIDI 输入');
+  }), []);
+
   useEffect(() => {
     if (!open) return;
     const synced = qnStyleToSandbox(MusicGenerationStyleStore.getStyleHint());
@@ -139,13 +158,19 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   // —— Web MIDI 接入 ——
   const enableMidi = useCallback(async () => {
+    if (getMidiInputExclusiveOwner() === 'takeover') {
+      setStatus('Q+T 用户接管正在独占 MIDI 输入');
+      return;
+    }
     await ensureAudio(); // 点击是手势 → 解锁 AudioContext,之后 MIDI 输入即时发声
     setAudioLat(getAudioLatencyMs()); // 诊断:audio 系统延迟(base=worklet / output=OS 缓冲含蓝牙)
     const onMessage = (m: ParsedMidiMessage) => {
       if (m.type === 'noteOn') {
         const { keyPc: k, tonality: t } = liveCfg.current;
         if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
-          void auditionNoteOn(m.note, MIDI_INPUT_PROGRAM, m.velocity); // ★ MIDI 录入默认音色 = 大钢琴(随踏板延音);先发声=最低延迟
+          // External MIDI follows the live song's selected Lead CC0 + PC. With
+          // no active song it falls back to the original acoustic-piano input.
+          void auditionNoteOn(m.note, currentLeadAuditionVoice(MIDI_INPUT_PROGRAM), m.velocity);
           if (recorder.current.isActive()) recorder.current.noteOn(m.note, m.velocity);
           noteOnVis(m.note);            // 点亮对应 pad(重面板已 memo → 不连带重渲染)
           setLastNote(`note ${m.note} · vel ${m.velocity}`);
@@ -256,7 +281,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   // —— 3×5 键盘:按下=试听(+录音器活跃时记音,数拍期会被滤掉),松开=停音 ——
   const handlePadDown = useCallback((_idx: number, midi: number) => {
-    void auditionNoteOn(midi, LEAD_PROGRAM_BY_STYLE[style], 110);
+    void auditionNoteOn(midi, currentLeadAuditionVoice(LEAD_PROGRAM_BY_STYLE[style]), 110);
     noteOnVis(midi);
     if (recorder.current.isActive()) recorder.current.noteOn(midi, 110);
   }, [style, noteOnVis]);
@@ -413,7 +438,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             {devices.length === 0
               ? <span className="text-amber-300">未检测到 MIDI 输入设备</span>
-              : <select className={sel} value={deviceId ?? ''} onChange={(e) => setDeviceId(e.target.value || null)}>{devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
+              : <select className={sel} value={deviceId ?? ''} onChange={(e) => setDeviceId(e.target.value || null)}>{devices.map((d) => <option key={d.id} value={d.id}>{midiInputTransportLabel(d) ? `${midiInputTransportLabel(d)} · ` : ''}{d.name}</option>)}</select>}
             <span className="text-zinc-500">last: {lastNote || '—'}</span>
             <button type="button" onClick={() => setAudioLat(getAudioLatencyMs())} className="ml-auto rounded px-1.5 py-0.5 text-[10px] border bg-zinc-800 border-zinc-700 text-zinc-400">测延迟</button>
           </div>

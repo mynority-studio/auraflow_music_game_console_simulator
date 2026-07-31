@@ -15,7 +15,7 @@ import type { GrooveScorePlan, Section, SectionFunctionTag } from '../arranger/A
 //   分层:GROOVE 下发=Arranger(planGroove) · 变体匹配=器配(drumPatternBySection) ·
 //          词汇=KB(drumGrooveVariants) · 消费=drumRenderer(patternBySection 主权威)。
 //   验收:词汇密度有序/jazz 用 ride;Arranger 按 functionTag 下发且 repeatGroup 一致;
-//          器配同 groove→同变体;renderDrums 逐段换鼓型;确定性。
+//          器配同演奏法 key→同变体;renderDrums 逐段换鼓型;确定性。
 // ============================================================
 
 const STYLES = ['pop', 'rnb', 'lofi', 'jazz'] as const;
@@ -168,6 +168,13 @@ describe('knowledge/grooves · 鼓型词汇库', () => {
     for (const variant of drumPerformanceVariants({ patternFamily: 'citypop-syncopated-boogie' })) {
       expect(variant.some((h) => h.drum === DRUM.KICK && h.beat % 1 !== 0), 'citypop syncopated kick').toBe(true);
     }
+    for (const family of ['pop-backbeat', 'jpop-driving-8ths'] as const) {
+      const variants = drumPerformanceVariants({ patternFamily: family });
+      const allHits = variants.flat();
+      expect(allHits.some((h) => h.drum === DRUM.KICK && h.beat % 1 !== 0), `${family} syncopated kick answer`).toBe(true);
+      expect(allHits.some((h) => backbeatDrums.has(h.drum) && h.vel <= 44 && h.beat !== 1 && h.beat !== 3), `${family} ghost backbeat detail`).toBe(true);
+      expect(allHits.some((h) => h.drum === DRUM.TAMB || h.drum === DRUM.SHAKER || h.drum === DRUM.CONGA_HI || h.drum === DRUM.CONGA_LO), `${family} light bar percussion`).toBe(true);
+    }
   });
 
   it('LOFI boombap/dusty-break 主体打法具备 hiphop backbeat + 切分 kick + 16 分帽', () => {
@@ -197,9 +204,10 @@ describe('arranger/groovePlanner · GROOVE 下发', () => {
     expect(g.s1).toBe('sparse');     // setup
     expect(g.s2).toBe('straight');   // story → pop base
     expect(g.s3).toBe('straight');   // build
-    expect(g.s4).toBe('driving');    // hook
+    expect(g.s4).toBe('straight');   // POP hook 默认只 lift,不直接硬推 driving
     expect(g.s5).toBe('sparse');     // breakdown
     expect(g.s6).toBe('sparse');     // outro
+    expect(planGroove(sections, 'pop', 'upbeat dance 快歌').s4).toBe('driving');
   });
 
   it('风格基底:rnb/lofi content 段 = laidback;jazz solo = driving;jazz head = straight', () => {
@@ -214,35 +222,40 @@ describe('arranger/groovePlanner · GROOVE 下发', () => {
     expect(g.v1).toBe(g.v2);
   });
 
-  it('无 functionTag → 按 role(intro/outro→sparse,chorus→driving,其余→base)', () => {
+  it('无 functionTag → 按 role(intro/outro→sparse,POP chorus 默认 straight,其余→base)', () => {
     const g = planGroove([sec('i', 'intro'), sec('v', 'verse'), sec('c', 'chorus'), sec('o', 'outro')], 'pop');
     expect(g.i).toBe('sparse');
-    expect(g.c).toBe('driving');
+    expect(g.c).toBe('straight');
     expect(g.o).toBe('sparse');
     expect(g.v).toBe('straight'); // pop base
+    expect(planGroove([sec('c', 'chorus')], 'pop', 'upbeat dance 快歌').c).toBe('driving');
   });
 });
 
 describe('arranger + 器配 · grooveBySection / drumPatternBySection', () => {
   for (const style of STYLES) {
-    it(`${style}:每段都有 groove + drum pattern;同 groove → 同变体(repeatGroup 一致)`, () => {
+    it(`${style}:每段都有 groove + drum pattern;同演奏法 key → 同变体(repeatGroup 一致)`, () => {
       const seed = 4242;
       const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
       const arrangement = buildArrangementPlan(band, { rng: createRandomContext(seed) });
       const instr = buildInstrumentationPlan(band, arrangement, createRandomContext(seed).substream('timbre'));
 
       const sig = (hits: readonly DrumHit[]) => hits.map((h) => `${h.drum}@${h.beat}:${h.vel}`).join('|');
-      const patByGroove: Record<string, string> = {};
+      const patByPerformanceKey: Record<string, string> = {};
       for (const s of arrangement.sections) {
         const gk = arrangement.grooveBySection[s.id];
         expect(gk).toBeDefined();
         const pat = instr.drumPatternBySection[s.id];
         expect(pat).toBeDefined();
         expect(pat.length).toBeGreaterThan(0);
-        // 同 groove → 同变体
+        // 同演奏法 key → 同变体；不同功能段即使同 groove 也允许不同手法。
+        const perf = arrangement.drumPerformanceBySection?.[s.id];
+        const performanceKey = perf
+          ? `${perf.patternFamily}:${s.repeatGroup ?? s.functionTag ?? s.role}:${perf.role}:${perf.complexity}`
+          : `legacy:${gk}`;
         const sg = sig(pat);
-        if (patByGroove[gk]) expect(sg).toBe(patByGroove[gk]);
-        else patByGroove[gk] = sg;
+        if (patByPerformanceKey[performanceKey]) expect(sg).toBe(patByPerformanceKey[performanceKey]);
+        else patByPerformanceKey[performanceKey] = sg;
       }
     });
   }
@@ -519,6 +532,90 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     expect(at(3.75, DRUM.KICK)).toHaveLength(1);
     expect(fillWindow.some((note) => new Set<number>([DRUM.TOM_LO, DRUM.TOM_MID, DRUM.TOM_HI]).has(note.pitch as number))).toBe(false);
     expect(at(4, DRUM.KICK)).toHaveLength(1);
+  });
+
+  it('POP ballad performance 会把旧式 hard fill 降级为 sidestick,不出 tom/crash/open snare', () => {
+    const base: DrumHit[] = [
+      { drum: DRUM.KICK, beat: 0, vel: 88 },
+      { drum: DRUM.SNARE, beat: 2, vel: 86 },
+      ...Array.from({ length: 4 }, (_, index) => ({ drum: DRUM.CHAT, beat: index, vel: 30 })),
+    ];
+    const performance = {
+      id: 'ballad', sectionId: sid, grooveContractId: 'pop_ballad_halftime', feelProfileId: 'pop-ballad-soft',
+      role: 'timekeeper', kitProgram: 8, patternFamily: 'ballad-halftime', complexity: 1, intensity: 1, densityCeiling: 0.42,
+      entryMode: 'full', fillPolicy: 'light', fillAmount: 1, fillComplexity: 1, phraseVariation: 0,
+      maxMoveTicks: 12, humanizeAmount: 1, feelOffsetMs: 7,
+      timingProfile: 'behind-snare', velocityProfile: 'ghosted', kickPolicy: 'halftime', snarePolicy: 'rim',
+      hatPolicy: 'eighths', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'strict',
+    } as const;
+    const grooveScorePlan = {
+      grooveContractId: 'pop_ballad_halftime',
+      bySection: {
+        [sid]: {
+          sectionId: sid,
+          grooveContractId: 'pop_ballad_halftime',
+          bars: [0, 1].map((absoluteBar) => ({
+            sectionId: sid,
+            barInSection: absoluteBar,
+            absoluteBar,
+            phraseIndex: 0,
+            phraseBarIndex: absoluteBar,
+            role: 'base',
+            beatStrength: [1, 0.86, 0.98, 0.84],
+            subdivision: 'eighth',
+            subdivisionAccent: [1, 0.72],
+            phraseAccent: 1,
+            drumInteraction: {
+              kickFollow: 'pulse',
+              snareFollow: 'backbeat',
+              structuralKickBeats: [0, 2],
+              structuralSnareBeats: [2],
+              kickResponseLimit: 0,
+              snareResponseLimit: 0,
+            },
+          })),
+        },
+      },
+      boundaries: [{
+        id: 'verse->chorus:legacy-hard',
+        fromSectionId: sid,
+        toSectionId: sid,
+        sourceBar: 0,
+        landingBar: 1,
+        kind: 'fill',
+        intensity: 3,
+        durationBeats: 2,
+        baseMask: 'mask-window',
+        drumFillFamily: 'pop-tom-build',
+        fillFunction: 'climax',
+        fillScore: materializePopRockFill({
+          rhythmClass: 'syncopated-sixteenth',
+          orchestration: 'linear-hand-foot',
+          function: 'climax',
+          variant: 3,
+          durationBeats: 2,
+          intensity: 3,
+        }),
+        landing: 'kick-crash',
+        opening: false,
+      }],
+    } satisfies GrooveScorePlan;
+    const rendered = renderDrums(plan, timebase, 4, {
+      patternBySection: { [sid]: base },
+      performanceBySection: { [sid]: performance },
+      grooveScorePlan,
+    });
+    const pitches = rendered.notes.map((note) => note.pitch as number);
+    const toms = new Set<number>([DRUM.TOM_LO, DRUM.TOM_MID, DRUM.TOM_HI]);
+    const kickVelocities = rendered.notes
+      .filter((note) => (note.pitch as number) === DRUM.KICK)
+      .map((note) => note.velocity);
+
+    expect(pitches).toContain(DRUM.SIDESTICK);
+    expect(pitches).not.toContain(DRUM.SNARE);
+    expect(pitches).not.toContain(DRUM.CRASH);
+    expect(pitches.some((pitch) => toms.has(pitch))).toBe(false);
+    expect(Math.max(...kickVelocities)).toBeLessThanOrEqual(84);
   });
 
   it('Renderer 会逐击消费 Arranger 写下的 POP/Rock hand-foot fill score', () => {

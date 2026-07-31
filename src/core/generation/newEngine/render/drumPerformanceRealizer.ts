@@ -150,6 +150,22 @@ function velocityBand(context: HitContext): Readonly<DrumVelocityBand> | undefin
 function timingMs(context: HitContext): number {
   const profile = context.profile;
   if (!profile) return 0;
+  const lofiPocket = context.score?.lofiPocket;
+  if (lofiPocket) {
+    // LOFI pocket is relational and repeatable: kick is the clock, rim/snare
+    // drags by one declared amount, and hats alternate one fixed cycle. Do not
+    // add independent per-bar/per-limb timing noise on top of this relation.
+    if (context.kind === 'kick') {
+      return context.structural ? lofiPocket.kickAnchorMs : lofiPocket.kickOffbeatMs;
+    }
+    if (context.kind === 'snare') {
+      return context.structural ? lofiPocket.snareDragMs : lofiPocket.snareDragMs * 0.65;
+    }
+    if (context.kind === 'timekeeper') {
+      return context.structural ? lofiPocket.hatOnbeatMs : lofiPocket.hatOffbeatMs;
+    }
+    return 0;
+  }
   const grammar = profile.timing;
   let base = 0;
   if (context.kind === 'kick') base = context.structural ? grammar.kickAnchorMs : grammar.kickOffbeatMs;

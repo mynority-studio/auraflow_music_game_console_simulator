@@ -6,15 +6,38 @@
 // lead / comp / bass 的句法；renderer 只把合法和弦音实化为 NoteIR。
 // ============================================================
 
-import type { ArrangementPlan, Phrase, Section } from './ArrangementPlan';
+import type { ArrangementPlan, GrooveBarScore, Phrase, Section } from './ArrangementPlan';
 import {
   acgPianoArrangementProfileForId,
   type AcgPianoArrangementProfileId,
 } from './acgPianoArrangementProfiles';
 import { phraseStartBeats } from './phraseTiming';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
+import {
+  ACG_PIANO_REST_CONTINUITY_KNOWLEDGE,
+  resolveAcgPianoContinuityRule,
+  resolveAcgPianoLeadContinuityProfile,
+  resolveAcgPianoWrittenContinuity,
+  type AcgPianoLeadBoundaryBridgeKind,
+  type AcgPianoLeadContinuityClass,
+  type AcgPianoLeadContinuityProfile,
+  type AcgPianoLeadShortGestureClass,
+  type AcgPianoWrittenContinuityIntent,
+} from '../knowledge/acgPianoContinuityKnowledge';
+import {
+  ACG_PIANO_METRIC_KNOWLEDGE,
+  acgPianoOpeningKnowledgeFor,
+  acgPianoOrchestrationSceneForId,
+  resolveAcgPianoOrchestrationScene,
+  type AcgPianoCompSurfaceFamily,
+  type AcgPianoCompSurfaceIntent,
+  type AcgPianoOpeningKnowledgeId,
+  type AcgPianoOrchestrationSceneId,
+  type AcgPianoPhraseOrchestrationRule,
+} from '../knowledge/acgPianoArrangementKnowledge';
 import type { GrooveTextureContract } from '../knowledge/textureProfiles';
 import type { AcgPianoSongGrammarSubset } from '../knowledge/melodyStyleGrammarProfiles';
+import type { AcgStableRole } from '../knowledge/melodyGrammarTypes';
 import type { AcgLeadPresencePlan } from '../render/acgLeadPresencePlan';
 import type { RoadMap } from '../render/mgRoadMapParser';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
@@ -51,16 +74,7 @@ export type AcgPianoPhraseGesture =
   | 'release-coda';
 
 /** Every audible comp event is authored by the phrase score before rendering. */
-export type AcgPianoCompGesture =
-  | 'tacet'
-  | 'pedal-hold'
-  | 'arp-up'
-  | 'arp-down'
-  | 'broken-wave'
-  | 'rolled-block'
-  | 'block'
-  | 'answer-dyad'
-  | 'pulse';
+export type AcgPianoCompGesture = AcgPianoCompSurfaceIntent;
 
 /**
  * A concrete middle-hand sentence written by the Arranger.  `gesture` remains
@@ -106,6 +120,46 @@ export type AcgPianoHarmonicTarget = 'current' | 'next';
 export type AcgPianoBassMotion = 'pedal' | 'ripple' | 'open-tenth' | 'stride' | 'root-anchor';
 export type AcgPianoLeadGrammarSubset = Exclude<AcgPianoSongGrammarSubset, 'all'>;
 export type AcgPianoReturnShape = 'stableSingle' | 'sigh' | 'liftRiff';
+export type AcgPianoMetricRole = 'structural' | 'flow' | 'pickup' | 'answer';
+export type AcgPianoMetricAnchorKind =
+  | 'bar-downbeat'
+  | 'secondary-strong-beat'
+  | 'weak-beat'
+  | 'harmonic-arrival'
+  | 'phrase-arrival';
+
+/**
+ * One shared metric point for the complete piano score.  BASS, COMP and LEAD
+ * may use different surface rhythms, but their structural attacks reference
+ * this same Arranger-owned clock instead of inventing three local grids.
+ */
+export interface AcgPianoMetricAnchor {
+  id: string;
+  /** Absolute beat in the song. */
+  beat: number;
+  bar: number;
+  beatInBar: number;
+  kind: AcgPianoMetricAnchorKind;
+  /** 0..1 metric/accent weight consumed before NoteIR exists. */
+  strength: number;
+  sectionId: string;
+  spanId?: string;
+  phraseId?: string;
+  roles: readonly ('bass' | 'comp' | 'lead')[];
+}
+
+export interface AcgPianoMetricGrid {
+  beatsPerBar: number;
+  /** Smallest structural onset slot; expressive offsets remain separate. */
+  subdivisionBeats: number;
+  /** Rubato smaller than this may remain attached to its declared anchor. */
+  expressiveOffsetLimitBeats: number;
+  /** A root-led arpeggio may enter shortly after the shared downbeat. */
+  compEntryLimitBeats: number;
+  /** Complete 2/3/4-voice roll width, not a per-voice allowance. */
+  rollSpreadLimitBeats: number;
+  anchors: readonly AcgPianoMetricAnchor[];
+}
 /**
  * A phrase-level comp sentence.  It is selected by the arranger before any
  * note is rendered, so a cue's middle contrast is not a renderer-side fill.
@@ -134,6 +188,13 @@ export interface AcgPianoCompEvent {
   /** A D source span can explicitly author this terminal in the target T span. */
   resolutionSourceSpanId?: string;
   role: AcgPianoEventRole;
+  /** Metric ownership is optional only for compact legacy test fixtures. */
+  metricAnchorId?: string;
+  /** Signed performed offset from the shared anchor, in beats. */
+  metricOffsetBeats?: number;
+  metricRole?: AcgPianoMetricRole;
+  /** Arranger-written key/rest/damper semantics; renderer must not reclassify it. */
+  continuity?: AcgPianoWrittenContinuityIntent;
 }
 
 export interface AcgPianoBassEvent {
@@ -142,6 +203,12 @@ export interface AcgPianoBassEvent {
   durationBeats: number;
   voice: 'root' | 'fifth' | 'tenth';
   velocity: number;
+  /** Metric ownership is optional only for compact legacy test fixtures. */
+  metricAnchorId?: string;
+  metricOffsetBeats?: number;
+  metricRole?: AcgPianoMetricRole;
+  /** Arranger-written key/rest/damper semantics; renderer must not reclassify it. */
+  continuity?: AcgPianoWrittenContinuityIntent;
 }
 
 export interface AcgPianoCompDirective {
@@ -149,6 +216,8 @@ export interface AcgPianoCompDirective {
   floorMidi: number;
   ceilingMidi: number;
   rollStepBeats: number;
+  /** Complete written roll width; optional only for compact legacy fixtures. */
+  rollSpreadLimitBeats?: number;
   maxVoices: number;
   gesture: AcgPianoCompGesture;
   /** Concrete score sentence. Optional only for compact unit-test fixtures. */
@@ -169,11 +238,47 @@ export interface AcgPianoLeadDirective {
   grammarSubset: AcgPianoLeadGrammarSubset;
   /** Scheduler can only select an existing return brick in this allowed set. */
   returnShapes: readonly AcgPianoReturnShape[];
+  /** KB-derived phrase rule; per-harmony slots below make it executable. */
+  continuityProfile: AcgPianoLeadContinuityProfile;
   silenceWindows: readonly AcgPianoSilenceWindow[];
   interlock: {
     whenLeadActive: 'underlay' | 'tacet';
-    whenLeadRest: 'answer' | 'shared-rest';
+    whenLeadRest: 'answer' | 'underlay' | 'shared-rest';
   };
+}
+
+/** A cross-harmony continuation must be pre-proved by the Arranger. */
+export interface AcgPianoLeadBoundaryBridge {
+  kind: AcgPianoLeadBoundaryBridgeKind;
+  /** Omitted only for the explicit release fallback. */
+  targetSpanId?: string;
+  /** Exact stable pitch classes admitted on both sides of the boundary. */
+  continuationPcs?: readonly number[];
+}
+
+/**
+ * One phrase × harmonic-segment top-line contract.  It is deliberately
+ * separate from `spanById`: a single harmony may be split by a phrase edge,
+ * and that edge must not lose the lead's semantic owner during span merging.
+ */
+export interface AcgPianoLeadContinuitySlot {
+  id: string;
+  phraseId: string;
+  sourceSpanId: string;
+  startBeat: number;
+  endBeat: number;
+  continuityClass: AcgPianoLeadContinuityClass;
+  exposedGapBeats: number;
+  minimumKeyDownBeats: number;
+  releaseGuardBeats: number;
+  reentryGuardBeats: number;
+  maxOnsetNudgeBeats: number;
+  allowedShortGestureClasses: readonly AcgPianoLeadShortGestureClass[];
+  harmonicScope: 'current-chord';
+  stableRoles: readonly AcgStableRole[];
+  boundaryBridges: readonly AcgPianoLeadBoundaryBridge[];
+  lowerHandPolicy: AcgPianoLeadContinuityProfile['lowerHandPolicy'];
+  terminalTailPolicy: AcgPianoLeadContinuityProfile['terminalTailPolicy'];
 }
 
 export interface AcgPianoPhrasePlan {
@@ -195,6 +300,8 @@ export interface AcgPianoPhrasePlan {
     brickFamilies: readonly string[];
     brickNames: readonly string[];
   };
+  /** Arranger KB scene that owns the bass/COMP/lead relationship for this phrase. */
+  orchestrationSceneId: AcgPianoOrchestrationSceneId;
   lead: AcgPianoLeadDirective;
 }
 
@@ -211,18 +318,21 @@ export interface AcgPianoScoreSpan {
 }
 
 /** Why the scored piano keeps one physical damper down across harmony spans. */
-export type AcgPianoPedalHoldReason = 'opening-afterglow' | 'phrase-air' | 'coda-dissolve';
+export type AcgPianoPedalHoldReason = 'opening-afterglow' | 'phrase-air' | 'coda-dissolve' | 'lead-afterglow';
 
 /**
  * A shared-piano damper interval, authored by the ACG arranger in absolute
- * beats.  This is not a renderer inference from NoteIR: it only represents
- * an already-written sequence of air sentences, and the instrumental pedal
- * plan remains the hardware-capability authority.
+ * beats.  This is not a renderer inference from NoteIR: it represents either
+ * an arranger-written air sentence or a scheduler-authored lead afterglow,
+ * while the instrumental pedal plan remains the hardware-capability
+ * authority.
  */
 export interface AcgPianoPedalHold {
   startBeat: number;
   endBeat: number;
   reason: AcgPianoPedalHoldReason;
+  /** Legacy hold adapter: an early release must name the attack that restores the damper. */
+  reengageBeat?: number;
 }
 
 export interface AcgPianoScorePlan {
@@ -231,6 +341,8 @@ export interface AcgPianoScorePlan {
   /** The RoadMap is factual harmonic analysis; this plan only overlays interpretation. */
   roadMap?: RoadMap;
   leadPresencePlan?: AcgLeadPresencePlan;
+  /** One metric/accent authority shared by all three written piano hands. */
+  metricGrid: AcgPianoMetricGrid;
   /** All phrase owners when one harmonic span crosses a phrase boundary. */
   phraseIdsBySpan: Record<string, readonly string[]>;
   phraseById: Record<string, AcgPianoPhrasePlan>;
@@ -238,8 +350,83 @@ export interface AcgPianoScorePlan {
   phraseIdBySpan: Record<string, string>;
   textureBySpan: Record<string, AcgPianoTextureCase>;
   spanById: Record<string, AcgPianoScoreSpan>;
+  /** Authoritative lead continuity score, retained across renderer retries. */
+  leadContinuitySlots: readonly AcgPianoLeadContinuitySlot[];
   /** One physical piano's score-owned long-pedal intervals, shared by all hands. */
   sharedPedalHolds: readonly AcgPianoPedalHold[];
+}
+
+/**
+ * Semantic score validator. Renderer ownership tests prove that timing is
+ * preserved; this validator proves the timing handed to the renderer belongs
+ * to the shared piano clock in the first place.
+ */
+export function validateAcgPianoMetricContract(plan: AcgPianoScorePlan): readonly string[] {
+  const issues: string[] = [];
+  const anchors = new Map(plan.metricGrid.anchors.map((anchor) => [anchor.id, anchor]));
+  if (plan.metricGrid.subdivisionBeats <= 0) issues.push('metricGrid.subdivisionBeats must be positive');
+  if (plan.metricGrid.compEntryLimitBeats > plan.metricGrid.subdivisionBeats + 1e-6) {
+    issues.push('metricGrid.compEntryLimitBeats exceeds one subdivision');
+  }
+  for (const span of Object.values(plan.spanById)) {
+    const spreadLimit = span.comp.rollSpreadLimitBeats ?? plan.metricGrid.rollSpreadLimitBeats;
+    if (spreadLimit > plan.metricGrid.rollSpreadLimitBeats + 1e-6) {
+      issues.push(`${span.spanId}: comp roll spread exceeds metric contract`);
+    }
+    for (const event of span.comp.events) {
+      if (!event.metricAnchorId || !anchors.has(event.metricAnchorId)) {
+        issues.push(`${span.spanId}:${event.id}: comp event has no valid metric anchor`);
+        continue;
+      }
+      const offset = Math.abs(event.metricOffsetBeats ?? Infinity);
+      const limit = event.metricRole === 'structural'
+        ? plan.metricGrid.compEntryLimitBeats
+        : plan.metricGrid.subdivisionBeats / 2;
+      if (offset > limit + 1e-6) {
+        issues.push(`${span.spanId}:${event.id}: comp ${event.metricRole ?? 'unknown'} offset ${offset.toFixed(3)} exceeds ${limit.toFixed(3)}`);
+      }
+    }
+    for (const [index, event] of span.bass.events.entries()) {
+      if (!event.metricAnchorId || !anchors.has(event.metricAnchorId)) {
+        issues.push(`${span.spanId}:bass-${index}: bass event has no valid metric anchor`);
+        continue;
+      }
+      const offset = Math.abs(event.metricOffsetBeats ?? Infinity);
+      if (event.metricRole === 'structural' && offset > 1e-6) {
+        issues.push(`${span.spanId}:bass-${index}: structural root is off its metric anchor`);
+      } else if (offset > plan.metricGrid.subdivisionBeats / 2 + 1e-6) {
+        issues.push(`${span.spanId}:bass-${index}: flow offset exceeds half a subdivision`);
+      }
+    }
+  }
+  return issues;
+}
+
+/** Every written lower/middle-hand attack must carry an explicit rest policy. */
+export function validateAcgPianoWrittenContinuityContract(plan: AcgPianoScorePlan): readonly string[] {
+  const issues: string[] = [];
+  for (const span of Object.values(plan.spanById)) {
+    for (const event of span.comp.events) {
+      if (!event.continuity) {
+        issues.push(`${span.spanId}:${event.id}: comp event has no written continuity intent`);
+      } else if (event.continuity.continuityClass === 'fast-run'
+        && event.continuity.damperPolicy !== 'dry-allowed') {
+        issues.push(`${span.spanId}:${event.id}: fast run does not own its dry exception`);
+      } else if (event.continuity.continuityClass !== 'fast-run'
+        && event.continuity.damperPolicy !== 'pedal-default') {
+        issues.push(`${span.spanId}:${event.id}: non-fast comp event lacks default pedal support`);
+      }
+    }
+    for (const [index, event] of span.bass.events.entries()) {
+      if (!event.continuity) {
+        issues.push(`${span.spanId}:bass-${index}: bass event has no written continuity intent`);
+      } else if (event.continuity.continuityClass !== 'fast-run'
+        && event.continuity.damperPolicy !== 'pedal-default') {
+        issues.push(`${span.spanId}:bass-${index}: non-fast bass event lacks default pedal support`);
+      }
+    }
+  }
+  return issues;
 }
 
 interface ArrangementSubset {
@@ -434,29 +621,29 @@ function choosePhraseGesture(
  */
 const SPAN_GESTURE_CYCLES: Record<AcgPianoPhraseGesture, readonly AcgPianoSpanGestureCycle[]> = {
   'pedal-breath': [
-    ['pedal-hold', 'tacet'],
-    ['pedal-hold', 'tacet', 'pedal-hold'],
+    ['pedal-hold', 'rolled-block'],
+    ['pedal-hold', 'arp-up', 'pedal-hold'],
   ],
   'ripple-call': [
-    ['arp-up', 'broken-wave', 'rolled-block', 'tacet'],
-    ['broken-wave', 'arp-up', 'tacet', 'rolled-block'],
+    ['arp-up', 'broken-wave', 'rolled-block', 'pedal-hold'],
+    ['broken-wave', 'arp-up', 'pedal-hold', 'rolled-block'],
   ],
   'broken-ten-lift': [
     ['broken-wave', 'arp-up', 'pulse', 'rolled-block'],
     ['arp-up', 'broken-wave', 'rolled-block', 'pulse'],
   ],
   'downward-answer': [
-    ['arp-down', 'broken-wave', 'rolled-block', 'tacet'],
-    ['broken-wave', 'arp-down', 'tacet', 'rolled-block'],
+    ['arp-down', 'broken-wave', 'rolled-block', 'pedal-hold'],
+    ['broken-wave', 'arp-down', 'pedal-hold', 'rolled-block'],
   ],
   'block-arrival': [
     ['rolled-block', 'broken-wave', 'arp-up', 'block'],
-    ['arp-up', 'tacet', 'rolled-block', 'block'],
+    ['arp-up', 'pedal-hold', 'rolled-block', 'block'],
     ['rolled-block', 'arp-down', 'broken-wave', 'block'],
   ],
   'ostinato-development': [
     ['pulse', 'broken-wave', 'arp-up', 'pulse', 'rolled-block'],
-    ['pulse', 'arp-up', 'broken-wave', 'tacet', 'pulse'],
+    ['pulse', 'arp-up', 'broken-wave', 'pedal-hold', 'pulse'],
   ],
   'release-coda': [
     ['pedal-hold', 'tacet'],
@@ -472,7 +659,13 @@ function spanGestureCycleForPhrase(
   phase: AcgPianoScorePhase,
   gesture: AcgPianoPhraseGesture,
   profile: AcgPianoSurfaceProgram,
+  openingStrategy: AcgPianoOpeningKnowledgeId,
 ): AcgPianoSpanGestureCycle {
+  if (phase === 'opening') {
+    // The profile's openingStrategy is now executable score knowledge: it
+    // selects a complete middle-register sentence before rendering.
+    return acgPianoOpeningKnowledgeFor(openingStrategy).compSurfaceCycle;
+  }
   const candidates = SPAN_GESTURE_CYCLES[gesture];
   const profiled = gesture === 'release-coda'
     ? profile === 'ripple-journey'
@@ -496,6 +689,15 @@ function grammarSubsetForPhrase(
   if (phase === 'lift' || gesture === 'broken-ten-lift' || gesture === 'ostinato-development') return 'ascending-lift';
   if (gesture === 'block-arrival' || phase === 'return' || binding.brickFamilies.includes('Cadence')) return 'cadential-return';
   return 'cantabile-theme';
+}
+
+function grammarSubsetForScene(
+  candidate: AcgPianoLeadGrammarSubset,
+  scene: AcgPianoPhraseOrchestrationRule,
+): AcgPianoLeadGrammarSubset {
+  return scene.lead.allowedGrammarSubsets.includes(candidate)
+    ? candidate
+    : scene.lead.allowedGrammarSubsets[0]!;
 }
 
 function returnShapesForPhrase(phase: AcgPianoScorePhase, gesture: AcgPianoPhraseGesture): readonly AcgPianoReturnShape[] {
@@ -534,6 +736,106 @@ function phraseBinding(roadMap: RoadMap | undefined, startBeat: number, endBeat:
   };
 }
 
+const ACG_PIANO_LEAD_STABLE_ROLES: readonly AcgStableRole[] = ['root', 'third', 'fifth', 'seventh'];
+
+interface AcgPianoScoreSegment {
+  span: HarmonicPlan['chordTimeline'][number];
+  index: number;
+  phrase: AcgPianoPhrasePlan;
+  startBeat: number;
+  endBeat: number;
+}
+
+function normalizePitchClasses(values: readonly number[]): readonly number[] {
+  return [...new Set(values.map((value) => ((Number(value) % 12) + 12) % 12))].sort((left, right) => left - right);
+}
+
+function phraseAllowsLeadBoundaryBridge(phrase: AcgPianoPhrasePlan, atBeat: number): boolean {
+  return !phrase.lead.silenceWindows.some((window) =>
+    atBeat >= window.startBeat - 1e-4 && atBeat < window.endBeat - 1e-4);
+}
+
+/**
+ * Compile the KB's phrase profile into executable, immutable score slots.
+ * This is where exact common tones are decided: the scheduler receives only
+ * a finite list of Arranger-proved pitch classes and may never re-infer a
+ * cross-harmony permission from a finished melody.
+ */
+function buildAcgPianoLeadContinuitySlots(args: {
+  segments: readonly AcgPianoScoreSegment[];
+  harmonic: HarmonicPlan;
+}): readonly AcgPianoLeadContinuitySlot[] {
+  const slots: AcgPianoLeadContinuitySlot[] = [];
+  for (const segment of args.segments) {
+    const profile = segment.phrase.lead.continuityProfile;
+    const spanStart = segment.span.startBeat as number;
+    const spanEnd = spanStart + (segment.span.durationBeats as number);
+    const endsAtHarmonyBoundary = Math.abs(segment.endBeat - spanEnd) <= 1e-4;
+    const next = args.harmonic.chordTimeline[segment.index + 1];
+    const nextStart = next ? next.startBeat as number : undefined;
+    const targetSegment = next
+      ? args.segments.find((candidate) => candidate.span.id === next.id
+        && candidate.startBeat <= nextStart! + 1e-4
+        && candidate.endBeat > nextStart! + 1e-4)
+      : undefined;
+    const boundaryBridges: AcgPianoLeadBoundaryBridge[] = [];
+
+    if (endsAtHarmonyBoundary
+      && next
+      && targetSegment
+      && phraseAllowsLeadBoundaryBridge(targetSegment.phrase, nextStart!)) {
+      const sourceStable = normalizePitchClasses(args.harmonic.stableToneMap?.[segment.span.id] ?? []);
+      const targetStable = normalizePitchClasses(args.harmonic.stableToneMap?.[next.id] ?? []);
+      const sourceFunction = args.harmonic.chordFunctionTimeline[segment.index];
+      const targetFunction = args.harmonic.chordFunctionTimeline[segment.index + 1];
+      const dominantB9 = ((Number(next.rootPc) + 1) % 12 + 12) % 12;
+
+      // Preserve the existing, deliberately narrow S→D b9 option, but write
+      // its target span and exact pitch class at score time.
+      if (sourceFunction === 'S' && targetFunction === 'D' && sourceStable.includes(dominantB9)) {
+        boundaryBridges.push({
+          kind: 'dominant-b9',
+          targetSpanId: next.id,
+          continuationPcs: [dominantB9],
+        });
+      }
+
+      const commonTones = sourceStable.filter((pitchClass) => targetStable.includes(pitchClass));
+      if (commonTones.length > 0) {
+        boundaryBridges.push({
+          kind: 'common-tone',
+          targetSpanId: next.id,
+          continuationPcs: commonTones,
+        });
+      }
+    }
+
+    // Fail closed: a boundary fragment without an Arranger-proved bridge is
+    // an explicit release, never an accidental short carrier.
+    boundaryBridges.push({ kind: 'release-at-boundary' });
+    slots.push({
+      id: `${segment.phrase.phraseId}:${segment.span.id}:${segment.startBeat.toFixed(4)}:${segment.endBeat.toFixed(4)}`,
+      phraseId: segment.phrase.phraseId,
+      sourceSpanId: segment.span.id,
+      startBeat: segment.startBeat,
+      endBeat: segment.endBeat,
+      continuityClass: profile.continuityClass,
+      exposedGapBeats: profile.exposedGapBeats,
+      minimumKeyDownBeats: profile.minimumKeyDownBeats,
+      releaseGuardBeats: profile.releaseGuardBeats,
+      reentryGuardBeats: profile.reentryGuardBeats,
+      maxOnsetNudgeBeats: profile.maxOnsetNudgeBeats,
+      allowedShortGestureClasses: profile.allowedShortGestureClasses,
+      harmonicScope: 'current-chord',
+      stableRoles: ACG_PIANO_LEAD_STABLE_ROLES,
+      boundaryBridges,
+      lowerHandPolicy: profile.lowerHandPolicy,
+      terminalTailPolicy: profile.terminalTailPolicy,
+    });
+  }
+  return slots;
+}
+
 function clampEvent(atBeat: number, durationBeats: number, spanDuration: number): { atBeat: number; durationBeats: number } | null {
   const at = Math.max(0, Math.min(atBeat, spanDuration - 0.06));
   const duration = Math.max(0.08, Math.min(durationBeats, spanDuration - at - 0.03));
@@ -558,6 +860,127 @@ function event(
 
 function scaled(spanDuration: number, beatAtFour: number): number {
   return Math.max(0, beatAtFour * (spanDuration / 4));
+}
+
+function snapToAcgPianoSubdivision(beat: number, subdivisionBeats: number): number {
+  if (!Number.isFinite(beat) || !Number.isFinite(subdivisionBeats) || subdivisionBeats <= 0) return beat;
+  return Math.round(beat / subdivisionBeats) * subdivisionBeats;
+}
+
+function nearestAcgPianoMetricAnchor(
+  grid: AcgPianoMetricGrid,
+  absoluteBeat: number,
+): AcgPianoMetricAnchor | undefined {
+  let nearest: AcgPianoMetricAnchor | undefined;
+  let distance = Infinity;
+  for (const anchor of grid.anchors) {
+    const candidateDistance = Math.abs(anchor.beat - absoluteBeat);
+    if (candidateDistance < distance - 1e-9) {
+      nearest = anchor;
+      distance = candidateDistance;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * Sentence tables describe musical shapes; this pass writes those shapes onto
+ * the shared piano clock before the score becomes immutable.  It deliberately
+ * preserves answer-window timing and explicit pickups, while removing the
+ * independent .12/.14/.20/.28-style clocks that formerly accumulated across
+ * the three hands.
+ */
+function bindCompEventsToAcgPianoMetricGrid(args: {
+  events: readonly AcgPianoCompEvent[];
+  absoluteSegmentStart: number;
+  segmentDuration: number;
+  grid: AcgPianoMetricGrid;
+}): readonly AcgPianoCompEvent[] {
+  const ordered = [...args.events].sort((left, right) => left.atBeat - right.atBeat || left.id.localeCompare(right.id));
+  return ordered.map((event, index) => {
+    const answer = event.role === 'answer' || event.gesture === 'answer-dyad';
+    const firstEntry = !answer && index === 0 && event.atBeat <= 0.30 + 1e-6;
+    const structuralEntry = event.role === 'arrival' || firstEntry;
+    let atBeat = event.atBeat;
+    if (answer) {
+      const snapped = snapToAcgPianoSubdivision(atBeat, args.grid.subdivisionBeats);
+      if (Math.abs(snapped - atBeat) <= args.grid.expressiveOffsetLimitBeats + 1e-6) atBeat = snapped;
+    } else if (event.attack !== 'simultaneous' && firstEntry) {
+      // Root-led arpeggios and rolls begin on the shared lower-hand anchor.
+      // Their internal spread is bounded separately by rollSpreadLimitBeats.
+      atBeat = 0;
+    } else if (firstEntry && atBeat > args.grid.expressiveOffsetLimitBeats) {
+      // A quiet middle-hand entry may follow the bass root, but never by the
+      // former .20-.28 beat delay that sounded like a second pulse.
+      atBeat = Math.min(args.grid.compEntryLimitBeats, args.segmentDuration - 0.06);
+    } else {
+      atBeat = snapToAcgPianoSubdivision(atBeat, args.grid.subdivisionBeats);
+    }
+    atBeat = Math.max(0, Math.min(atBeat, args.segmentDuration - 0.06));
+    const durationBeats = Math.max(
+      0.08,
+      Math.min(event.durationBeats, args.segmentDuration - atBeat - 0.03),
+    );
+    const absoluteBeat = args.absoluteSegmentStart + atBeat;
+    const anchor = nearestAcgPianoMetricAnchor(args.grid, absoluteBeat);
+    const metricRole: AcgPianoMetricRole = answer ? 'answer' : structuralEntry ? 'structural' : 'flow';
+    const accentScale = metricRole === 'structural'
+      ? ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentBase
+        + (anchor?.strength ?? 0.8) * ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentRange
+      : metricRole === 'answer'
+        ? ACG_PIANO_METRIC_KNOWLEDGE.answerAccentScale
+        : ACG_PIANO_METRIC_KNOWLEDGE.flowAccentBase
+          + (anchor?.strength ?? 0.6) * ACG_PIANO_METRIC_KNOWLEDGE.flowAccentRange;
+    return {
+      ...event,
+      atBeat,
+      durationBeats,
+      velocity: Math.max(0.05, Math.min(1, event.velocity * accentScale)),
+      metricAnchorId: anchor?.id,
+      metricOffsetBeats: anchor ? absoluteBeat - anchor.beat : 0,
+      metricRole,
+    };
+  });
+}
+
+function bindBassEventsToAcgPianoMetricGrid(args: {
+  events: readonly AcgPianoBassEvent[];
+  absoluteSegmentStart: number;
+  segmentDuration: number;
+  grid: AcgPianoMetricGrid;
+}): readonly AcgPianoBassEvent[] {
+  return args.events.map((event) => {
+    const structural = event.voice === 'root' && event.atBeat <= 1e-4;
+    const atBeat = structural
+      ? 0
+      : Math.max(
+        0,
+        Math.min(
+          snapToAcgPianoSubdivision(event.atBeat, args.grid.subdivisionBeats),
+          args.segmentDuration - 0.03,
+        ),
+      );
+    const durationBeats = Math.max(
+      0.02,
+      Math.min(event.durationBeats, args.segmentDuration - atBeat - 0.02),
+    );
+    const absoluteBeat = args.absoluteSegmentStart + atBeat;
+    const anchor = nearestAcgPianoMetricAnchor(args.grid, absoluteBeat);
+    const accentScale = structural
+      ? ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentBase
+        + (anchor?.strength ?? 0.8) * ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentRange
+      : ACG_PIANO_METRIC_KNOWLEDGE.flowAccentBase
+        + (anchor?.strength ?? 0.6) * ACG_PIANO_METRIC_KNOWLEDGE.flowAccentRange;
+    return {
+      ...event,
+      atBeat,
+      durationBeats,
+      velocity: Math.max(0.05, Math.min(1, event.velocity * accentScale)),
+      metricAnchorId: anchor?.id,
+      metricOffsetBeats: anchor ? absoluteBeat - anchor.beat : 0,
+      metricRole: structural ? 'structural' : 'flow',
+    };
+  });
 }
 
 const ANSWER_DYAD_MIN_DURATION_BEATS = 0.08;
@@ -1068,6 +1491,84 @@ function motionForSentence(sentenceId: AcgPianoCompSentenceId, gesture: AcgPiano
   return motionForGesture(gesture);
 }
 
+function bassMotionForScene(
+  sceneId: AcgPianoOrchestrationSceneId,
+  requested: AcgPianoBassMotion,
+): AcgPianoBassMotion {
+  const scene = acgPianoOrchestrationSceneForId(sceneId);
+  return scene.bass.allowedMotion.includes(requested)
+    ? requested
+    : scene.bass.allowedMotion[0]!;
+}
+
+const SCORE_CONTINUITY_EPSILON = 1e-4;
+
+function isAcgPianoSingleVoiceSelection(voices: AcgPianoVoiceSelection): boolean {
+  return voices === 'low'
+    || voices === 'inner-low'
+    || voices === 'inner-high'
+    || voices === 'high';
+}
+
+/**
+ * Final score-writing pass for exposed single-note continuity.  It runs after
+ * the Arranger has authored every comp/bass attack in this phrase slice and
+ * before the score is handed to renderers.  It never creates an onset, spans
+ * a harmonic boundary, or asks a renderer to infer a tail from NoteIR.
+ */
+function applyAcgPianoContinuityKnowledge(args: {
+  sentenceId: AcgPianoCompSentenceId;
+  gesture: AcgPianoCompGesture;
+  segmentDuration: number;
+  compEvents: readonly AcgPianoCompEvent[];
+  bassEvents: readonly AcgPianoBassEvent[];
+}): {
+  compEvents: readonly AcgPianoCompEvent[];
+  bassEvents: readonly AcgPianoBassEvent[];
+} {
+  const attacks = [...args.compEvents, ...args.bassEvents].map((event) => event.atBeat);
+  const isTerminalCarrier = (atBeat: number): boolean => !attacks.some((attackBeat) =>
+    attackBeat > atBeat + SCORE_CONTINUITY_EPSILON);
+  const applyRule = <T extends { atBeat: number; durationBeats: number }>(
+    event: T,
+    rule: ReturnType<typeof resolveAcgPianoContinuityRule>,
+  ): T => {
+    if (!rule) return event;
+    const availableUntilRelease = args.segmentDuration - rule.releaseGuardBeats - event.atBeat;
+    if (availableUntilRelease <= event.durationBeats + SCORE_CONTINUITY_EPSILON) return event;
+
+    if (rule.target === 'release-boundary') {
+      return { ...event, durationBeats: availableUntilRelease };
+    }
+
+    // A minimum tail must actually fit before the score-owned release. It is
+    // better to retain an intentional short cadence than silently cross a new
+    // chord just to satisfy a duration target.
+    if (availableUntilRelease < rule.minimumKeyDownBeats - SCORE_CONTINUITY_EPSILON) return event;
+    return { ...event, durationBeats: Math.max(event.durationBeats, rule.minimumKeyDownBeats) };
+  };
+
+  return {
+    compEvents: args.compEvents.map((event) => applyRule(event, resolveAcgPianoContinuityRule({
+      role: 'comp',
+      sentenceId: args.sentenceId,
+      gesture: event.gesture,
+      voice: event.voices,
+      eventRole: event.role,
+      isTerminalCarrier: isTerminalCarrier(event.atBeat),
+      isSingleVoice: isAcgPianoSingleVoiceSelection(event.voices),
+    }))),
+    bassEvents: args.bassEvents.map((event) => applyRule(event, resolveAcgPianoContinuityRule({
+      role: 'bass',
+      sentenceId: args.sentenceId,
+      gesture: args.gesture,
+      voice: event.voice,
+      isTerminalCarrier: isTerminalCarrier(event.atBeat),
+      isSingleVoice: true,
+    }))),
+  };
+}
+
 function offsetCompEvents(events: readonly AcgPianoCompEvent[], offsetBeats: number): readonly AcgPianoCompEvent[] {
   return events.map((candidate) => ({ ...candidate, atBeat: candidate.atBeat + offsetBeats }));
 }
@@ -1082,6 +1583,111 @@ function offsetSilenceWindows(windows: readonly AcgPianoSilenceWindow[], offsetB
     startBeat: window.startBeat + offsetBeats,
     endBeat: window.endBeat + offsetBeats,
   }));
+}
+
+interface AcgPianoHandEventRef {
+  role: 'comp' | 'bass';
+  spanId: string;
+  index: number;
+  atBeat: number;
+  durationBeats: number;
+  spanEndBeat: number;
+  /** A scored answer/pulse is short only because it resolves into nearby material. */
+  connectedShortGesture: boolean;
+}
+
+function fastRunLengthAtBeat(onsets: readonly number[], targetBeat: number): number {
+  const index = onsets.findIndex((beat) => Math.abs(beat - targetBeat) <= SCORE_CONTINUITY_EPSILON);
+  if (index < 0) return 0;
+  const maximumIoi = ACG_PIANO_REST_CONTINUITY_KNOWLEDGE.fastRunMaximumIoiBeats;
+  let lo = index;
+  let hi = index;
+  while (lo > 0 && onsets[lo]! - onsets[lo - 1]! <= maximumIoi + SCORE_CONTINUITY_EPSILON) lo--;
+  while (hi + 1 < onsets.length && onsets[hi + 1]! - onsets[hi]! <= maximumIoi + SCORE_CONTINUITY_EPSILON) hi++;
+  return hi - lo + 1;
+}
+
+/**
+ * Whole-score, per-hand continuity pass.  A COMP rest is still authored even
+ * while the left hand moves, so the old segment-local combined attack test
+ * cannot decide whether a middle-hand dyad is an exposed carrier.  This pass
+ * labels every attack and lengthens only a genuinely exposed non-fast event,
+ * bounded by its own harmonic release.
+ */
+function applyAcgPianoWholeScoreContinuity(args: {
+  harmonic: HarmonicPlan;
+  spanById: Readonly<Record<string, AcgPianoScoreSpan>>;
+}): Record<string, AcgPianoScoreSpan> {
+  const harmonicById = new Map(args.harmonic.chordTimeline.map((span) => [span.id, span]));
+  const refs: AcgPianoHandEventRef[] = [];
+  for (const [spanId, score] of Object.entries(args.spanById)) {
+    const harmonic = harmonicById.get(spanId);
+    if (!harmonic) continue;
+    const startBeat = harmonic.startBeat as number;
+    const spanEndBeat = startBeat + (harmonic.durationBeats as number);
+    score.comp.events.forEach((event, index) => refs.push({
+      role: 'comp', spanId, index, atBeat: startBeat + event.atBeat,
+      durationBeats: event.durationBeats, spanEndBeat,
+      connectedShortGesture: event.role === 'answer'
+        || event.gesture === 'answer-dyad'
+        || event.gesture === 'pulse',
+    }));
+    score.bass.events.forEach((event, index) => refs.push({
+      role: 'bass', spanId, index, atBeat: startBeat + event.atBeat,
+      durationBeats: event.durationBeats, spanEndBeat,
+      connectedShortGesture: false,
+    }));
+  }
+
+  const replacement = new Map<string, { durationBeats: number; continuity: AcgPianoWrittenContinuityIntent }>();
+  for (const role of ['comp', 'bass'] as const) {
+    const hand = refs.filter((ref) => ref.role === role)
+      .sort((left, right) => left.atBeat - right.atBeat || left.spanId.localeCompare(right.spanId) || left.index - right.index);
+    const onsets = [...new Set(hand.map((ref) => ref.atBeat))].sort((left, right) => left - right);
+    for (const ref of hand) {
+      const nextAttack = onsets.find((beat) => beat > ref.atBeat + SCORE_CONTINUITY_EPSILON);
+      const restHorizon = nextAttack ?? ref.spanEndBeat;
+      const restAfterKeyUpBeats = Math.max(0, restHorizon - (ref.atBeat + ref.durationBeats));
+      const resolvedContinuity = resolveAcgPianoWrittenContinuity({
+        durationBeats: ref.durationBeats,
+        restAfterKeyUpBeats,
+        fastRunAttackCount: fastRunLengthAtBeat(onsets, ref.atBeat),
+      });
+      const continuity: AcgPianoWrittenContinuityIntent = ref.connectedShortGesture
+        && resolvedContinuity.continuityClass === 'exposed-carrier'
+        ? { ...resolvedContinuity, continuityClass: 'connected' }
+        : resolvedContinuity;
+      let durationBeats = ref.durationBeats;
+      if (continuity.continuityClass === 'exposed-carrier' && !ref.connectedShortGesture) {
+        const releaseBeat = Math.min(nextAttack ?? ref.spanEndBeat, ref.spanEndBeat)
+          - continuity.releaseGuardBeats;
+        const available = Math.max(durationBeats, releaseBeat - ref.atBeat);
+        // Prefer the full half-note carrier. When the harmony boundary is
+        // nearer, use every legal key-down beat and let the shared damper
+        // preserve the remaining acoustic tail.
+        durationBeats = Math.max(durationBeats, Math.min(continuity.minimumKeyDownBeats, available));
+      }
+      replacement.set(`${role}:${ref.spanId}:${ref.index}`, { durationBeats, continuity });
+    }
+  }
+
+  return Object.fromEntries(Object.entries(args.spanById).map(([spanId, score]) => [spanId, {
+    ...score,
+    comp: {
+      ...score.comp,
+      events: score.comp.events.map((event, index) => ({
+        ...event,
+        ...(replacement.get(`comp:${spanId}:${index}`) ?? {}),
+      })),
+    },
+    bass: {
+      ...score.bass,
+      events: score.bass.events.map((event, index) => ({
+        ...event,
+        ...(replacement.get(`bass:${spanId}:${index}`) ?? {}),
+      })),
+    },
+  }]));
 }
 
 /** Merge phrase-owned segments back into the one harmonic span consumed by renderers. */
@@ -1114,7 +1720,7 @@ function mergePhraseSegmentIntoScoreSpan(
   };
 }
 
-type AcgPianoSurfaceFamily = 'broken-motion' | 'vertical' | 'pulse' | 'air' | 'answer';
+type AcgPianoSurfaceFamily = AcgPianoCompSurfaceFamily;
 type AcgPianoProfileSurfaceFamily = 'air' | 'ripple' | 'pulse' | 'vertical' | 'answer';
 
 const MAX_CONSECUTIVE_MIDDLE_BROKEN_SPANS = 5;
@@ -1133,6 +1739,63 @@ function surfaceFamilyForGesture(gesture: AcgPianoCompGesture): AcgPianoSurfaceF
 
 interface AcgMiddleSurfaceBudget {
   consecutiveBrokenSpans: number;
+}
+
+interface AcgPianoPhraseAirBudget {
+  fullTacetSpansByPhrase: Map<string, number>;
+  consecutiveFullTacetByPhrase: Map<string, number>;
+}
+
+function fallbackGestureForScene(
+  scene: AcgPianoPhraseOrchestrationRule,
+  arrival: boolean,
+): AcgPianoCompGesture {
+  const candidates: readonly AcgPianoCompGesture[] = [
+    ...(arrival ? ['rolled-block' as const] : []),
+    scene.comp.fullTacetFallback,
+    'broken-wave',
+    'pulse',
+    'pedal-hold',
+  ];
+  return candidates.find((candidate) =>
+    scene.comp.allowedSurfaceFamilies.includes(surfaceFamilyForGesture(candidate)))
+    ?? scene.comp.fullTacetFallback;
+}
+
+/**
+ * Execute the arranger KB after profile/cadence selection but before a
+ * sentence is compiled. A rest that exceeds the scene budget becomes a
+ * written middle-register carrier; no renderer is asked to fill the hole.
+ */
+function enforcePhraseOrchestrationRule(args: {
+  phrase: AcgPianoPhrasePlan;
+  gesture: AcgPianoCompGesture;
+  arrival: boolean;
+  budget: AcgPianoPhraseAirBudget;
+}): AcgPianoCompGesture {
+  const scene = acgPianoOrchestrationSceneForId(args.phrase.orchestrationSceneId);
+  let gesture = args.gesture;
+  if (!scene.comp.allowedSurfaceFamilies.includes(surfaceFamilyForGesture(gesture))) {
+    gesture = fallbackGestureForScene(scene, args.arrival);
+  }
+
+  const phraseId = args.phrase.phraseId;
+  if (gesture !== 'tacet') {
+    args.budget.consecutiveFullTacetByPhrase.set(phraseId, 0);
+    return gesture;
+  }
+
+  const used = args.budget.fullTacetSpansByPhrase.get(phraseId) ?? 0;
+  const consecutive = args.budget.consecutiveFullTacetByPhrase.get(phraseId) ?? 0;
+  if (used >= scene.comp.maxFullTacetSpansPerPhrase
+    || consecutive >= scene.comp.maxConsecutiveFullTacetSpans) {
+    args.budget.consecutiveFullTacetByPhrase.set(phraseId, 0);
+    return fallbackGestureForScene(scene, args.arrival);
+  }
+
+  args.budget.fullTacetSpansByPhrase.set(phraseId, used + 1);
+  args.budget.consecutiveFullTacetByPhrase.set(phraseId, consecutive + 1);
+  return gesture;
 }
 
 /**
@@ -1161,10 +1824,10 @@ function enforceMiddleSurfaceBudget(args: {
     const candidates: readonly AcgPianoCompGesture[] = arrival
       ? ['rolled-block', 'block']
       : phrase.phase === 'development'
-        ? ['pulse', 'rolled-block', 'tacet']
+        ? ['pulse', 'rolled-block', 'pedal-hold']
         : phrase.phase === 'lift'
           ? ['rolled-block', 'pulse']
-          : ['rolled-block', 'block', 'tacet'];
+          : ['rolled-block', 'block', 'pedal-hold'];
     gesture = choose(seed, `${phrase.phraseId}|${spanIndex}|middle-surface-contrast`, candidates);
   }
 
@@ -1197,8 +1860,8 @@ function applyProfileMiddleSurfaceTarget(args: {
   if (!isMiddlePhase(phrase.phase) || spanIndex !== 0 || arrival || profileArc.length === 0) return gesture;
   if (phrase.lead.interlock.whenLeadActive === 'tacet') return gesture;
   const target = profileArc[(phraseOrdinal ?? 0) % profileArc.length];
-  if (target === 'answer') return hasLeadAnswerWindow ? 'answer-dyad' : 'tacet';
-  if (target === 'air') return 'tacet';
+  if (target === 'answer') return hasLeadAnswerWindow ? 'answer-dyad' : 'pedal-hold';
+  if (target === 'air') return 'pedal-hold';
   if (target === 'pulse') return 'pulse';
   if (target === 'vertical') return 'rolled-block';
   return choose(seed, `${phrase.phraseId}|${spanIndex}|profile-ripple`, ['arp-up', 'broken-wave']);
@@ -1213,7 +1876,7 @@ function gestureForSpan(args: {
   phrase: AcgPianoPhrasePlan;
 }): AcgPianoCompGesture {
   const { phraseGesture, spanIndex, spanCount, arrival, hasLeadAnswerWindow, phrase } = args;
-  if (hasLeadAnswerWindow) {
+  if (hasLeadAnswerWindow && phrase.lead.interlock.whenLeadRest !== 'underlay') {
     if (phrase.lead.interlock.whenLeadRest === 'shared-rest') return 'tacet';
     // A phrase whose active lead policy is tacet may only speak inside this
     // exact scheduler-owned breath; do not let a supporting arp spill back
@@ -1511,6 +2174,35 @@ function compileSharedPedalHolds(
   return holds;
 }
 
+/** A long carry may cross only a literal repeated harmony. Changed roots or
+ * chord qualities must be re-pedalled by the final three-hand pedal score. */
+function retainHarmonicallySafeSharedPedalHolds(
+  holds: readonly AcgPianoPedalHold[],
+  harmonic: HarmonicPlan,
+): readonly AcgPianoPedalHold[] {
+  const spans = [...harmonic.chordTimeline]
+    .sort((left, right) => (left.startBeat as number) - (right.startBeat as number));
+  const identity = (span: (typeof spans)[number]): string => [
+    span.rootPc as number,
+    span.chordType ?? span.quality,
+    span.bassPc as number | undefined,
+    span.bassRole,
+    span.bassPedalPc as number | undefined,
+  ].join('|');
+  return holds.filter((hold) => {
+    const crossed = spans.filter((span) => {
+      const start = span.startBeat as number;
+      return start > hold.startBeat + SCORE_PEDAL_EPSILON
+        && start < hold.endBeat - SCORE_PEDAL_EPSILON;
+    });
+    return crossed.every((target) => {
+      const targetIndex = spans.findIndex((span) => span.id === target.id);
+      const source = spans[targetIndex - 1];
+      return !!source && identity(source) === identity(target) && source.sectionId === target.sectionId;
+    });
+  });
+}
+
 function isSharedPedalAirSentence(
   sentenceId: AcgPianoCompSentenceId,
   gesture: AcgPianoCompGesture,
@@ -1519,6 +2211,93 @@ function isSharedPedalAirSentence(
     || gesture === 'tacet'
     || sentenceId === 'bare-root-space'
     || sentenceId === 'pedal-reveal';
+}
+
+function buildAcgPianoMetricGrid(args: {
+  arrangement: ArrangementPlan;
+  harmonic: HarmonicPlan;
+  phraseById: Readonly<Record<string, AcgPianoPhrasePlan>>;
+}): AcgPianoMetricGrid {
+  const beatsPerBar = args.arrangement.meter.numerator * (4 / args.arrangement.meter.denominator);
+  const grooveBarByAbsoluteBar = new Map<number, GrooveBarScore>();
+  for (const sectionScore of Object.values(args.arrangement.grooveScorePlan?.bySection ?? {})) {
+    for (const bar of sectionScore.bars) grooveBarByAbsoluteBar.set(bar.absoluteBar, bar);
+  }
+  const totalBeats = Math.max(
+    args.arrangement.sections.reduce((sum, section) => sum + section.bars * beatsPerBar, 0),
+    ...args.harmonic.chordTimeline.map((span) => (span.startBeat as number) + (span.durationBeats as number)),
+    0,
+  );
+  const phrases = Object.values(args.phraseById);
+  const candidateBeats = new Set<number>();
+  for (let beat = 0; beat < totalBeats - 1e-6; beat += ACG_PIANO_METRIC_KNOWLEDGE.subdivisionBeats) {
+    candidateBeats.add(Math.round(beat * 1_000_000) / 1_000_000);
+  }
+  for (const span of args.harmonic.chordTimeline) candidateBeats.add(span.startBeat as number);
+  for (const phrase of phrases) candidateBeats.add(phrase.startBeat);
+
+  const anchors = [...candidateBeats]
+    .sort((left, right) => left - right)
+    .map((beat): AcgPianoMetricAnchor | null => {
+      if (beat < -1e-6 || beat >= totalBeats - 1e-6) return null;
+      const bar = Math.max(0, Math.floor((beat + 1e-6) / beatsPerBar));
+      const beatInBar = beat - bar * beatsPerBar;
+      const harmonicSpan = args.harmonic.chordTimeline.find((span) => {
+        const start = span.startBeat as number;
+        return beat >= start - 1e-6 && beat < start + (span.durationBeats as number) - 1e-6;
+      });
+      const phrase = phrases.find((candidate) =>
+        beat >= candidate.startBeat - 1e-6 && beat < candidate.endBeat - 1e-6);
+      const phraseStartsHere = phrase && Math.abs(phrase.startBeat - beat) <= 1e-6;
+      const harmonyStartsHere = harmonicSpan
+        && Math.abs((harmonicSpan.startBeat as number) - beat) <= 1e-6;
+      const onIntegerBeat = Math.abs(beatInBar - Math.round(beatInBar)) <= 1e-6;
+      const beatIndex = Math.max(0, Math.round(beatInBar));
+      const grooveBar = grooveBarByAbsoluteBar.get(bar);
+      const onEighthBeat = Math.abs(beatInBar * 2 - Math.round(beatInBar * 2)) <= 1e-6;
+      const rawStrength = onIntegerBeat
+        ? grooveBar?.beatStrength[beatIndex] ?? (beatIndex === 0 ? 1 : beatIndex === Math.floor(beatsPerBar / 2) ? 0.92 : 0.72)
+        : onEighthBeat ? 0.52 : 0.42;
+      const strength = phraseStartsHere
+        ? 1
+        : harmonyStartsHere
+          ? Math.max(0.94, Math.min(1, rawStrength))
+          : Math.max(0.35, Math.min(1, rawStrength));
+      const kind: AcgPianoMetricAnchorKind = phraseStartsHere
+        ? 'phrase-arrival'
+        : harmonyStartsHere
+          ? 'harmonic-arrival'
+          : Math.abs(beatInBar) <= 1e-6
+            ? 'bar-downbeat'
+            : onIntegerBeat && strength >= 0.9
+              ? 'secondary-strong-beat'
+              : 'weak-beat';
+      const sectionId = harmonicSpan?.sectionId ?? phrase?.sectionId;
+      if (!sectionId) return null;
+      return {
+        id: `acg-metric-${Math.round(beat * 1000)}`,
+        beat,
+        bar,
+        beatInBar,
+        kind,
+        strength,
+        sectionId,
+        ...(harmonicSpan ? { spanId: harmonicSpan.id } : {}),
+        ...(phrase ? { phraseId: phrase.phraseId } : {}),
+        // Authorization, not an obligation to attack: written rests remain rests.
+        roles: ['bass', 'comp', 'lead'],
+      };
+    })
+    .filter((anchor): anchor is AcgPianoMetricAnchor => anchor !== null);
+
+  return {
+    beatsPerBar,
+    subdivisionBeats: ACG_PIANO_METRIC_KNOWLEDGE.subdivisionBeats,
+    expressiveOffsetLimitBeats: ACG_PIANO_METRIC_KNOWLEDGE.expressiveOffsetLimitBeats,
+    compEntryLimitBeats: ACG_PIANO_METRIC_KNOWLEDGE.compEntryLimitBeats,
+    rollSpreadLimitBeats: ACG_PIANO_METRIC_KNOWLEDGE.rollSpreadLimitBeats,
+    anchors,
+  };
 }
 
 /**
@@ -1553,14 +2332,36 @@ export function buildAcgPianoScorePlan(args: {
     const phase = phases.get(phrase.sectionId) ?? 'statement';
     const leadSilence = leadWindowsForPhrase(startBeat, endBeat, args.leadPresencePlan);
     const binding = phraseBinding(args.roadMap, startBeat, endBeat);
+    const orchestrationScene = resolveAcgPianoOrchestrationScene({
+      phase,
+      hasLeadRest: leadSilence.length > 0,
+      cadenceTarget: phrase.cadenceTarget,
+    });
     const gesture = choosePhraseGesture(args.seed, phrase, phase, leadSilence.length > 0, previousGesture, surfaceProgram);
-    const spanGestureCycle = spanGestureCycleForPhrase(args.seed, phrase, phase, gesture, surfaceProgram);
-    const grammarSubset = grammarSubsetForPhrase(phase, gesture, binding);
+    const spanGestureCycle = spanGestureCycleForPhrase(
+      args.seed,
+      phrase,
+      phase,
+      gesture,
+      surfaceProgram,
+      arrangementProfile.openingStrategy,
+    );
+    const grammarSubset = grammarSubsetForScene(
+      grammarSubsetForPhrase(phase, gesture, binding),
+      orchestrationScene,
+    );
+    const continuityProfile = resolveAcgPianoLeadContinuityProfile({
+      phase,
+      phraseGesture: gesture,
+      cadenceTarget: phrase.cadenceTarget,
+      grammarSubset,
+      hasPlannedLeadSilence: leadSilence.length > 0,
+    });
     const explicitRestatement = !!phrase.repeatGroup && previousGesture !== undefined;
     // Signature intentionally describes the audible hand-shape, not the seed.
     // Adjacent phrases are checked against it so an ACG cue cannot disguise a
     // repeated comp sentence behind a different random identifier.
-    const surfaceSignature = `${gesture}:${spanGestureCycle.join('>')}:${grammarSubset}:${phrase.cadenceTarget}`;
+    const surfaceSignature = `${orchestrationScene.id}:${gesture}:${spanGestureCycle.join('>')}:${grammarSubset}:${phrase.cadenceTarget}`;
     phraseById[phrase.id] = {
       phraseId: phrase.id,
       sectionId: phrase.sectionId,
@@ -1574,19 +2375,21 @@ export function buildAcgPianoScorePlan(args: {
       surfaceSignature,
       repeatPolicy: explicitRestatement ? 'explicit-restatement' : 'forbid-adjacent-repeat',
       roadMapBinding: binding,
+      orchestrationSceneId: orchestrationScene.id,
       lead: {
         grammarSubset,
         returnShapes: returnShapesForPhrase(phase, gesture),
+        continuityProfile,
         silenceWindows: leadSilence,
         interlock: {
-          // A breath-led ending dissolves beneath the lead. The other internal
-          // coda profiles may keep a deliberately quiet middle-hand echo or
-          // suspension, authored here rather than inserted after rendering.
-          whenLeadActive: gesture === 'pedal-breath'
-            || (gesture === 'release-coda' && surfaceProgram === 'ripple-journey')
-            ? 'tacet'
-            : 'underlay',
-          whenLeadRest: gesture === 'release-coda' ? 'shared-rest' : 'answer',
+          // `middle-underlay` and `lower-shell` are both audible COMP support;
+          // their concrete density is expressed by the span sentence below.
+          whenLeadActive: 'underlay',
+          whenLeadRest: orchestrationScene.comp.whenLeadRest === 'shared-rest'
+            ? 'shared-rest'
+            : orchestrationScene.comp.whenLeadRest === 'continue-underlay'
+              ? 'underlay'
+              : 'answer',
         },
       },
     };
@@ -1600,6 +2403,11 @@ export function buildAcgPianoScorePlan(args: {
     phrasesBySection.set(phrase.sectionId, list);
   }
   for (const list of phrasesBySection.values()) list.sort((a, b) => a.startBeat - b.startBeat);
+  const metricGrid = buildAcgPianoMetricGrid({
+    arrangement: args.arrangement,
+    harmonic: args.harmonic,
+    phraseById,
+  });
   const middlePhraseOrdinalById = new Map<string, number>();
   let middlePhraseOrdinal = 0;
   for (const phrase of Object.values(phraseById).sort((left, right) => left.startBeat - right.startBeat)) {
@@ -1616,10 +2424,14 @@ export function buildAcgPianoScorePlan(args: {
   // side cross-span scheduling.
   const pendingTargetArrivalsBySpanId: Record<string, readonly AcgPianoCompEvent[]> = {};
   const middleSurfaceBudget: AcgMiddleSurfaceBudget = { consecutiveBrokenSpans: 0 };
+  const phraseAirBudget: AcgPianoPhraseAirBudget = {
+    fullTacetSpansByPhrase: new Map(),
+    consecutiveFullTacetByPhrase: new Map(),
+  };
   const sentenceIdsByPhrase = new Map<string, AcgPianoCompSentenceId[]>();
   let previousSentenceId: AcgPianoCompSentenceId | undefined;
   const timeline = args.harmonic.chordTimeline;
-  const scoreSegments = timeline.flatMap((span, index) => {
+  const scoreSegments: AcgPianoScoreSegment[] = timeline.flatMap((span, index) => {
     const harmonicStart = span.startBeat as number;
     const harmonicEnd = harmonicStart + (span.durationBeats as number);
     return (phrasesBySection.get(span.sectionId) ?? [])
@@ -1633,6 +2445,10 @@ export function buildAcgPianoScorePlan(args: {
       }));
   }).filter((segment) => segment.endBeat > segment.startBeat + 1e-4)
     .sort((left, right) => left.startBeat - right.startBeat || left.index - right.index || left.phrase.startBeat - right.phrase.startBeat);
+  const leadContinuitySlots = buildAcgPianoLeadContinuitySlots({
+    segments: scoreSegments,
+    harmonic: args.harmonic,
+  });
 
   for (const segment of scoreSegments) {
     const { span, index, phrase, startBeat: segmentStart, endBeat: segmentEnd } = segment;
@@ -1720,6 +2536,12 @@ export function buildAcgPianoScorePlan(args: {
       gesture: compGesture,
       budget: middleSurfaceBudget,
     });
+    compGesture = enforcePhraseOrchestrationRule({
+      phrase,
+      gesture: compGesture,
+      arrival: requestedArrival,
+      budget: phraseAirBudget,
+    });
     let sentenceId = chooseSentenceForSpan({
       seed: args.seed,
       phrase,
@@ -1760,11 +2582,36 @@ export function buildAcgPianoScorePlan(args: {
     let events = coalesceTargetTerminalWithLocalEvents(inheritedEventsForScore, localEvents);
     if (resolvesIntoNextT) pendingTargetArrivalsBySpanId[next!.id] = targetTerminalEvents;
     // A breath shorter than one legal dyad is still intentional silence.  It
-    // must not be relabelled as an empty "answer" and then tempt a renderer to
-    // fill it with a fallback texture.
+    // must not be relabelled as an empty "answer". Outside a coda shared-rest,
+    // the KB writes a real middle-hand carrier here rather than leaving a hole.
     if (compGesture === 'answer-dyad' && events.length === 0) {
-      compGesture = 'tacet';
-      sentenceId = 'full-breath';
+      const scene = acgPianoOrchestrationSceneForId(phrase.orchestrationSceneId);
+      compGesture = enforcePhraseOrchestrationRule({
+        phrase,
+        gesture: scene.comp.whenLeadRest === 'shared-rest'
+          ? 'tacet'
+          : scene.comp.fullTacetFallback,
+        arrival: requestedArrival,
+        budget: phraseAirBudget,
+      });
+      sentenceId = chooseSentenceForSpan({
+        seed: args.seed,
+        phrase,
+        spanId: span.id,
+        spanIndex,
+        gesture: compGesture,
+        arrival: requestedArrival,
+        hasLeadAnswerWindow: false,
+        profile: surfaceProgram,
+        previousSentence: previousSentenceId,
+      });
+      events = eventsForSentence(
+        sentenceId,
+        compGesture,
+        segmentDuration,
+        `${phrase.phraseId}:${span.id}`,
+        currentSpanArrival,
+      );
     }
     if (compGesture === 'tacet' && inheritedEventsForScore.length > 0) {
       compGesture = inheritedEventsForScore[0]!.gesture;
@@ -1775,9 +2622,30 @@ export function buildAcgPianoScorePlan(args: {
     const silenceWindows: readonly AcgPianoSilenceWindow[] = compGesture === 'tacet'
       ? [{ startBeat: 0, endBeat: segmentDuration, reason: leadRestWindow ? 'lead-rest' : 'phrase-breath' }]
       : [];
-    const rollStepBeats = [0.064, 0.078, 0.092][hash32(`${args.seed}|${span.id}|roll`) % 3]!;
+    // Per-voice step remains deterministic, while the renderer additionally
+    // enforces metricGrid.rollSpreadLimitBeats across the complete voicing.
+    const rollStepBeats = [0.042, 0.05, 0.058][hash32(`${args.seed}|${span.id}|roll`) % 3]!;
     const textureCase = textureForSentence(args.seed, subset, phrase, sentenceId, compGesture, span.id, args.grooveContract);
-    const bassEvents = bassEventsForSentence(sentenceId, compGesture, segmentDuration);
+    events = [...bindCompEventsToAcgPianoMetricGrid({
+      events,
+      absoluteSegmentStart: segmentStart,
+      segmentDuration,
+      grid: metricGrid,
+    })];
+    const bassEvents = bindBassEventsToAcgPianoMetricGrid({
+      events: bassEventsForSentence(sentenceId, compGesture, segmentDuration),
+      absoluteSegmentStart: segmentStart,
+      segmentDuration,
+      grid: metricGrid,
+    });
+    const continuityApplied = applyAcgPianoContinuityKnowledge({
+      sentenceId,
+      gesture: compGesture,
+      segmentDuration,
+      compEvents: events,
+      bassEvents,
+    });
+    events = continuityApplied.compEvents;
     const scoreSpan: AcgPianoScoreSpan = {
       spanId: span.id,
       sectionId: span.sectionId,
@@ -1790,6 +2658,7 @@ export function buildAcgPianoScorePlan(args: {
         floorMidi: 48,
         ceilingMidi: 60,
         rollStepBeats,
+        rollSpreadLimitBeats: metricGrid.rollSpreadLimitBeats,
         maxVoices: phrase.phase === 'lift' || phrase.phase === 'return' ? 4 : 3,
         gesture: compGesture,
         sentenceId,
@@ -1797,10 +2666,15 @@ export function buildAcgPianoScorePlan(args: {
         silenceWindows: offsetSilenceWindows(silenceWindows, segmentOffset),
       },
       bass: {
-        rootAnchorRequired: true,
+        rootAnchorRequired: acgPianoOrchestrationSceneForId(
+          phrase.orchestrationSceneId,
+        ).bass.rootAnchorRequired,
         maxNotesPerSpan: bassEvents.length,
-        motion: motionForSentence(sentenceId, compGesture),
-        events: offsetBassEvents(bassEvents, segmentOffset),
+        motion: bassMotionForScene(
+          phrase.orchestrationSceneId,
+          motionForSentence(sentenceId, compGesture),
+        ),
+        events: offsetBassEvents(continuityApplied.bassEvents, segmentOffset),
       },
     };
     textureBySpan[span.id] ??= textureCase;
@@ -1836,19 +2710,37 @@ export function buildAcgPianoScorePlan(args: {
     };
   }
 
-  const sharedPedalHolds = compileSharedPedalHolds(sharedPedalAirCandidates);
+  const sharedPedalHolds = retainHarmonicallySafeSharedPedalHolds(
+    compileSharedPedalHolds(sharedPedalAirCandidates),
+    args.harmonic,
+  );
+  const continuitySpanById = applyAcgPianoWholeScoreContinuity({
+    harmonic: args.harmonic,
+    spanById,
+  });
 
-  return {
+  const score: AcgPianoScorePlan = {
     arrangementVariant: subset.id,
     roadMap: args.roadMap,
     leadPresencePlan: args.leadPresencePlan,
+    metricGrid,
     phraseIdsBySpan,
     phraseById,
     phraseIdBySpan,
     textureBySpan,
-    spanById,
+    spanById: continuitySpanById,
+    leadContinuitySlots,
     sharedPedalHolds,
   };
+  const metricIssues = validateAcgPianoMetricContract(score);
+  if (metricIssues.length > 0) {
+    throw new Error(`ACG PianoScorePlan metric contract failed: ${metricIssues.join('; ')}`);
+  }
+  const continuityIssues = validateAcgPianoWrittenContinuityContract(score);
+  if (continuityIssues.length > 0) {
+    throw new Error(`ACG PianoScorePlan continuity contract failed: ${continuityIssues.join('; ')}`);
+  }
+  return score;
 }
 
 /**

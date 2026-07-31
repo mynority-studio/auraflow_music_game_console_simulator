@@ -31,6 +31,8 @@ import {
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 import type { PadCompDecision } from './padCompPolicy';
 import type { ArrangementFoundationOwner } from '../arranger/arrangementArchetypeContract';
+import type { LofiFoundationPlan } from '../arranger/lofiFoundationPlanner';
+import { planFoundationVoicing } from '../instrumental/foundationVoicingPlanner';
 
 export interface AccompContext {
   style?: string;
@@ -54,6 +56,12 @@ export interface AccompContext {
   pianoScorePlan?: AcgPianoScorePlan;
   /** Arranger-materialized role cells. They own Comp attacks for their sections. */
   grooveScorePlan?: Readonly<GrooveScorePlan>;
+  /** LOFI only: upstream voicing family shared by every Comp instrument. */
+  lofiVoicingIntent?: Readonly<LofiFoundationPlan['voicingIntent']>;
+  /** Optional score-level broken-chord touch; renderer consumes rather than selects it. */
+  compPerformanceIntent?: Readonly<LofiFoundationPlan['compIntent']>;
+  /** Sections whose selected concrete voice has a documented CC64 PedalPlan. */
+  compPedalActiveSectionIds?: ReadonlySet<string>;
 }
 
 /**
@@ -135,19 +143,195 @@ export function realizeAcgPianoScoreCompEvents(
     }
     const ordered = [...selected].sort((a, b) => a - b);
     if (event.attack === 'roll-down') ordered.reverse();
+    // `rollStepBeats` is the arranger-authored maximum distance between
+    // adjacent voices. Dense voicings must not multiply that step into a
+    // separate late accent: keep the complete hand spread inside the
+    // Arranger's score limit while preserving direction and event onset.
+    const spreadLimit = Math.max(0, directive.rollSpreadLimitBeats ?? 0.15);
+    const rollStep = Math.min(
+      Math.max(0, directive.rollStepBeats),
+      spreadLimit / Math.max(1, ordered.length - 1),
+    );
     ordered.forEach((midi, index) => {
-      const tRel = event.atBeat + index * directive.rollStepBeats;
+      const voiceDelay = index * rollStep;
+      const tRel = event.atBeat + voiceDelay;
       const remaining = spanDuration - tRel - 0.02;
       if (remaining <= 0.08) return;
       hits.push({
         tRel,
-        dur: Math.max(0.08, Math.min(duration - index * directive.rollStepBeats, remaining)),
+        dur: Math.max(0.08, Math.min(duration - voiceDelay, remaining)),
         midis: [midi],
         vel: Math.max(0.05, event.velocity - index * 0.014),
       });
     });
   }
   return hits.sort((a, b) => a.tRel - b.tRel || a.midis[0]! - b.midis[0]!);
+}
+
+/**
+ * Realize the LOFI foundation's broken- and block-chord touch before NoteIR.
+ *
+ * A texture supplies the attack grid; this score realizer supplies the hands.
+ * Arps get a held lower guide plus an overlapping upper wave. Block/chop
+ * textures keep their attacks, connect only the lower guide, and let upper
+ * voices breathe. A documented piano may use CC64; other keys express the
+ * same connection in written note lengths.
+ */
+export function realizeCompPerformance(
+  textureCase: string,
+  rawHits: readonly TextureChordHit[],
+  voicedRaw: readonly number[],
+  spanDurationBeats: number,
+  intent: Readonly<LofiFoundationPlan['compIntent']> | undefined,
+  pedalActive = false,
+): TextureChordHit[] {
+  if (!intent || intent.brokenChordTechnique !== 'anchored-finger-legato') return [...rawHits];
+  const behavior = textureBehavior(textureCase);
+  const voiced = [...new Set(voicedRaw)].sort((a, b) => a - b);
+  if (voiced.length === 0 || rawHits.length === 0) return [...rawHits];
+  const release = Math.max(0.04, Math.min(0.2, intent.harmonicReleaseBeats));
+  const documentedDamper = pedalActive && intent.damperPolicy === 'when-documented';
+  const fingerLegatoFallback = !documentedDamper
+    && intent.unsupportedDamperFallback === 'finger-legato';
+  const overlap = !fingerLegatoFallback
+    ? Math.min(0.04, intent.fingerOverlapBeats)
+    : Math.max(0.04, Math.min(0.24, intent.fingerOverlapBeats));
+  const ordered = [...rawHits].sort((a, b) => a.tRel - b.tRel || a.midis[0]! - b.midis[0]!);
+
+  // Block/chop/sustain attacks remain sparse, but the lower guide finger
+  // carries the phrase between them. Upper voices keep a style-dependent
+  // release, so this does not turn every chop into a pad.
+  const connectedChordFamily = behavior
+    && ['block', 'answer', 'chop', 'sustain', 'wash'].includes(behavior.family);
+  if (connectedChordFamily) {
+    const gateRatio = intent.chordGateRatioByContinuity[behavior.continuity];
+    const performed: TextureChordHit[] = [];
+    for (let index = 0; index < ordered.length; index++) {
+      const hit = ordered[index]!;
+      const next = ordered.slice(index + 1).find((candidate) => candidate.tRel > hit.tRel + 1e-6);
+      const boundaryLimit = Math.max(0.08, spanDurationBeats - hit.tRel - release);
+      const ioi = next ? Math.max(0.08, next.tRel - hit.tRel) : boundaryLimit;
+      const upperLimit = next ? Math.max(0.08, ioi - 0.02) : boundaryLimit;
+      const upperDuration = Math.min(
+        boundaryLimit,
+        upperLimit,
+        Math.max(hit.dur, ioi * gateRatio),
+      );
+      const pitches = [...new Set(hit.midis)].sort((a, b) => a - b);
+      if (pitches.length <= 1) {
+        const nextPitch = next?.midis.slice().sort((a, b) => a - b)[0];
+        const connected = nextPitch === pitches[0] ? ioi : ioi + overlap;
+        performed.push({
+          ...hit,
+          midis: pitches,
+          dur: Math.min(boundaryLimit, Math.max(upperDuration, connected)),
+        });
+        continue;
+      }
+      const guidePitch = pitches[0]!;
+      const upper = pitches.slice(1);
+      const nextGuide = next?.midis.slice().sort((a, b) => a - b)[0];
+      const guideDuration = next
+        ? (nextGuide === guidePitch ? ioi : ioi + overlap)
+        : boundaryLimit;
+      performed.push(
+        { ...hit, midis: upper, dur: upperDuration },
+        {
+          ...hit,
+          midis: [guidePitch],
+          dur: Math.min(boundaryLimit, Math.max(hit.dur, guideDuration)),
+          vel: Math.max(0.05, hit.vel * 0.84),
+        },
+      );
+    }
+    // A long one-shot/wash can span several bars or a repeat-group boundary.
+    // The written anchored-finger technique therefore re-articulates only the
+    // lower guide at its declared interval. This prevents an 8-beat chord from
+    // becoming silence when phrase projection closes the original key-down at
+    // a bar boundary, while the upper chord still remains a single breath.
+    if (intent.anchorRetriggerBeats > 0) {
+      const guidePitch = voiced[0]!;
+      for (
+        let atBeat = intent.anchorRetriggerBeats;
+        atBeat < spanDurationBeats - release;
+        atBeat += intent.anchorRetriggerBeats
+      ) {
+        const alreadyAttacked = ordered.some((hit) =>
+          Math.abs(hit.tRel - atBeat) <= 0.08
+          && hit.midis.includes(guidePitch));
+        if (alreadyAttacked) continue;
+        for (const hit of performed) {
+          if (hit.midis.length === 1
+            && hit.midis[0] === guidePitch
+            && hit.tRel < atBeat
+            && hit.tRel + hit.dur > atBeat) {
+            hit.dur = Math.max(0.08, atBeat - hit.tRel);
+          }
+        }
+        performed.push({
+          tRel: atBeat,
+          dur: Math.min(
+            intent.anchorRetriggerBeats,
+            spanDurationBeats - atBeat - release,
+          ),
+          midis: [guidePitch],
+          vel: Math.max(0.12, Math.min(0.46, ordered[0]!.vel * 0.78)),
+        });
+      }
+    }
+    return performed.sort((a, b) => a.tRel - b.tRel || a.midis[0]! - b.midis[0]!);
+  }
+
+  if (behavior?.family !== 'arp' || rawHits.length < 2 || rawHits.some((hit) => hit.midis.length !== 1)) {
+    return [...rawHits];
+  }
+  // Melody/register protection can leave only one legal chord pitch. Keep
+  // that pitch as a connected monophonic line instead of skipping the
+  // performance contract; never invent an extension or octave to fill space.
+  const rightHand = voiced.length > 1 ? voiced.slice(1) : voiced;
+  const waveIndex = (index: number): number => {
+    if (rightHand.length === 1) return 0;
+    if (rightHand.length === 2) return index % 2;
+    return [0, 1, rightHand.length - 1, 1][index % 4]!;
+  };
+  const performed: TextureChordHit[] = ordered.map((hit, index) => {
+    const next = ordered[index + 1];
+    const boundaryLimit = Math.max(0.01, spanDurationBeats - hit.tRel - release);
+    const ioi = next ? Math.max(0.08, next.tRel - hit.tRel) : boundaryLimit;
+    const pitch = rightHand[waveIndex(index)]!;
+    const nextPitch = next ? rightHand[waveIndex(index + 1)]! : undefined;
+    const connected = nextPitch === pitch
+      // A two-note shell has only one right-hand key. Without a documented
+      // damper, human legato repeats release that key exactly at the next
+      // attack; subtracting the harmonic release here created a 0.1-beat hole
+      // on every eighth note. Do not overlap identical MIDI pitches, but do
+      // keep them gapless. Pedalled voices may retain the shorter key-down.
+      ? (fingerLegatoFallback ? ioi : Math.max(0.08, ioi - release))
+      : ioi + overlap;
+    return {
+      ...hit,
+      dur: Math.min(boundaryLimit, Math.max(hit.dur, connected)),
+      midis: [pitch],
+      vel: Math.max(0.05, hit.vel * (index % 4 === 0 ? 0.94 : 0.88)),
+    };
+  });
+
+  if (voiced.length > 1) {
+    const anchorPitch = voiced[0]!;
+    for (let atBeat = 0; atBeat < spanDurationBeats - release; atBeat += intent.anchorRetriggerBeats) {
+      const remaining = spanDurationBeats - atBeat - release;
+      if (remaining <= 0.08) break;
+      const source = ordered.reduce((nearest, hit) =>
+        Math.abs(hit.tRel - atBeat) < Math.abs(nearest.tRel - atBeat) ? hit : nearest, ordered[0]!);
+      performed.push({
+        tRel: atBeat,
+        dur: Math.min(intent.anchorRetriggerBeats - release, remaining),
+        midis: [anchorPitch],
+        vel: Math.max(0.18, Math.min(0.5, source.vel * 0.86)),
+      });
+    }
+  }
+  return performed.sort((a, b) => a.tRel - b.tRel || a.midis[0]! - b.midis[0]!);
 }
 
 // ★ pocketize 强度【按风格】:pop/rnb 须紧实(以 POP 为主)→ 强收;lofi 的 dusty-behind / jazz 的 swung comping
@@ -224,6 +408,87 @@ export function renderAccompaniment(
     }),
   ) as Record<string, Readonly<CompRoleRhythmPattern>>;
   const authoredCompSectionIds = new Set(Object.keys(compRhythmBySection));
+  const grooveBarByAbsoluteBar = new Map(
+    Object.values(ctx.grooveScorePlan?.bySection ?? {})
+      .flatMap((sectionScore) => sectionScore.bars)
+      .map((bar) => [bar.absoluteBar, bar] as const),
+  );
+  const lofiCompRoleAt = (absoluteBeat: number) =>
+    grooveBarByAbsoluteBar.get(Math.max(0, Math.floor(absoluteBeat / beatsPerBar)))
+      ?.lofiPhraseInteraction?.compRole;
+  /**
+   * The Arranger can write an answer bar even when the selected texture has
+   * only a downbeat one-shot. Preserve the texture when it already supplies
+   * a legal late hit; otherwise materialize the score's explicit middle-shell
+   * answer before NoteIR. This is a score projection, never a final-track
+   * hole-fill.
+   */
+  const withLofiAnswerFallback = (
+    hits: readonly TextureChordHit[],
+    spanStartBeat: number,
+    spanDurationBeats: number,
+    voiced: readonly number[],
+  ): TextureChordHit[] => {
+    if (!isLofi) return [...hits];
+    const output = [...hits];
+    const spanEndBeat = spanStartBeat + spanDurationBeats;
+    const startBar = Math.max(0, Math.floor(spanStartBeat / beatsPerBar));
+    const endBar = Math.max(startBar, Math.floor((spanEndBeat - 1e-4) / beatsPerBar));
+    const shell = voiced.length > 3
+      ? voiced.slice(1, 3)
+      : voiced.length > 2 ? voiced.slice(1) : [...voiced];
+    if (shell.length === 0) return output;
+    for (let absoluteBar = startBar; absoluteBar <= endBar; absoluteBar++) {
+      const interaction = grooveBarByAbsoluteBar.get(absoluteBar)?.lofiPhraseInteraction;
+      if (interaction?.compRole !== 'answer') continue;
+      const entryInBar = interaction.compAnswerEntryBeat ?? Math.min(2, beatsPerBar - 0.5);
+      const targetBeat = absoluteBar * beatsPerBar + entryInBar;
+      if (targetBeat < spanStartBeat - 1e-4 || targetBeat >= spanEndBeat - 1e-4) continue;
+      const alreadyAnswered = output.some((hit) => {
+        const hitBeat = spanStartBeat + hit.tRel;
+        const hitBar = Math.floor(hitBeat / beatsPerBar);
+        const phase = ((hitBeat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+        return hitBar === absoluteBar && phase >= entryInBar - 0.08;
+      });
+      if (alreadyAnswered) continue;
+      const remaining = spanEndBeat - targetBeat;
+      if (remaining <= 0.08) continue;
+      output.push({
+        tRel: targetBeat - spanStartBeat,
+        dur: Math.max(0.08, Math.min(0.72, remaining - 0.02)),
+        midis: shell,
+        vel: 0.42,
+      });
+    }
+    return output.sort((left, right) => left.tRel - right.tRel || left.midis[0]! - right.midis[0]!);
+  };
+  const keepLofiCompAttack = (
+    absoluteBeat: number,
+    spanStartBeat: number,
+    voiceAction: 'foundation' | 'texture',
+  ): boolean => {
+    if (!isLofi || voiceAction === 'foundation') return true;
+    const role = lofiCompRoleAt(absoluteBeat);
+    const phase = ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+    if (role === 'support') {
+      // During Lead speech, retain only a light harmonic shell at the chord
+      // entrance or the half-bar anchor; the running upper texture yields.
+      return Math.abs(absoluteBeat - spanStartBeat) <= 0.08
+        || Math.abs(phase - 2) <= 0.08
+        || Math.abs(phase - 0.5) <= 0.1
+        || Math.abs(phase - 2.5) <= 0.1
+        || Math.abs(phase) <= 0.08;
+    }
+    if (role === 'answer') {
+      // Keep the quiet lower-hand downbeat as harmonic continuity, then let
+      // the audible upper-shell answer enter in the back half of the Lead
+      // rest. The reply remains late without creating a four-beat void.
+      return Math.abs(absoluteBeat - spanStartBeat) <= 0.08
+        || Math.abs(phase) <= 0.08
+        || phase >= 1.5 - 0.08;
+    }
+    return true;
+  };
 
   // ★ pad-comp 分工:pad active(且 avoidExactPitchOverlap)的 span,comp 让 pad —— 丢掉与 pad 同绝对
   //   MIDI 的音(消"齐奏 unison" mud 主因)+ 按 compDurationScale 缩时值。仅此最轻干预 → GM/texture/
@@ -324,7 +589,43 @@ export function renderAccompaniment(
     if (!inActive(span.sectionId)) continue;
     // comp = 内层骨干/导音(中声部);上层色彩音 9/13 是旋律的领地,有旋律时让渡给旋律,comp 不加色
     //   (折成 2 音会与 root/3 产生声学摩擦 —— 见 feedback;色彩走旋律/宽和弦,不走 comp)
-    if (useKeyboard) {
+    if (isLofi && ctx.lofiVoicingIntent) {
+      const chordType = span.chordType ?? span.quality;
+      const bassMidi = nominalBassMidi(span.rootPc);
+      const intendedLow = Math.max(compRange[0], ctx.lofiVoicingIntent.register[0]);
+      const intendedHigh = Math.min(
+        compRange[1],
+        ctx.lofiVoicingIntent.register[1],
+        ctx.melodyFloorMidi === undefined ? Number.POSITIVE_INFINITY : ctx.melodyFloorMidi - 1,
+      );
+      const range = [intendedLow, Math.max(intendedLow, intendedHigh)] as const;
+      const full = planFoundationVoicing({
+        rootPc: span.rootPc,
+        chordType,
+        bassMidi,
+        previous: prevVoicing ?? [],
+        intent: ctx.lofiVoicingIntent,
+        includeRoot: compOwnsFoundation(span),
+        register: range,
+      });
+      const shell = planFoundationVoicing({
+        rootPc: span.rootPc,
+        chordType,
+        bassMidi,
+        previous: prevVoicing ?? [],
+        intent: { ...ctx.lofiVoicingIntent, family: 'rootless-guide', maxVoicesWithBass: 2 },
+        includeRoot: compOwnsFoundation(span),
+        register: range,
+        maxVoices: 2,
+      });
+      voicedBySpan[span.id] = withFoundationAnchor(span, full);
+      airVoicedBySpan[span.id] = full;
+      shellBySpan[span.id] = withFoundationAnchor(span, shell);
+      if (full.length) {
+        prevTop = full[full.length - 1];
+        prevVoicing = full;
+      }
+    } else if (useKeyboard) {
       // ★ 键盘:voice 宽和弦【核心 + 显式色彩】(9/13 来自 chordType);色彩走 inner_high/upper(compound 高位,
       //   避开 pc-2 中低区摩擦)。无延伸的和弦 colorLevel 0。spread 随段落/功能/乐句位置变化。
       const chordType = span.chordType ?? span.quality;
@@ -410,6 +711,11 @@ export function renderAccompaniment(
           const onset = barStart + cell.phaseBeats;
           const span = spanAtBeat(plan, onset);
           if (!span || span.sectionId !== sectionScore.sectionId) continue;
+          if (!keepLofiCompAttack(
+            onset,
+            span.startBeat as number,
+            cell.voiceAction === 'foundation' ? 'foundation' : 'texture',
+          )) continue;
           const available = Math.max(0.08, (span.startBeat as number) + (span.durationBeats as number) - onset - 0.02);
           const duration = Math.max(0.08, Math.min(cell.durationBeats, available));
           const padAvoid = padAvoidFor(span).avoid;
@@ -493,7 +799,18 @@ export function renderAccompaniment(
       // silently delete/shorten authored piano events after the arranger has
       // committed them. Keep them for non-score paths only.
       const padAvoid = scoreOwnsAcgEvents ? EMPTY_AVOID : padPolicy.avoid;
-      const durScale = scoreOwnsAcgEvents ? 1 : padPolicy.durScale;
+      const compPerformanceFamily = textureBehavior(tc)?.family;
+      const compPerformanceOwnsRelease = !!ctx.compPerformanceIntent
+        && !!compPerformanceFamily
+        && ['arp', 'block', 'answer', 'chop', 'sustain', 'wash'].includes(compPerformanceFamily);
+      // An upstream finger/gate score owns key release for LOFI arps and
+      // connected chord attacks.
+      // Pad may still remove exact unisons, but shortening the surviving notes
+      // here would undo the written connection. Sparse/block textures retain
+      // the existing Pad-driven duration scale.
+      const durScale = scoreOwnsAcgEvents || compPerformanceOwnsRelease
+        ? 1
+        : padPolicy.durScale;
       const base = span.startBeat as number;
       const nextSpan = timeline[timelineIndex + 1];
       const nextScore = nextSpan && acg ? ctx.pianoScorePlan?.spanById[nextSpan.id] : undefined;
@@ -512,22 +829,47 @@ export function renderAccompaniment(
           span.durationBeats as number,
         )
         : renderTextureChordHits(tc, voiced, span.durationBeats as number, acgCtx);
-      const scoreHits = rawHits;
+      // Decide the call/response attack mask before finger-legato is
+      // compiled. The performance realizer can then connect the surviving
+      // keys; deleting attacks afterwards would leave audible holes.
+      const interactionHits = isLofi
+        ? rawHits.filter((hit) =>
+          keepLofiCompAttack(base + hit.tRel, base, 'texture'))
+        : rawHits;
+      const scoreOwnedInteractionHits = withLofiAnswerFallback(
+        interactionHits,
+        base,
+        span.durationBeats as number,
+        voiced,
+      );
+      const scoreHits = realizeCompPerformance(
+        tc,
+        scoreOwnedInteractionHits,
+        voiced,
+        span.durationBeats as number,
+        ctx.compPerformanceIntent,
+        ctx.compPedalActiveSectionIds?.has(span.sectionId) ?? false,
+      );
+      const lastScoreAttack = Math.max(-Infinity, ...scoreHits.map((hit) => hit.tRel));
+      const lofiBlockAttack = isLofi
+        && !!compPerformanceFamily
+        && ['block', 'answer', 'chop', 'sustain', 'wash'].includes(compPerformanceFamily);
       for (const h of scoreHits) {
         // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
         //   ★ Loop I:LOFI 柱式块走【中央 texture clock】(16 分格吸附 + 毫秒 pocket,取代 0.2 强度 pocketize)
         //     → dusty chop 0.58→0.50+毫秒,与 bass/drum 同时钟;非 LOFI 仍按风格 pocketize。
         const abs = base + h.tRel;
+        const harmonicEnd = base + (span.durationBeats as number);
+        if (isLofi && abs >= harmonicEnd - 0.01) continue;
         let onset = acg
           ? abs
-          : h.midis.length >= 2
+          : h.midis.length >= 2 || lofiBlockAttack
             ? (isLofi ? lofiTextureClockBeat(abs, beatsPerBar, tempoBpm, 'chord', 'establish', `${tc}|${span.id}`) : pocketizeBeat(abs, pocketStrength))
             : abs;
         // ★ 强拍位硬锁(2026-06-09 修「重音对拍/复调错拍」):comp【柱式块】落在整拍 ±0.06 拍内 → 锁到整拍,
         //   与 bass/drum 同拍咬合(消系统性晚 0.02-0.05=flam/错拍);offbeat(0.5/1.5…)与 arp/roll 单音不锁,保 groove。
-        if (!acg && h.midis.length >= 2) { const ni = Math.round(onset); if (Math.abs(onset - ni) < 0.06) onset = ni; }
+        if (!acg && (h.midis.length >= 2 || lofiBlockAttack)) { const ni = Math.round(onset); if (Math.abs(onset - ni) < 0.06) onset = ni; }
         const startTick = timebase.beatToTick(beats(onset));
-        const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
         // ★ §2.5 + 大小声平衡(2026-06-28 用户:ACG comp「一轨很小声」)。保 air voicing/真色音(directive B 结构),
@@ -539,6 +881,41 @@ export function renderAccompaniment(
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) {
           if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音(消 unison mud)
+          let performedDuration = h.dur * durScale;
+          if (isLofi && nextSpan) {
+            const nextType = nextSpan.chordType ?? String(nextSpan.quality);
+            const nextAllowed = new Set<number>([
+              ...chordTypeIntervals(nextType).map((interval) =>
+                mod12((nextSpan.rootPc as number) + interval) as number),
+              ...(plan.stableToneMap[nextSpan.id] ?? []).map(Number),
+              ...(plan.colorToneMap[nextSpan.id] ?? []).map(Number),
+            ]);
+            const admittedByNext = nextAllowed.has(mod12(m) as number);
+            const commonToneBoundary = compPerformanceOwnsRelease
+              && !ctx.compPedalActiveSectionIds?.has(span.sectionId)
+              && ctx.compPerformanceIntent?.unsupportedDamperFallback === 'finger-legato'
+              && Math.abs(h.tRel - lastScoreAttack) <= 1e-6;
+            // The final lower/upper common tone can physically stay under the
+            // hand until the next texture enters. Other voices still release,
+            // so this bridges silence without smearing the old whole chord.
+            if (commonToneBoundary
+                && admittedByNext
+                && ctx.textureSchedule) {
+              const nextTexture = ctx.textureSchedule[nextSpan.id];
+              const nextEntry = nextTexture
+                ? textureBehavior(nextTexture)?.firstOnsetBeat ?? 0
+                : 0;
+              const bridge = Math.min(
+                ctx.compPerformanceIntent?.commonToneBridgeMaxBeats ?? 0,
+                Math.max(0, nextEntry),
+              );
+              performedDuration = Math.max(performedDuration, harmonicEnd + bridge - onset);
+            }
+            if (onset + performedDuration > harmonicEnd && !admittedByNext) {
+              performedDuration = Math.max(0.08, harmonicEnd - onset - 0.02);
+            }
+          }
+          const durationTicks = timebase.beatToTick(beats(performedDuration));
           compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
         }
       }
@@ -568,6 +945,7 @@ export function renderAccompaniment(
       const span = spanAtBeat(plan, beat);
       if (!span || !inActive(span.sectionId)) continue;
       if (authoredCompSectionIds.has(span.sectionId)) continue;
+      if (!keepLofiCompAttack(beat, span.startBeat as number, 'texture')) continue;
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
       const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id); // 让位 或 撞音阶梯瘦身
       const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];

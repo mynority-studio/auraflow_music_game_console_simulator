@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen-pre-v2-baseline",
+  "source": "LOFI-HIPHOP-ARRANGEMENT-V1 200-seed audit captured before V2 implementation",
+  "sampleCount": 200,
+  "limitation": "The V1 audit did not yet expose final kick density, auxiliary-loop, voicing or Pad metrics; those fields remain null rather than being fabricated.",
+  "metrics": {
+    "tempoBpm": {
+      "min": 71,
+      "max": 85
+    },
+    "corePhraseCoverageMean": 0.878,
+    "uniqueOneBarSignatureRatioMean": 0.091,
+    "structuralMutationBarRatioMean": 0.122,
+    "backbeatCoverageMean": 1,
+    "shortHarmonyRate": 0.8,
+    "leadPlannedActiveBarCoverageMean": 0.388,
+    "kickHitsPerBar": null,
+    "auxiliaryHitsPerBar": null,
+    "compVoiceLeading": null,
+    "padVoiceLeading": null
+  }
+}

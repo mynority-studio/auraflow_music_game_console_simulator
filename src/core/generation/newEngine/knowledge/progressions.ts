@@ -409,9 +409,102 @@ const LOFI_251_SUS_LOOP_8: ProgressionSlot[] = [ch('ii', 'm9', 2), ch('V', '13su
 const LOFI_PHRYGIAN_HINT_8: ProgressionSlot[] = [ch('i', 'm9', 0), ch('bII', 'maj7', 1, { borrowedSource: 'modal_interchange', borrowedFrom: 'Phrygian bII color' }), ch('VII', 'add9', 10), ch('VI', 'maj9', 8), ch('i', 'm9', 0), ch('VII', 'add9', 10), ch('VI', 'maj9', 8), ch('VII', 'add9', 10)];
 const LOFI_PEDAL_MAJOR_16: ProgressionSlot[] = [ch('I', 'maj9', 0, { bassRole: 'pedal', bassPedalPc: 0 }), ch('IV', 'maj9', 5, { bassRole: 'pedal', bassPedalPc: 0 }), ch('vi', 'm9', 9, { bassRole: 'pedal', bassPedalPc: 0 }), ch('V', '9sus4', 7, { bassRole: 'pedal', bassPedalPc: 0 }), ch('I', '6/9', 0, { bassRole: 'pedal', bassPedalPc: 0 }), ch('iii', 'm7', 4, { bassRole: 'pedal', bassPedalPc: 0 }), ch('IV', 'maj9', 5, { bassRole: 'pedal', bassPedalPc: 0 }), ch('V', '9sus4', 7, { bassRole: 'pedal', bassPedalPc: 0 }), ch('vi', 'm9', 9, { bassRole: 'pedal', bassPedalPc: 0 }), ch('IV', 'maj9', 5, { bassRole: 'pedal', bassPedalPc: 0 }), ch('I', 'maj9', 0, { bassRole: 'pedal', bassPedalPc: 0 }), ch('V', '9sus4', 7, { bassRole: 'pedal', bassPedalPc: 0 }), ch('IV', 'maj9', 5, { bassRole: 'pedal', bassPedalPc: 0 }), ch('iv', 'm9', 5, { bassRole: 'pedal', bassPedalPc: 0, borrowedSource: 'modal_interchange', borrowedFrom: 'parallel minor iv' }), ch('I', 'maj9', 0, { bassRole: 'pedal', bassPedalPc: 0 }), ch('I', '6/9', 0, { bassRole: 'pedal', bassPedalPc: 0 })];
 const LOFI_EMO_LONG_16: ProgressionSlot[] = [ch('I', 'maj9', 0), ch('III', '7sus4', 4, { borrowedSource: 'secondary_dominant', borrowedFrom: 'soft V/vi', mustResolve: true }), ch('vi', 'm9', 9), ch('IV', 'maj9', 5), ch('I', '6/9', 0, { bassRole: '3rd' }), ch('V', '9sus4', 7, { bassRole: '3rd' }), ch('vi', 'm9', 9), ch('IV', 'add9', 5), ch('IV', 'maj9', 5), ch('iii', 'm7', 4), ch('vi', 'm9', 9), ch('ii', 'm9', 2), ch('IV', 'maj9', 5), ch('iv', 'm9', 5, { borrowedSource: 'modal_interchange', borrowedFrom: 'parallel minor iv' }), ch('I', 'maj9', 0), ch('V', '9sus4', 7)];
+const LOFI_MAJOR_TWO_CHORD_SOUL: ProgressionSlot[] = [ch('I', 'maj9', 0), ch('IV', 'maj9', 5)];
+const LOFI_MAJOR_THREE_CHORD_FLOAT: ProgressionSlot[] = [ch('I', '6/9', 0), ch('vi', 'm9', 9), ch('IV', 'maj9', 5)];
 const LOFI_SHORT_FOUR_CELL: ProgressionSlot[] = [ch('I', 'maj9', 0), ch('vi', 'm9', 9), ch('IV', 'maj9', 5), ch('V', '9sus4', 7)];
+const LOFI_DESCENDING_SOUL_FOUR: ProgressionSlot[] = [ch('IV', 'maj9', 5), ch('iii', 'm11', 4), ch('ii', 'm11', 2), ch('I', 'maj9', 0)];
+const LOFI_251_SOUL_THREE: ProgressionSlot[] = [ch('ii', 'm9', 2), ch('V', '13sus4', 7), ch('I', 'maj9', 0)];
+const LOFI_MINOR_TWO_CHORD_SOUL: ProgressionSlot[] = [ch('i', 'm9', 0), ch('VI', 'maj9', 8)];
+const LOFI_MINOR_THREE_CHORD_FLOAT: ProgressionSlot[] = [ch('i', 'm9', 0), ch('VII', 'add9', 10), ch('VI', 'maj9', 8)];
+const LOFI_MINOR_FOUR_CHORD_SOUL: ProgressionSlot[] = [ch('i', 'm9', 0), ch('VI', 'maj9', 8), ch('III', 'maj9', 3), ch('VII', 'add9', 10)];
+
+// —— 8-file LOFI piano corpus → transposition-safe harmonic grammar ——
+// Only function, quality, bass role and harmonic rhythm are retained.  The
+// source MIDI, absolute notes, filenames and ornamental top lines are not part
+// of production knowledge.
+const LOFI_MAJOR_PLAGAL_DESCENT_TWO: ProgressionSlot[] = [
+  ch('IV', 'add9', 5, { bassRole: '3rd', beats: 1.5 }),
+  ch('ii', 'm9', 2, { beats: 2.5 }),
+  ch('I', 'maj7', 0),
+];
+const LOFI_MAJOR_WHOLE_STEP_PLANING_FOUR: ProgressionSlot[] = [
+  ch('I', 'maj7', 0, { beats: 8 }),
+  ch('II', 'maj', 2, {
+    beats: 4,
+    forcedScale: 'Ionian',
+    borrowedSource: 'chromatic_color',
+    borrowedFrom: 'whole-step constant-structure planing',
+  }),
+  ch('II', 'maj7', 2, {
+    beats: 4,
+    forcedScale: 'Ionian',
+    borrowedSource: 'chromatic_color',
+    borrowedFrom: 'whole-step constant-structure planing',
+  }),
+];
+const LOFI_MAJOR_PARALLEL_MINOR_FALL_FOUR: ProgressionSlot[] = [
+  ch('I', 'maj', 0),
+  ch('i', 'min', 0, {
+    borrowedSource: 'modal_interchange',
+    borrowedFrom: 'parallel-minor tonic color',
+  }),
+  ch('bVII', 'maj', 10, {
+    beats: 8,
+    borrowedSource: 'modal_interchange',
+    borrowedFrom: 'parallel-minor bVII',
+  }),
+];
+const LOFI_MINOR_TURNAROUND_FOUR: ProgressionSlot[] = [
+  ch('III', 'maj7', 3),
+  ch('ii', 'm7b5', 2, { beats: 2 }),
+  ch('V', '7#9', 7, {
+    beats: 2,
+    mustResolve: true,
+    borrowedFrom: 'harmonic-minor dominant',
+  }),
+  ch('i', 'm9', 0),
+  ch('V', '9', 7, { beats: 2, bassRole: '5th' }),
+  ch('V', 'maj', 7, {
+    beats: 2,
+    forcedScale: 'Mixolydian',
+    borrowedFrom: 'open dominant turnaround',
+  }),
+];
+const LOFI_MINOR_AEOLIAN_EBB_EIGHT: ProgressionSlot[] = [
+  ch('iv', 'm7', 5),
+  ch('v', 'm7', 7),
+  ch('VI', 'maj9', 8),
+  ch('v', 'm7', 7),
+  ch('iv', 'm7', 5),
+  ch('v', 'm7', 7),
+  ch('i', 'min', 0),
+  ch('VII', 'maj', 10),
+];
+const LOFI_MINOR_LATE_CADENCE_FOUR: ProgressionSlot[] = [
+  ch('i', 'min', 0, { beats: 8 }),
+  ch('VI', 'maj', 8, { beats: 6 }),
+  ch('VII', 'add9', 10, { beats: 2 }),
+];
+const LOFI_MINOR_THIRD_BASS_VAMP_FOUR: ProgressionSlot[] = [
+  ch('i', 'm9', 0, { bassRole: '3rd', beats: 16 }),
+];
 
 const _LOFI_PROTOTYPES: ProgressionPrototype[] = [
+  { id: 'lofi_major_two_chord_soul_2', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 2, weight: 2.2, slots: LOFI_MAJOR_TWO_CHORD_SOUL, energy: [0.1, 0.55], density: [0.08, 0.45], cadence: 'loop', emotionTags: ['warm', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Study Loop'] },
+  { id: 'lofi_major_three_chord_float_3', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 3, weight: 1.8, slots: LOFI_MAJOR_THREE_CHORD_FLOAT, energy: [0.1, 0.55], density: [0.08, 0.45], cadence: 'open', emotionTags: ['float', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Rainy Rhodes'] },
+  { id: 'lofi_short_four_cell_4', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 2.4, slots: LOFI_SHORT_FOUR_CELL, energy: [0.15, 0.5], density: [0.1, 0.4], cadence: 'loop', emotionTags: ['study', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Study Loop'] },
+  { id: 'lofi_descending_soul_4', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 2.2, slots: LOFI_DESCENDING_SOUL_FOUR, energy: [0.12, 0.52], density: [0.08, 0.42], cadence: 'weak', emotionTags: ['warm', 'nostalgic'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Study Loop'] },
+  { id: 'lofi_251_soul_3', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 3, weight: 1.4, slots: LOFI_251_SOUL_THREE, energy: [0.16, 0.55], density: [0.1, 0.42], cadence: 'soft_authentic', emotionTags: ['warm', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Study Loop'] },
+  { id: 'lofi_major_plagal_descent_2', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 2, weight: 1.65, slots: LOFI_MAJOR_PLAGAL_DESCENT_TWO, energy: [0.1, 0.5], density: [0.08, 0.42], cadence: 'weak', emotionTags: ['warm', 'float'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Rainy Rhodes'] },
+  { id: 'lofi_major_whole_step_planing_4', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'loop'], lengthBars: 4, weight: 0.9, slots: LOFI_MAJOR_WHOLE_STEP_PLANING_FOUR, energy: [0.08, 0.42], density: [0.06, 0.34], cadence: 'modal', emotionTags: ['float', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Modal Float', 'Lofi Ambient Intro', 'Lofi Rainy Rhodes'] },
+  { id: 'lofi_major_parallel_minor_fall_4', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 1.15, slots: LOFI_MAJOR_PARALLEL_MINOR_FALL_FOUR, energy: [0.12, 0.5], density: [0.08, 0.4], cadence: 'modal', emotionTags: ['nostalgic', 'sad'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Emo Piano', 'Lofi Modal Float'] },
+  { id: 'lofi_minor_two_chord_soul_2', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 2, weight: 2.2, slots: LOFI_MINOR_TWO_CHORD_SOUL, energy: [0.1, 0.55], density: [0.08, 0.45], cadence: 'loop', emotionTags: ['sad', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Piano Hiphop'] },
+  { id: 'lofi_minor_three_chord_float_3', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 3, weight: 1.8, slots: LOFI_MINOR_THREE_CHORD_FLOAT, energy: [0.1, 0.55], density: [0.08, 0.45], cadence: 'open', emotionTags: ['sad', 'float'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Night Drive'] },
+  { id: 'lofi_minor_four_chord_soul_4', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 2.4, slots: LOFI_MINOR_FOUR_CHORD_SOUL, energy: [0.15, 0.55], density: [0.1, 0.45], cadence: 'loop', emotionTags: ['sad', 'nostalgic'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Piano Hiphop'] },
+  { id: 'lofi_minor_turnaround_4', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 1.05, slots: LOFI_MINOR_TURNAROUND_FOUR, energy: [0.15, 0.58], density: [0.12, 0.46], cadence: 'loop', emotionTags: ['warm', 'nostalgic'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Neo Soul Soft'] },
+  { id: 'lofi_minor_aeolian_ebb_8', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'loop'], lengthBars: 8, weight: 0.85, slots: LOFI_MINOR_AEOLIAN_EBB_EIGHT, energy: [0.12, 0.48], density: [0.08, 0.38], cadence: 'open', emotionTags: ['sad', 'float'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Melancholy Minor', 'Lofi Night Drive'] },
+  { id: 'lofi_minor_late_cadence_4', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'verse', 'chorus', 'loop', 'ending'], lengthBars: 4, weight: 1.25, slots: LOFI_MINOR_LATE_CADENCE_FOUR, energy: [0.1, 0.5], density: [0.06, 0.38], cadence: 'modal', emotionTags: ['sad', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Minor Tape'] },
+  { id: 'lofi_minor_third_bass_vamp_4', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'loop'], lengthBars: 4, weight: 0.45, slots: LOFI_MINOR_THIRD_BASS_VAMP_FOUR, energy: [0.05, 0.32], density: [0.04, 0.28], cadence: 'open', emotionTags: ['float', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Ambient Intro', 'Lofi Rainy Rhodes'] },
   { id: 'lofi_major_warm_8', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'intro', 'loop'], lengthBars: 8, weight: 1.35, slots: LOFI_MAJOR_WARM_8, energy: [0.2, 0.55], density: [0.15, 0.45], cadence: 'loop', emotionTags: ['warm', 'study', 'nostalgic'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Warm Piano', 'Lofi Study Loop', 'Lofi Rainy Rhodes'] },
   { id: 'lofi_emo_secondary_vi_8', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'chorus', 'loop'], lengthBars: 8, weight: 1.30, slots: LOFI_EMO_SECONDARY_VI_8, energy: [0.25, 0.65], density: [0.2, 0.55], cadence: 'loop', emotionTags: ['emo', 'sad', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Emo Piano', 'Lofi Bedroom Pop'] },
   { id: 'lofi_descending_bass_8', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'loop'], lengthBars: 8, weight: 1.20, slots: LOFI_DESCENDING_BASS_8, energy: [0.25, 0.6], density: [0.2, 0.55], cadence: 'weak', emotionTags: ['warm', 'emo'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Soft Canon', 'Lofi Emo Piano', 'Lofi Study Loop'] },
@@ -425,9 +518,8 @@ const _LOFI_PROTOTYPES: ProgressionPrototype[] = [
   { id: 'lofi_neosoul_soft_8', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'loop'], lengthBars: 8, weight: 0.85, slots: LOFI_NEOSOUL_SOFT_8, energy: [0.25, 0.6], density: [0.2, 0.55], cadence: 'loop', emotionTags: ['warm', 'nostalgic'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Neo Soul Soft', 'Lofi Rainy Rhodes'] },
   { id: 'lofi_251_sus_loop_8', style: 'LOFI', mode: 'Major', sectionRoles: ['loop', 'verse'], lengthBars: 8, weight: 0.80, slots: LOFI_251_SUS_LOOP_8, energy: [0.2, 0.55], density: [0.15, 0.45], cadence: 'soft_authentic', emotionTags: ['warm', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Study Loop', 'Lofi Warm Piano'] },
   { id: 'lofi_phrygian_hint_8', style: 'LOFI', mode: 'Minor', sectionRoles: ['intro', 'bridge'], lengthBars: 8, weight: 0.45, slots: LOFI_PHRYGIAN_HINT_8, energy: [0.15, 0.45], density: [0.1, 0.35], cadence: 'modal', emotionTags: ['dark', 'float'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Minor Tape', 'Lofi Modal Float'] },
-  { id: 'lofi_pedal_major_16', style: 'LOFI', mode: 'Major', sectionRoles: ['intro', 'loop'], lengthBars: 16, weight: 0.75, slots: LOFI_PEDAL_MAJOR_16, energy: [0.1, 0.45], density: [0.08, 0.35], cadence: 'open', emotionTags: ['float', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Ambient Intro', 'Lofi Night Drive', 'Lofi Study Loop'] },
-  { id: 'lofi_emo_long_16', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'chorus', 'loop'], lengthBars: 16, weight: 1.10, slots: LOFI_EMO_LONG_16, energy: [0.25, 0.7], density: [0.2, 0.6], cadence: 'loop', emotionTags: ['emo', 'sad', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Emo Piano', 'Lofi Bedroom Pop', 'Lofi Piano Hiphop'] },
-  { id: 'lofi_short_four_cell_4', style: 'LOFI', mode: 'Major', sectionRoles: ['loop', 'intro'], lengthBars: 4, weight: 0.70, slots: LOFI_SHORT_FOUR_CELL, energy: [0.15, 0.5], density: [0.1, 0.4], cadence: 'loop', emotionTags: ['study', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Piano Hiphop', 'Lofi Study Loop'] },
+  { id: 'lofi_pedal_major_16', style: 'LOFI', mode: 'Major', sectionRoles: ['intro'], lengthBars: 16, weight: 0.75, slots: LOFI_PEDAL_MAJOR_16, energy: [0.1, 0.45], density: [0.08, 0.35], cadence: 'open', emotionTags: ['float', 'study'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Ambient Intro', 'Lofi Night Drive', 'Lofi Study Loop'] },
+  { id: 'lofi_emo_long_16', style: 'LOFI', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 16, weight: 1.10, slots: LOFI_EMO_LONG_16, energy: [0.25, 0.7], density: [0.2, 0.6], cadence: 'loop', emotionTags: ['emo', 'sad', 'warm'], transformPolicy: LOFI_NO_TRANSFORM, subStyles: ['Lofi Emo Piano', 'Lofi Bedroom Pop', 'Lofi Piano Hiphop'] },
 ];
 
 /** 公开池 = modern + LOFI(★ 不含 legacy,见 Loop 1)。 */
@@ -444,6 +536,22 @@ function weightedPickPrototype(pool: ProgressionPrototype[], random: ProtoRandom
   return pool[pool.length - 1];
 }
 
+function pickPrototypeForStyle(
+  pool: ProgressionPrototype[],
+  style: HarmonyStyleName,
+  random: ProtoRandom,
+): ProgressionPrototype {
+  if (style === 'LOFI') {
+    const shortLoops = pool.filter((prototype) => prototype.lengthBars <= 4);
+    // LOFI Hip Hop defaults to a sample-like 2–4 chord cell. The remaining
+    // 18% deliberately preserves the existing composed-jazzhop vocabulary.
+    if (shortLoops.length > 0 && (shortLoops.length === pool.length || random.next() < 0.82)) {
+      return weightedPickPrototype(shortLoops, random);
+    }
+  }
+  return weightedPickPrototype(pool, random);
+}
+
 /** 按 filter 查 prototype(style/mode/functionRole/maxBars 任一可选)。 */
 export function listProgressionPrototypes(filter: { style?: HarmonyStyleName; mode?: ProtoMode; functionRole?: ProtoSectionRole; maxBars?: number } = {}): ProgressionPrototype[] {
   return PROGRESSION_POOL.filter((p) =>
@@ -452,6 +560,22 @@ export function listProgressionPrototypes(filter: { style?: HarmonyStyleName; mo
     && (filter.functionRole === undefined || p.sectionRoles.includes(filter.functionRole))
     && (filter.maxBars === undefined || p.lengthBars <= filter.maxBars),
   );
+}
+
+/** Exact KB lookup for an Arranger-selected whole-song harmonic identity. */
+export function progressionPrototypeById(id: string): ProgressionPrototype | undefined {
+  const prototype = PROGRESSION_POOL.find((candidate) => candidate.id === id);
+  if (!prototype) return undefined;
+  return {
+    ...prototype,
+    sectionRoles: [...prototype.sectionRoles],
+    slots: prototype.slots.map((slot) => ({ ...slot })),
+    subStyles: prototype.subStyles ? [...prototype.subStyles] : undefined,
+    emotionTags: prototype.emotionTags ? [...prototype.emotionTags] : undefined,
+    energy: prototype.energy ? [...prototype.energy] : undefined,
+    density: prototype.density ? [...prototype.density] : undefined,
+    transformPolicy: prototype.transformPolicy ? { ...prototype.transformPolicy } : undefined,
+  };
 }
 
 /**
@@ -467,10 +591,10 @@ export function pickProgressionPrototype(args: {
   random: ProtoRandom;
 }): ProgressionSlot[] | null {
   const strict = listProgressionPrototypes({ style: args.style, mode: args.mode, functionRole: args.functionRole, maxBars: args.bars });
-  if (strict.length > 0) return fitProgressionToBars(weightedPickPrototype(strict, args.random).slots, args.bars, args.beatsPerBar);
+  if (strict.length > 0) return fitProgressionToBars(pickPrototypeForStyle(strict, args.style, args.random).slots, args.bars, args.beatsPerBar, args.style !== 'LOFI');
   const relaxed = PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
   if (relaxed.length === 0) return null;
-  return fitProgressionToBars(weightedPickPrototype(relaxed, args.random).slots, args.bars, args.beatsPerBar);
+  return fitProgressionToBars(pickPrototypeForStyle(relaxed, args.style, args.random).slots, args.bars, args.beatsPerBar, args.style !== 'LOFI');
 }
 
 /** 同 pickProgressionPrototype,但返回选中 prototype 的 transformPolicy(供 prototype 段离调变体门控)。 */
@@ -481,13 +605,17 @@ export function pickProgressionPrototypeWithPolicy(args: {
   bars: number;
   beatsPerBar?: number;
   random: ProtoRandom;
-}): { slots: ProgressionSlot[]; transformPolicy?: ProgressionTransformPolicy } | null {
+}): { prototypeId: string; slots: ProgressionSlot[]; transformPolicy?: ProgressionTransformPolicy } | null {
   const strict = listProgressionPrototypes({ style: args.style, mode: args.mode, functionRole: args.functionRole, maxBars: args.bars });
   const pool = strict.length > 0 ? strict
     : PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
   if (pool.length === 0) return null;
-  const proto = weightedPickPrototype(pool, args.random);
-  return { slots: fitProgressionToBars(proto.slots, args.bars, args.beatsPerBar), transformPolicy: proto.transformPolicy };
+  const proto = pickPrototypeForStyle(pool, args.style, args.random);
+  return {
+    prototypeId: proto.id,
+    slots: fitProgressionToBars(proto.slots, args.bars, args.beatsPerBar, args.style !== 'LOFI'),
+    transformPolicy: proto.transformPolicy,
+  };
 }
 
 const DEFAULT_BEATS_PER_BAR = 4;
@@ -497,7 +625,12 @@ const slotBeats = (s: ProgressionSlot, beatsPerBar: number): number => s.beats ?
  *  ★ 修(2026-06-08):按【拍】累计而非 slot 个数 —— 含半小节槽(beats:2,如副属 ii-V)的模板,
  *    bars 个 slot ≠ bars 小节,会让段落和声短缺、时间线整体前移、outro 被挤掉(戛然而止)。
  *    beatsPerBar 缺省 4 以保持旧调用兼容；5/4 调用显式传 5。末槽按需截断到刚好填满。 */
-export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number, beatsPerBar = DEFAULT_BEATS_PER_BAR): ProgressionSlot[] {
+export function fitProgressionToBars(
+  phrase: ProgressionSlot[],
+  bars: number,
+  beatsPerBar = DEFAULT_BEATS_PER_BAR,
+  varyRepeatedDominant = true,
+): ProgressionSlot[] {
   if (phrase.length === 0) return [];
   if (!Number.isFinite(beatsPerBar) || beatsPerBar <= 0) throw new RangeError(`fitProgressionToBars(): beatsPerBar 须 > 0,得到 ${beatsPerBar}`);
   const target = bars * beatsPerBar; // 目标总拍
@@ -508,7 +641,7 @@ export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number, be
   let pass = 0;
   while (acc < target) {
     const copy = phrase.map((x) => ({ ...x }));
-    if (pass >= 1) {
+    if (varyRepeatedDominant && pass >= 1) {
       let lastVIdx = -1;
       for (let i = copy.length - 1; i >= 0; i--) { if (romanHead(copy[i].roman) === 'V') { lastVIdx = i; break; } }
       if (lastVIdx >= 0) {

@@ -26,7 +26,7 @@ import type { PitchClass } from '../foundation';
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
-import { buildAcgPianoScoreForBundle, buildJazzFiveFourScoreForBundle, runGenerationControl, type GenerationResult, type RenderFn, type SongBundle } from './GenerationController';
+import { buildAcgPianoScoreForBundle, buildJazzFiveFourScoreForBundle, buildLofiLeadScoreForBundle, runGenerationControl, type GenerationResult, type RenderFn, type SongBundle } from './GenerationController';
 import { sanitizeLeadNoteIR } from '../render/leadSanitizer';
 import { swingFrac } from '../render/swing';
 import { isInProtectedFastRun } from '../render/leadGridTiming';
@@ -197,6 +197,7 @@ export function buildMotifSongBundle(request: GenerationRequest, override: Motif
     : (override.harmony ?? buildHarmonicPlanFromArrangement(band, arrangement, seedRng));
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const acgPianoScorePlan = buildAcgPianoScoreForBundle({ band, arrangement, harmonic, instrumentation, seed: seedRng.seed });
+  const lofiLeadScorePlan = buildLofiLeadScoreForBundle({ band, arrangement, harmonic, instrumentation });
   const jazzFiveFourScorePlan = buildJazzFiveFourScoreForBundle({
     band, arrangement, harmonic, instrumentation, seed: seedRng.seed,
   });
@@ -210,17 +211,17 @@ export function buildMotifSongBundle(request: GenerationRequest, override: Motif
   const swungLead = fittedLead ? swingMotifLead(fittedLead, arrangement.feel.swingRatio, beatsPerBar) : undefined;
   const overrideLeadTrack = swungLead && swungLead.length ? motifLeadToTrackIR(swungLead, timebase) : undefined;
   const lenient = Boolean(override.harmony || (override.lead && override.lead.length));
-  return { bundle: { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng }, overrideLeadTrack, userBrick: override.userBrick, lenient };
+  return { bundle: { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, lofiLeadScorePlan, jazzFiveFourScorePlan, timebase, seedRng }, overrideLeadTrack, userBrick: override.userBrick, lenient };
 }
 
 /** motif bundle → FinalIR(render + 控制环)。供 generateSongFromMotif + service 复用(避免重复 build bundle)。 */
 export function generateSongFromMotifBundle(mb: MotifSongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
   const { bundle, overrideLeadTrack, userBrick, lenient } = mb;
-  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = bundle;
+  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, lofiLeadScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = bundle;
   const intentPlan = deriveMusicIntentPlan(band.style, arrangement); // ★ Phase 2:上游派生 intent(bass enforce)传入
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack, intentPlan, userBrick, acgPianoScorePlan, jazzFiveFourScorePlan);
+      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack, intentPlan, userBrick, acgPianoScorePlan, jazzFiveFourScorePlan, undefined, lofiLeadScorePlan);
   const locator = buildRetryLocator(harmonic, timebase);
   // 有 override 时:和声是用户权威 → 非 lead error 可降为 warning。若用户还直接提供整条
   // lead，则保留它原样和其 audit，不交给渲染层作事后音高修正；无 override 仍与 generateSong

@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "scope": "Composition and arrangement only. Timbre, samples, EQ, compression, loudness, spatial effects, noise, saturation and mastering are excluded.",
+  "measurementPolicy": {
+    "hardGateUse": "Only high-confidence structural observations and broad family envelopes may gate generated output.",
+    "missingValues": "Missing or uncertain observations remain null and are never converted to zero.",
+    "copyright": "No reference audio is stored. This manifest contains URLs, qualitative annotations and derived arrangement envelopes only."
+  },
+  "references": [
+    {
+      "id": "REF-A",
+      "title": "rly Beats — user-provided YouTube Short",
+      "url": "https://www.youtube.com/shorts/Dlum-dlNz24",
+      "families": ["clean-study-boombap"],
+      "evidence": "manual-plus-onset-review",
+      "confidence": 0.9,
+      "observations": {
+        "tempoBpm": 86,
+        "meter": "4/4",
+        "backbeat": "snare/rim on beats 2 and 4",
+        "hatSubdivision": "eighth-note",
+        "kickHitsPerBar": 2.25,
+        "coreDrumPeriodBars": 2,
+        "auxiliaryPercussionPeriodBars": 4
+      }
+    },
+    {
+      "id": "REF-B",
+      "title": "Lofi Girl — Best of lofi hip hop 2021",
+      "url": "https://www.youtube.com/watch?v=n61ULEU7CO0",
+      "families": ["clean-study-boombap", "ambient-study-boombap"],
+      "evidence": "curated-family-anchor",
+      "confidence": 0.65,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "predominantly 4/4",
+        "backbeat": "predominantly 2/4",
+        "hatSubdivision": "quarter/eighth/sparse-sixteenth",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "commonly 1–4",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    },
+    {
+      "id": "REF-C",
+      "title": "Chillhop Essentials — Spring 2021",
+      "url": "https://www.youtube.com/watch?v=lve6KTZTKDw",
+      "families": ["jazzy-chillhop", "clean-study-boombap"],
+      "evidence": "curated-family-anchor",
+      "confidence": 0.65,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "predominantly 4/4",
+        "backbeat": "2/4 with occasional half-time branches",
+        "hatSubdivision": "eighth/sixteenth",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "commonly 2–4",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    },
+    {
+      "id": "REF-D",
+      "title": "J Dilla — Time: The Donut of the Heart",
+      "url": "https://www.youtube.com/watch?v=c6qOBFkvdG0",
+      "families": ["dusty-dilla-boombap"],
+      "evidence": "curated-style-boundary",
+      "confidence": 0.7,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "4/4",
+        "backbeat": "recognizable backbeat with displaced pocket",
+        "hatSubdivision": "variable",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "sample-loop based",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    },
+    {
+      "id": "REF-E",
+      "title": "Nujabes — Feather",
+      "url": "https://www.youtube.com/watch?v=hQ5x8pHoIPA",
+      "families": ["jazzy-chillhop"],
+      "evidence": "curated-style-boundary",
+      "confidence": 0.7,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "4/4",
+        "backbeat": "2/4",
+        "hatSubdivision": "eighth/sixteenth",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "short-loop based",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    },
+    {
+      "id": "REF-F",
+      "title": "idealism — Sit In Silence",
+      "url": "https://www.youtube.com/watch?v=VXzjpjANMOc",
+      "families": ["ambient-study-boombap"],
+      "evidence": "curated-style-boundary",
+      "confidence": 0.65,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "4/4",
+        "backbeat": "sparse but structurally legible",
+        "hatSubdivision": "sparse",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "short-loop based",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    },
+    {
+      "id": "REF-G",
+      "title": "saib. — West Lake",
+      "url": "https://www.youtube.com/watch?v=wbysDvxmgd0",
+      "families": ["jazzy-chillhop"],
+      "evidence": "curated-style-boundary",
+      "confidence": 0.65,
+      "observations": {
+        "tempoBpm": null,
+        "meter": "4/4",
+        "backbeat": "2/4",
+        "hatSubdivision": "eighth/sixteenth",
+        "kickHitsPerBar": null,
+        "coreDrumPeriodBars": "short-loop based",
+        "auxiliaryPercussionPeriodBars": null
+      }
+    }
+  ],
+  "familyEnvelopes": [
+    {
+      "id": "clean-study-boombap",
+      "referenceIds": ["REF-A", "REF-B", "REF-C"],
+      "confidence": 0.78,
+      "features": {
+        "tempoBpm": {"p10": 70, "median": 80, "p90": 88, "unit": "BPM"},
+        "kickHitsPerBar": {"p10": 1.25, "median": 2.25, "p90": 3.25, "unit": "hits/bar"},
+        "backbeatCoverage": {"p10": 0.95, "median": 1, "p90": 1, "unit": "ratio"},
+        "beatOneKickCoverage": {"p10": 0.85, "median": 1, "p90": 1, "unit": "ratio"},
+        "harmonicPeriodChords": {"p10": 2, "median": 3, "p90": 4, "unit": "chords"},
+        "bassOnsetsPerBar": {"p10": 1, "median": 2, "p90": 3.5, "unit": "onsets/bar"},
+        "compAttacksPerBar": {"p10": 0.5, "median": 1.5, "p90": 3, "unit": "attacks/bar"},
+        "padAttacksPerBar": {"p10": 0, "median": 0.5, "p90": 1.5, "unit": "attacks/bar"},
+        "leadActiveBarCoverage": {"p10": 0.2, "median": 0.34, "p90": 0.5, "unit": "ratio"}
+      }
+    },
+    {
+      "id": "dusty-dilla-boombap",
+      "referenceIds": ["REF-D", "REF-C"],
+      "confidence": 0.68,
+      "features": {
+        "tempoBpm": {"p10": 70, "median": 82, "p90": 96, "unit": "BPM"},
+        "kickHitsPerBar": {"p10": 1.5, "median": 2.75, "p90": 4, "unit": "hits/bar"},
+        "backbeatCoverage": {"p10": 0.9, "median": 1, "p90": 1, "unit": "ratio"},
+        "beatOneKickCoverage": {"p10": 0.75, "median": 1, "p90": 1, "unit": "ratio"},
+        "harmonicPeriodChords": {"p10": 2, "median": 3, "p90": 4, "unit": "chords"},
+        "bassOnsetsPerBar": {"p10": 1, "median": 2.5, "p90": 4, "unit": "onsets/bar"},
+        "compAttacksPerBar": {"p10": 0.5, "median": 1.5, "p90": 3.5, "unit": "attacks/bar"},
+        "padAttacksPerBar": {"p10": 0, "median": 0.35, "p90": 1.5, "unit": "attacks/bar"},
+        "leadActiveBarCoverage": {"p10": 0.2, "median": 0.36, "p90": 0.52, "unit": "ratio"}
+      }
+    },
+    {
+      "id": "jazzy-chillhop",
+      "referenceIds": ["REF-C", "REF-E", "REF-G"],
+      "confidence": 0.7,
+      "features": {
+        "tempoBpm": {"p10": 72, "median": 84, "p90": 96, "unit": "BPM"},
+        "kickHitsPerBar": {"p10": 1, "median": 2, "p90": 3.5, "unit": "hits/bar"},
+        "backbeatCoverage": {"p10": 0.9, "median": 1, "p90": 1, "unit": "ratio"},
+        "beatOneKickCoverage": {"p10": 0.75, "median": 1, "p90": 1, "unit": "ratio"},
+        "harmonicPeriodChords": {"p10": 2, "median": 4, "p90": 4, "unit": "chords"},
+        "bassOnsetsPerBar": {"p10": 1.5, "median": 2.5, "p90": 4.5, "unit": "onsets/bar"},
+        "compAttacksPerBar": {"p10": 1, "median": 2, "p90": 4, "unit": "attacks/bar"},
+        "padAttacksPerBar": {"p10": 0, "median": 0.25, "p90": 1.25, "unit": "attacks/bar"},
+        "leadActiveBarCoverage": {"p10": 0.24, "median": 0.4, "p90": 0.58, "unit": "ratio"}
+      }
+    },
+    {
+      "id": "ambient-study-boombap",
+      "referenceIds": ["REF-B", "REF-F"],
+      "confidence": 0.62,
+      "features": {
+        "tempoBpm": {"p10": 65, "median": 75, "p90": 86, "unit": "BPM"},
+        "kickHitsPerBar": {"p10": 0.75, "median": 1.5, "p90": 2.75, "unit": "hits/bar"},
+        "backbeatCoverage": {"p10": 0.85, "median": 1, "p90": 1, "unit": "ratio"},
+        "beatOneKickCoverage": {"p10": 0.7, "median": 1, "p90": 1, "unit": "ratio"},
+        "harmonicPeriodChords": {"p10": 2, "median": 3, "p90": 4, "unit": "chords"},
+        "bassOnsetsPerBar": {"p10": 0.5, "median": 1.25, "p90": 2.5, "unit": "onsets/bar"},
+        "compAttacksPerBar": {"p10": 0.25, "median": 1, "p90": 2.5, "unit": "attacks/bar"},
+        "padAttacksPerBar": {"p10": 0, "median": 0.25, "p90": 1, "unit": "attacks/bar"},
+        "leadActiveBarCoverage": {"p10": 0.15, "median": 0.28, "p90": 0.42, "unit": "ratio"}
+      }
+    }
+  ]
+}

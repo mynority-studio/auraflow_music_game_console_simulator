@@ -54,6 +54,10 @@ export const JAZZ_WALKING_BASS_PATTERN_ID = 'bass.jazz-walking.v1' as const;
 export const JAZZ_FIVE_FOUR_BASS_PATTERN_ID = BASS_JAZZ_FIVE_FOUR_OSTINATO_PATTERN_ID;
 
 export const GROOVE_BASS_PATTERN_IDS = [
+  'lofi_soul_sparse',
+  'lofi_dilla_sparse',
+  'lofi_halftime_hold',
+  'lofi_ambient_pedal',
   'rnb_neo_soul_sparse',
   'dilla_pocket',
   'rnb_gospel_triplet',
@@ -65,6 +69,42 @@ export const GROOVE_BASS_PATTERN_IDS = [
 export type GrooveBassPatternId = typeof GROOVE_BASS_PATTERN_IDS[number];
 
 const PATTERNS = {
+  lofi_soul_sparse: {
+    id: 'lofi_soul_sparse',
+    beatsPerBar: 4,
+    family: 'pedal',
+    hits: [
+      { beat: 0, durationBeats: 1.35, velocity: 0.9, voice: 'root' },
+      { beat: 2.5, durationBeats: 0.7, velocity: 0.66, voice: 'fifth' },
+    ],
+  },
+  lofi_dilla_sparse: {
+    id: 'lofi_dilla_sparse',
+    beatsPerBar: 4,
+    family: 'syncopated',
+    hits: [
+      { beat: 0, durationBeats: 0.9, velocity: 0.88, voice: 'root' },
+      { beat: 2.75, durationBeats: 0.58, velocity: 0.68, voice: 'fifth' },
+      { beat: 3.75, durationBeats: 0.18, velocity: 0.54, voice: 'third' },
+    ],
+  },
+  lofi_halftime_hold: {
+    id: 'lofi_halftime_hold',
+    beatsPerBar: 4,
+    family: 'pedal',
+    hits: [
+      { beat: 0, durationBeats: 2.1, velocity: 0.9, voice: 'root' },
+      { beat: 2.75, durationBeats: 0.9, velocity: 0.62, voice: 'fifth' },
+    ],
+  },
+  lofi_ambient_pedal: {
+    id: 'lofi_ambient_pedal',
+    beatsPerBar: 4,
+    family: 'pedal',
+    hits: [
+      { beat: 0, durationBeats: 3.45, velocity: 0.82, voice: 'root' },
+    ],
+  },
   rnb_neo_soul_sparse: {
     id: 'rnb_neo_soul_sparse',
     beatsPerBar: 4,

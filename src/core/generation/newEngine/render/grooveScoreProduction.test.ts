@@ -58,11 +58,18 @@ describe('GrooveScore production ownership', () => {
     expect(new Set(activePatterns.map(patternSignature)).size).toBeGreaterThan(1);
 
     const vocabulary = new Set(Object.values(contract.drum!.fillFamilies));
-    expect(score.boundaries.length).toBeGreaterThan(0);
+    // LOFI V2 owns structural variation inside its song-level two-bar phrase
+    // and mutation budget. Renderer-boundary fills would be untraceable extra
+    // composition, so this style intentionally has none.
+    if (style === 'lofi') expect(score.boundaries).toHaveLength(0);
+    else expect(score.boundaries.length).toBeGreaterThan(0);
     expect(score.boundaries.every((boundary) => vocabulary.has(boundary.drumFillFamily))).toBe(true);
-    if (style === 'pop') {
+    if (style === 'pop' && contract.id !== 'pop_ballad_halftime') {
       expect(score.boundaries.every((boundary) => boundary.fillFunction !== undefined && boundary.fillScore !== undefined)).toBe(true);
       expect(new Set(score.boundaries.map((boundary) => boundary.fillScore!.recipeId)).size).toBeGreaterThan(1);
+    } else if (style === 'pop') {
+      expect(score.boundaries.every((boundary) => boundary.fillScore === undefined)).toBe(true);
+      expect(score.boundaries.every((boundary) => boundary.landing !== 'kick-crash')).toBe(true);
     }
   });
 

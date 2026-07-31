@@ -4,6 +4,7 @@ import type { TrackIR } from '../ir/MusicalIR';
 import { generateSong } from '../generation/GenerationController';
 import { applyRenderMixBalance, leadCompWetEnergyRatio } from './renderMixBalance';
 import { auditRenderedMix } from './renderMixAudit';
+import { DREAM5504_LOFI_CHANNEL_MIX } from '../knowledge/gmMixProfile';
 
 const ctx = (style: string, durationTicks: number, sectionTicks: number[] = [0]) => ({
   style,
@@ -76,12 +77,15 @@ describe('render/renderMixBalance — render 后处理混音', () => {
       if (c.style !== 'acg') {
         const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
         const compTrack = r.ir!.tracks.find((t) => t.role === 'comp')!;
-        expect(lead.mix!.volume, `${c.style}/${c.seed}/lead`).toBe(100);
-        expect(compTrack.mix!.volume, `${c.style}/${c.seed}/comp`).toBe(100);
+        const expectedLead = c.style === 'lofi' ? DREAM5504_LOFI_CHANNEL_MIX.lead : { volume: 100, reverb: 0, chorus: 0 };
+        const expectedComp = c.style === 'lofi' ? DREAM5504_LOFI_CHANNEL_MIX.comp : { volume: 100, reverb: 0, chorus: 0 };
+        expect(lead.mix, `${c.style}/${c.seed}/lead`).toMatchObject(expectedLead);
+        expect(compTrack.mix, `${c.style}/${c.seed}/comp`).toMatchObject(expectedComp);
         for (const track of r.ir!.tracks) {
-          expect(track.mix!.volume, `${c.style}/${c.seed}/${track.role}/volume`).toBe(100);
-          expect(track.mix!.reverb, `${c.style}/${c.seed}/${track.role}/reverb`).toBe(0);
-          expect(track.mix!.chorus, `${c.style}/${c.seed}/${track.role}/chorus`).toBe(0);
+          const expected = c.style === 'lofi'
+            ? DREAM5504_LOFI_CHANNEL_MIX[track.role]
+            : { volume: 100, reverb: 0, chorus: 0 };
+          expect(track.mix, `${c.style}/${c.seed}/${track.role}`).toMatchObject(expected);
         }
         continue;
       }
@@ -226,7 +230,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     }
   });
 
-  it('Dream 四风格不再为吉他 COMP 做 CC7 校平', () => {
+  it('LOFI 保留 IR 中已经确定的吉他 COMP 混音，不做能量校平', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -248,9 +252,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
     const comp = out.find((t) => t.role === 'comp')!;
-    expect(comp.mix!.volume).toBe(100);
-    expect(comp.mix!.reverb).toBe(0);
-    expect(comp.mix!.chorus).toBe(0);
+    expect(comp.mix).toMatchObject({ volume: 94, reverb: 20, chorus: 2 });
   });
 
   it('Dream 四风格不再为吉他 LEAD 做 CC7 校平', () => {
@@ -305,7 +307,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(lead.mix!.chorus).toBe(0);
   });
 
-  it('Dream 四风格不再为 GM5/Electric Grand COMP 做 CC7 校平', () => {
+  it('LOFI 保留 IR 中已经确定的 Electric Grand COMP 混音', () => {
     const durationTicks = 1920;
     const tracks: TrackIR[] = [
       {
@@ -328,8 +330,6 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
     const comp = out.find((t) => t.role === 'comp')!;
-    expect(comp.mix!.volume).toBe(100);
-    expect(comp.mix!.reverb).toBe(0);
-    expect(comp.mix!.chorus).toBe(0);
+    expect(comp.mix).toMatchObject({ volume: 94, reverb: 24, chorus: 18 });
   });
 });

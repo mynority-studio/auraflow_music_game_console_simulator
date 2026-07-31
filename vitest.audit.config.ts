@@ -5,7 +5,13 @@ import { defineConfig } from 'vitest/config';
 // instead of plain Node/tsx so the audit command matches the app build path.
 export default defineConfig({
   test: {
-    include: ['scripts/audit-render-mix.test.ts', 'scripts/audit-drum-humanity.test.ts'],
+    include: [
+      'scripts/audit-render-mix.test.ts',
+      'scripts/audit-drum-humanity.test.ts',
+      'scripts/audit-lofi-hiphop-arrangement.test.ts',
+      'scripts/audit-lofi-musical-foundation.test.ts',
+      'scripts/audit-lofi-phrase-interaction.test.ts',
+    ],
     environment: 'node',
     testTimeout: 120_000,
   },

@@ -60,20 +60,28 @@ export interface MidiOutMessage {
 
 /**
  * Firm5504 starts each generated channel at its controller defaults. CC0
- * remains necessary for the GMBK full address. The only musical exceptions
- * are Instrumentation-authored CC11/CC64 on the piano-capable roles; detailed
- * program-address gating happens in musicalIRToMidiEvents before this sink.
+ * remains necessary for the GMBK full address. CC7/CC11 may only restate
+ * their hardware defaults; the only musical controller exception is CC64 on
+ * piano-capable roles. Uploaded SMF events use a separate policy at the sink.
  */
 export const DREAM5504_RAW_DEFAULT_OUTPUT = true;
 const RAW_DEFAULT_TRANSPORT_CC = new Set([120, 121, 123]);
+const LOFI_CHANNEL_MIX_CC = new Set([7, 10, 91, 93]);
 const PIANO_EXPRESSION_ROLES = new Set<MidiOutRole>(['lead', 'comp', 'bass']);
+/** Reserved auxiliary output channel for Q+T (zero-based scheduler channel 15). */
+export const DREAM5504_TAKEOVER_OUTPUT_CHANNEL = 16;
 
-export function isDream5504RawDefaultMessageAllowed(message: MidiOutMessage, role?: MidiOutRole): boolean {
+export function isDream5504RawDefaultMessageAllowed(
+  message: MidiOutMessage,
+  role?: MidiOutRole,
+  outputPolicy?: MidiEvent['outputPolicy'],
+): boolean {
   if (!DREAM5504_RAW_DEFAULT_OUTPUT) return true;
   if (message.type === 'pitchBend') return false;
   if (message.type !== 'cc') return true;
   if (message.data1 === 0) return true;
-  if (message.data1 === 11) return !!role && PIANO_EXPRESSION_ROLES.has(role);
+  if (LOFI_CHANNEL_MIX_CC.has(message.data1)) return outputPolicy === 'lofi-channel-mix';
+  if (message.data1 === 11) return (message.data2 ?? 0) === 127;
   if (message.data1 === 64) return (message.data2 ?? 0) <= 63 || (!!role && PIANO_EXPRESSION_ROLES.has(role));
   return RAW_DEFAULT_TRANSPORT_CC.has(message.data1) && (message.data2 ?? 0) === 0;
 }
@@ -171,9 +179,14 @@ export function midiEventToRoutedMessage(
   mode: MidiOutputMode = 'single-port',
 ): RoutedMidiOutMessage | null {
   if (event.type === 'visual') return null;
-  const role = schedulerChannelToRole(event.channel);
+  const claimedOutputChannel = event.outputChannel === undefined
+    ? null
+    : clampChannel(event.outputChannel);
+  const role = claimedOutputChannel === null
+    ? schedulerChannelToRole(event.channel)
+    : MIDI_OUT_TRACKS.find((track) => channels[track.role] === claimedOutputChannel)?.role ?? 'lead';
   if (!role) return null;
-  const channel = resolveOutputChannel(role, mode, channels);
+  const channel = claimedOutputChannel ?? resolveOutputChannel(role, mode, channels);
 
   if (event.type === 'noteOn') {
     return { role, message: { type: 'noteOn', channel, data1: event.data1, data2: event.data2 } };

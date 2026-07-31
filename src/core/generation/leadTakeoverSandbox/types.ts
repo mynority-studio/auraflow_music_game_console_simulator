@@ -9,6 +9,9 @@
 import type { TakeoverQuantizeGrid } from './rhythmQuantizer';
 
 export type TakeoverRole = 'lead';
+export type TakeoverLayoutMode = 'chord-analysis' | 'measure-notes';
+export type LeadTakeoverSourceMode = 'music-generation' | 'midi-score';
+export const TAKEOVER_UPLOADED_BACKING_GAIN_SCALE = 0.9;
 
 export interface TakeoverChordSource {
   rootPc: number;
@@ -32,8 +35,30 @@ export interface TakeoverMusicSnapshot {
   bpm: number;
   timeSignature: [number, number];
   chords: TakeoverChordSource[];
+  layoutMode?: TakeoverLayoutMode;
+  source?: 'generated' | 'midi-analysis' | 'demo';
+  measures?: TakeoverMeasureSource[];
   grooveContract?: TakeoverGrooveContract;
   grooveContractBySection?: Record<string, TakeoverGrooveContract>;
+}
+
+export interface TakeoverMeasureNote {
+  id: string;
+  sourceMidi: number;
+  priority: number;
+  /** Original analyzed layer. Kept through octave folding so Lead cannot be hidden by Comp/Bass collisions. */
+  voiceKind?: 'melody' | 'bass' | 'accompaniment';
+  structuralRole: 'backbone' | 'ambiguous' | 'ornament';
+  metricLevel: 'downbeat' | 'strongBeat' | 'beat' | 'subdivision' | 'offbeat';
+  melodicFunction: string;
+}
+
+export interface TakeoverMeasureSource {
+  id: string;
+  label: string;
+  startBeat: number;
+  durationBeats: number;
+  notes: TakeoverMeasureNote[];
 }
 
 export interface TakeoverGrooveContract {
@@ -65,7 +90,14 @@ export interface TakeoverPadCell {
   name: string;
   pc: number;
   degreeLabel: string;
-  classRole: 'chord' | 'scale' | 'approach' | 'fallback';
+  classRole:
+    | 'chord'
+    | 'scale'
+    | 'approach'
+    | 'fallback'
+    | 'structural'
+    | 'selected'
+    | 'ornament';
 }
 
 export interface TakeoverPadMap {
@@ -73,18 +105,19 @@ export interface TakeoverPadMap {
   chord: TakeoverChordSource | null;
   nextChord: TakeoverChordSource | null;
   localScaleName: string;
-  source: 'orthogonal' | 'fallback';
+  source: 'orthogonal' | 'midi-chord-analysis' | 'midi-measure-notes' | 'fallback';
+  measure?: TakeoverMeasureSource | null;
 }
 
-export type LeadTakeoverMode = 'idle' | 'pending-handoff' | 'takeover';
+export type LeadTakeoverMode = 'idle' | 'takeover';
 
 export interface LeadTakeoverState {
   mode: LeadTakeoverMode;
   inputCount: number;
   firstInputBeat: number | null;
   lastInputBeat: number | null;
-  muteAtBeat: number | null;
   leadMuted: boolean;
+  backingDucked: boolean;
 }
 
 export type LeadTakeoverAction =
@@ -103,20 +136,19 @@ export type LeadTakeoverAction =
       midi: number;
       timing?: LeadTakeoverTiming;
     }
+  | { type: 'backing-gain'; scale: number }
   | { type: 'lead-mute'; channel: number; muted: boolean }
   | { type: 'panic'; channel: number };
 
 export interface LeadTakeoverConfig {
   leadChannel: number;
-  takeoverThreshold: number;
-  silenceBarsToRelease: number;
-  handoffBars: number;
+  nativeLeadMuteEnabled: boolean;
   defaultVelocity: number;
   quantizeEnabled: boolean;
   quantizeGrid: TakeoverQuantizeGrid;
   fastInputGrid: TakeoverQuantizeGrid;
   fastInputBeatWindow: number;
-  lateGraceMs: number;
-  strongBeatLateGraceMs: number;
+  simultaneousInputWindowMs: number;
+  maxSnapDelayMs: number;
   noteOffTailMs: number;
 }

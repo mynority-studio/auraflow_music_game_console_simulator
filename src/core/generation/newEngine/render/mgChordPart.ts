@@ -38,6 +38,8 @@ export interface MgChordDef {
   /** HarmonicPlan 的 span identity 与“稳定落点”语义。供 ACG 主链返场 token 使用。 */
   spanId?: string;
   stableTonePcs?: readonly number[];
+  colorTonePcs?: readonly number[];
+  avoidTonePcs?: readonly number[];
   chordScalePcs?: readonly number[];
 }
 
@@ -75,6 +77,8 @@ export interface ChordBlock {
   /** 由 HarmonicPlan 原样下发的稳定音与局部音阶，避免 renderer 重新猜和声。 */
   spanId?: string;
   stableTonePcs?: readonly number[];
+  colorTonePcs?: readonly number[];
+  avoidTonePcs?: readonly number[];
   chordScalePcs?: readonly number[];
 }
 
@@ -114,6 +118,8 @@ export function buildChordPart(
       borrowedSource: c.borrowedSource,
       spanId: c.spanId,
       stableTonePcs: c.stableTonePcs,
+      colorTonePcs: c.colorTonePcs,
+      avoidTonePcs: c.avoidTonePcs,
       chordScalePcs: c.chordScalePcs,
     });
     cursor += dur;

@@ -53,6 +53,15 @@ describe('sandbox · MIDI 文件导出 SMF (6.2)', () => {
     expect(find(smf, [0xff, 0x58, 0x04, 4, 2, 24, 8])).toBeGreaterThan(0);
   });
 
+  it('writes a dotted-quarter metronome click for compound 6/8', () => {
+    const sixEightIr = freezeMusicalIR({
+      tracks: [],
+      timebase: createTimebase({ meter: { numerator: 6, denominator: 8 } }),
+      durationTicks: ticks(1440),
+    });
+    expect(find(musicalIRToSMF(sixEightIr, 120), [0xff, 0x58, 0x04, 6, 3, 36, 8])).toBeGreaterThan(0);
+  });
+
   it('含 noteOn/noteOff + 结尾 end-of-track(FF 2F 00)', () => {
     expect(find(smf, [0x90 | 1, 72, 95])).toBeGreaterThan(0); // lead noteOn ch1 pitch72 vel95
     expect(find(smf, [0x80 | 3, 36, 0])).toBeGreaterThan(0);  // bass noteOff ch3 pitch36

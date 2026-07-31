@@ -70,7 +70,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   // Trace must observe the same immutable ACG phrase score as production.  In
   // particular, the score carries the factual functional RoadMap that a
   // direct render fallback cannot reconstruct at this layer.
-  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = buildSongBundle(request);
+  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, lofiLeadScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = buildSongBundle(request);
 
   log(`■ REQUEST    seed=${request.seed}  style=${request.styleHint}  mood=${request.mood}  dur=${request.targetDuration}s`);
 
@@ -220,7 +220,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const intentPlan = deriveMusicIntentPlan(band.style, arrangement);
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan, undefined, acgPianoScorePlan, jazzFiveFourScorePlan);
+      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan, undefined, acgPianoScorePlan, jazzFiveFourScorePlan, undefined, lofiLeadScorePlan);
   const locator = buildRetryLocator(harmonic, timebase);
   const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, locator);
   const audit = result.report;

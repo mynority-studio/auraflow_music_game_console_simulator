@@ -63,21 +63,20 @@ describe('musicGeneration/acousticPaletteConsumption', () => {
           expect(uiPlayer, `${style}/${seed}/${role} UI roster`).toBeDefined();
           const trackMidi = midi.filter((event) => event.channel === ROLE_CHANNEL[role]);
           expect(trackMidi.some((event) => event.type === 'cc' && event.ticks === 0 && event.data1 === 121 && event.data2 === 0), `${style}/${seed}/${role} CC121 defaults`).toBe(true);
-          expect(trackMidi.filter((event) => event.type === 'cc').every((event) => [0, 11, 64, 121].includes(event.data1)), `${style}/${seed}/${role} no CC7/CC10/FX shaping`).toBe(true);
+          expect(trackMidi.filter((event) => event.type === 'cc').every((event) => [0, 64, 121].includes(event.data1)), `${style}/${seed}/${role} default CC7/CC11 and no FX shaping`).toBe(true);
 
-          for (const controller of trackMidi.filter((event) => event.type === 'cc' && (event.data1 === 11 || event.data1 === 64))) {
+          for (const controller of trackMidi.filter((event) => event.type === 'cc' && event.data1 === 64)) {
             const current = voiceAtTick(track, controller.ticks);
             const previous = voiceAtTick(track, controller.ticks - 1);
             const validPianoState = isAcousticPianoVoice(current.bank, current.program)
-              || (controller.data1 === 64 && controller.data2 <= 63 && isAcousticPianoVoice(previous.bank, previous.program));
+              || (controller.data2 <= 63 && isAcousticPianoVoice(previous.bank, previous.program));
             expect(validPianoState, `${style}/${seed}/${role} CC${controller.data1}@${controller.ticks} only Bank-0 acoustic piano`).toBe(true);
           }
 
           for (const planned of (track.ccEvents ?? []).filter((event) => event.controller === 11)) {
-            const address = voiceAtTick(track, planned.atTick as number);
             const emitted = trackMidi.some((event) => event.type === 'cc'
               && event.ticks === planned.atTick && event.data1 === 11 && event.data2 === planned.value);
-            expect(emitted, `${style}/${seed}/${role} planned piano CC11 must reach MIDI`).toBe(isAcousticPianoVoice(address.bank, address.program));
+            expect(emitted, `${style}/${seed}/${role} CC11 stays at Firm5504 default`).toBe(false);
           }
           for (const planned of track.pedalEvents ?? []) {
             const current = voiceAtTick(track, planned.atTick as number);

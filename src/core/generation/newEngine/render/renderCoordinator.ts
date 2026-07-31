@@ -12,7 +12,7 @@ import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
-import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR, type TrackMix } from '../ir/MusicalIR';
+import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type NoteIR, type TrackIR, type TrackMix } from '../ir/MusicalIR';
 import type { RoleMix } from '../knowledge/gmMixProfile';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
@@ -22,16 +22,21 @@ import { deriveMusicIntentPlan, summarizeMusicIntent } from '../arranger/deriveM
 import {
   activeAcgPianoSectionIds,
   buildAcgPianoScorePlan,
-  type AcgPianoPedalHold,
   type AcgPianoScorePlan,
 } from '../arranger/acgPianoScorePlan';
+import { compileAcgPianoPedalScore } from '../arranger/acgPianoPedalScore';
+import type { LofiLeadScorePlan } from '../arranger/lofiLeadScorePlan';
 import type { JazzFiveFourScorePlan } from '../arranger/jazzFiveFourScorePlan';
 import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
 import { buildTextureSchedule, deriveAcgBarFamilies } from './textureSchedule';
 import { auditHarmony, type AuditKeyContext } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
 import { applyMgLofiDenseMelodyComping, denseMelodySpanRanges } from './mgPostMixShaper';
-import { buildMgLeadRoadMap, renderMgMelody } from './mgLeadRenderer';
+import {
+  buildMgLeadRoadMap,
+  renderMgMelodyWithAcgPerformancePlan,
+  type MgLeadDebugCapture,
+} from './mgLeadRenderer';
 import { planAcgLeadPresence } from './acgLeadPresencePlan';
 import {
   assembleAuthoredUserMotifLead,
@@ -40,7 +45,7 @@ import {
   type AuthoredUserMotifBrickPlan,
   type UserMotifBrick,
 } from './userMotifBrick';
-import { buildOccupationMap } from './OccupationMap';
+import { buildOccupationMap, type OccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
 import { realizeDrumPerformanceTrack } from './drumPerformanceRealizer';
@@ -109,55 +114,35 @@ function scoreOwnedAcgCompSilenceRanges(
   });
 }
 
-// CC64 踏板由器配层的 pedalPlanByRole 下发。render 只把总谱拍位投影为
-// TrackIR tick，绝不根据 style、program 或音符密度重新猜一套踏板策略。
-// pad 铺法二选一:~40% 歌走 pedal anchor(整段长 pedal + 动声部),其余逐和弦选音。
+// CC64 capability comes from Instrumentation. ACG timing comes from the
+// pre-NoteIR shared PianoPedalScore; legacy styles keep pedalPlanByRole.
+// Render only projects the selected beat score to TrackIR ticks.
+// Legacy styles choose the pad anchor here. LOFI receives an upstream
+// FoundationPlan, so its pad family is not re-selected during rendering.
 const PAD_PEDAL_ANCHOR_PROB = 0.4;
 
-export interface PedalBeatState {
-  atBeat: number;
-  down: boolean;
-}
-
-const SCORE_PEDAL_HOLD_EPSILON = 1e-4;
-
 /**
- * ACG's phrase score can keep an already-authorized piano pedal through a
- * written multi-span breath.  It never manufactures CC64: a hold is accepted
- * only when the instrumental plan already contains its down/up endpoints.
- * Keeping those endpoints preserves the normal off → on re-pedal at the next
- * harmony after the breath; only internal boundary churn is removed.
+ * Place the Arranger-required LOFI response entry on an offbeat that the
+ * already-rendered Bass/Comp/Pad foundation actually leaves open.  This runs
+ * before melody tokens are scheduled; it never deletes or shifts finished
+ * NoteIR.  A bar with no completely open candidate keeps the authored entry.
  */
-export function applyAcgScorePedalHolds(
-  baseEvents: readonly PedalBeatState[],
-  holds: readonly AcgPianoPedalHold[] | undefined,
-): PedalBeatState[] {
-  if (baseEvents.length === 0 || !holds?.length) return [...baseEvents];
-
-  const hasStateAt = (atBeat: number, down: boolean): boolean => baseEvents.some((event) =>
-    event.down === down && Math.abs(event.atBeat - atBeat) <= SCORE_PEDAL_HOLD_EPSILON,
-  );
-  const ordered = [...holds]
-    .filter((hold) => hold.endBeat > hold.startBeat + SCORE_PEDAL_HOLD_EPSILON)
-    .sort((left, right) => left.startBeat - right.startBeat || left.endBeat - right.endBeat);
-  const coalesced: AcgPianoPedalHold[] = [];
-  for (const hold of ordered) {
-    const previous = coalesced.at(-1);
-    if (previous && hold.startBeat <= previous.endBeat + SCORE_PEDAL_HOLD_EPSILON) {
-      previous.endBeat = Math.max(previous.endBeat, hold.endBeat);
-    } else {
-      coalesced.push({ ...hold });
-    }
-  }
-  const authorized = coalesced.filter((hold) =>
-    hasStateAt(hold.startBeat, true) && hasStateAt(hold.endBeat, false),
-  );
-  if (authorized.length === 0) return [...baseEvents];
-
-  return baseEvents.filter((event) => !authorized.some((hold) =>
-    event.atBeat > hold.startBeat + SCORE_PEDAL_HOLD_EPSILON
-      && event.atBeat < hold.endBeat - SCORE_PEDAL_HOLD_EPSILON,
-  ));
+function lofiLeadEntriesInFoundationSpace(
+  authoredEntries: readonly number[],
+  occupation: OccupationMap,
+  ppq: number,
+  beatsPerBar: number,
+): number[] {
+  const busyBeats = occupation.onsetTicks.map((tick) => tick / ppq);
+  const offsets = beatsPerBar >= 4 ? [0.5, 1.5, 2.5, 3.5] : [0.5, 1.5];
+  return authoredEntries.map((entry) => {
+    const barStart = Math.floor(entry / beatsPerBar) * beatsPerBar;
+    const candidates = offsets
+      .map((offset) => barStart + offset)
+      .filter((candidate) => candidate < barStart + beatsPerBar - 1e-6);
+    return candidates.find((candidate) =>
+      busyBeats.every((busy) => Math.abs(busy - candidate) > 0.12)) ?? entry;
+  });
 }
 
 /** 伴奏 ducking:comp 撞旋律(lead)时 ×factor(让旋律清晰;旋律留白处 comp 不动=满响)。 */
@@ -670,8 +655,13 @@ export function renderSongFull(
   suppliedAcgPianoScorePlan?: AcgPianoScorePlan,
   /** Explicit MIDI-reference quartet score; absent keeps every legacy path unchanged. */
   suppliedJazzFiveFourScorePlan?: JazzFiveFourScorePlan,
+  /** Read-only test/audit capture; omitted in normal generation. */
+  leadDebugCapture?: MgLeadDebugCapture,
+  /** LOFI only: immutable post-harmony lead score supplied by SongBundle. */
+  suppliedLofiLeadScorePlan?: LofiLeadScorePlan,
 ): RenderResult {
   const isAcg = band.style.toLowerCase() === 'acg';
+  const isLofi = band.style.toLowerCase() === 'lofi';
   // ACG PIANOSONG is one scored piano trio.  Once its scheduler/score-plan
   // has authored a note, late generic piano transforms must not reinterpret
   // that note as an interchangeable comp or bass event.
@@ -686,6 +676,14 @@ export function renderSongFull(
     if (!isAcgPianoRole(role)) return false;
       return role !== 'lead' || !overrideLeadTrack;
   };
+  // LOFI owns only its generated top line. Its rhythm, harmony and motif
+  // recall are authored in LofiLeadScorePlan before NoteIR; lower tracks keep
+  // the normal arranger/render chain.
+  const isScoreOwnedLofiLead = isLofi
+    && suppliedLofiLeadScorePlan !== undefined
+    && !overrideLeadTrack;
+  const isScoreOwnedLeadRole = (role: TrackIR['role']): boolean =>
+    isScoreOwnedAcgPianoRole(role) || (isScoreOwnedLofiLead && role === 'lead');
   const scoreOwnedAcgPianoRoles = new Set<TrackIR['role']>(
     [...acgPianoRoles].filter((role) => isScoreOwnedAcgPianoRole(role)),
   );
@@ -699,8 +697,8 @@ export function renderSongFull(
     source: TrackIR[],
     transform: (tracks: TrackIR[]) => TrackIR[],
   ): TrackIR[] => {
-    if (!isAcg) return transform(source);
-    return source.map((track) => isScoreOwnedAcgPianoRole(track.role)
+    if (!isAcg && !isScoreOwnedLofiLead) return transform(source);
+    return source.map((track) => isScoreOwnedLeadRole(track.role)
       ? track
       : (transform([track])[0] ?? track));
   };
@@ -738,7 +736,7 @@ export function renderSongFull(
     : activeAcgPianoSectionIds(instrumentation);
   const timedRoleSections = new Set<string>();
   const timedRoleNames = new Set<string>();
-  let preserveArrangerLeadRests = false;
+  let preserveArrangerLeadRests = arrangement.lofiLeadPresencePlan !== undefined;
   for (const sectionScore of Object.values(arrangement.grooveScorePlan.bySection)) {
     for (const role of ['bass', 'comp'] as const) {
       const pattern = sectionScore.roleRhythmByRole?.[role];
@@ -802,7 +800,7 @@ export function renderSongFull(
     0,
   );
   const motifRoadMap = userMotifBrick && !overrideLeadTrack
-    ? buildMgLeadRoadMap(plan, band, timebase, acgPianoScorePlan)
+    ? buildMgLeadRoadMap(plan, band, timebase, acgPianoScorePlan, suppliedLofiLeadScorePlan)
     : undefined;
   const authoredUserMotifPlan: AuthoredUserMotifBrickPlan | undefined = userMotifBrick && motifRoadMap
     ? planAuthoredUserMotifBrick({
@@ -826,7 +824,23 @@ export function renderSongFull(
     const generatedLead = generated.find((track) => track.role === 'lead');
     return context.map((track) => track.role === 'lead' && generatedLead ? generatedLead : track);
   };
-  const baseTextureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract, grooveContractBySection: arrangement.grooveContractBySection, acgBarFamilyBySpan });
+  const lofiCompRoleByAbsoluteBar = arrangement.lofiPhraseInteractionPlan
+    ? Object.fromEntries(arrangement.lofiPhraseInteractionPlan.bars.map((bar) => [bar.absoluteBar, bar.compRole]))
+    : undefined;
+  const baseTextureSchedule = buildTextureSchedule({
+    plan,
+    style: band.style,
+    sectionRoleById,
+    activeSectionIds,
+    textureRng: rng.substream('compTexture'),
+    richTextureBySection: instrumentation.richTextureBySection,
+    richTextureSwitchBySection: instrumentation.richTextureSwitchBySection,
+    grooveContract: arrangement.songGrooveContract,
+    grooveContractBySection: arrangement.grooveContractBySection,
+    acgBarFamilyBySpan,
+    lofiCompRoleByAbsoluteBar,
+    beatsPerBar: beatsPerBarOf(arrangement.meter),
+  });
   const textureSchedule = acgPianoScorePlan
     ? { ...baseTextureSchedule, ...acgPianoScorePlan.textureBySpan }
     : baseTextureSchedule;
@@ -859,6 +873,7 @@ export function renderSongFull(
       bassActive: inLineup('bass') && roleInArr(s.id, 'bass'),
       leadReservedLow: reservedReg.lowMidi as number,
       leadReservedHigh: reservedReg.highMidi,
+      lofiPadFamily: arrangement.lofiFoundationPlan?.padIntent.family,
     });
   }
 
@@ -869,7 +884,9 @@ export function renderSongFull(
   if (inLineup('pad') && (!hasResolvedRoleLayout || padActiveSectionIds.size > 0)) {
     // ★ pad 铺法二选一(一首一掷,确定性):~40% 走 pedal anchor(整段共同音/主音长 pedal + 动声部),
     //   ~60% 现有逐和弦选音。padStyle 子流独立 → 不扰其它决策。
-    const pedalAnchor = rng.substream('padStyle').next() < PAD_PEDAL_ANCHOR_PROB;
+    const pedalAnchor = arrangement.lofiFoundationPlan
+      ? arrangement.lofiFoundationPlan.padIntent.family === 'common-tone'
+      : rng.substream('padStyle').next() < PAD_PEDAL_ANCHOR_PROB;
     padTrack = renderPad(plan, timebase, {
       padDensity: band.styleProfile.padDensity,
       decisionBySection: padDecisionBySection,
@@ -880,6 +897,9 @@ export function renderSongFull(
       },
       pedalAnchor,
       tonicPc: band.key as number,
+      continuityGroupBySection: Object.fromEntries(
+        arrangement.sections.map((section) => [section.id, section.repeatGroup ?? section.id]),
+      ),
     });
     // ★ comp 避同绝对音高:只针对 pad 的【逐和弦音】(覆盖正好 1 span,会随和弦重新起音 → 可能与 comp hit 撞 unison)。
     //   一切【持续音】(tie 共同音 / pedal anchor,覆盖 ≥2 span)不让 comp 避——软持续 pad 上叠 comp 是加厚不是
@@ -921,7 +941,22 @@ export function renderSongFull(
       ? rawBass
       : applyBassPatternSchedule(rawBass, plan, arrangement.sections, intent, beatsPerBarOf(arrangement.meter), timebase.ppq, patternOwnedSectionIndexes));
   }
-  if (inLineup('comp') && (!hasResolvedRoleLayout || compActiveSectionIds.size > 0)) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, foundationRoleBySection, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, compRegister: instrumentation.strictRegisterByRole?.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection, pianoScorePlan: acgPianoScorePlan, grooveScorePlan: arrangement.grooveScorePlan }));
+  const lofiVoicingIntent = arrangement.lofiFoundationPlan
+    ? {
+      family: arrangement.lofiFoundationPlan.voicingIntent.family,
+      register: [
+        arrangement.lofiFoundationPlan.voicingIntent.register[0],
+        arrangement.lofiFoundationPlan.voicingIntent.register[1],
+      ] as const,
+      maxVoicesWithBass: arrangement.lofiFoundationPlan.voicingIntent.maxVoicesWithBass,
+    }
+    : undefined;
+  const compPedalActiveSectionIds = new Set(
+    (instrumentation.pedalPlanByRole.comp?.events ?? [])
+      .filter((event) => event.down)
+      .map((event) => event.sectionId),
+  );
+  if (inLineup('comp') && (!hasResolvedRoleLayout || compActiveSectionIds.size > 0)) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, foundationRoleBySection, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, compRegister: instrumentation.strictRegisterByRole?.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection, pianoScorePlan: acgPianoScorePlan, grooveScorePlan: arrangement.grooveScorePlan, lofiVoicingIntent, compPerformanceIntent: arrangement.lofiFoundationPlan?.compIntent, compPedalActiveSectionIds }));
   if (padTrack) tracks.push(padTrack);
   // Drum realization waits until the lead exists so every declared follow
   // source can be consumed. It is inserted at this index to preserve the
@@ -941,9 +976,44 @@ export function renderSongFull(
   const acgLeadPresencePlan = isAcg && !overrideLeadTrack
     ? acgPianoScorePlan?.leadPresencePlan ?? directAcgLeadPresencePlan
     : undefined;
-  const generatedLeadTrack = overrideLeadTrack
-    ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
-    : renderMgMelody(
+  const reserved = {
+    lowMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi,
+    highMidi: instrumentation.melodyReservationPlan.reservedRegister.highMidi,
+  };
+  // A score-owned LOFI lead has already written its legal entrances into the
+  // post-harmony score. Foundation occupancy remains useful for the legacy
+  // LOFI path only; it must not silently re-time a score token here.
+  const preLeadFoundationOccupation = !isScoreOwnedLofiLead && arrangement.lofiFoundationPlan
+    ? buildOccupationMap(tracks, reserved)
+    : undefined;
+  const lofiLeadEntryBeats = isScoreOwnedLofiLead
+    ? suppliedLofiLeadScorePlan?.entryBeats
+    : preLeadFoundationOccupation
+      ? lofiLeadEntriesInFoundationSpace(
+        arrangement.lofiLeadPresencePlan?.entryBeats ?? [],
+        preLeadFoundationOccupation,
+        timebase.ppq,
+        beatsPerBarOf(arrangement.meter),
+      )
+      : arrangement.lofiLeadPresencePlan?.entryBeats;
+  // A scored LOFI lead must receive the arranger/instrumentation writing
+  // register even when that register is not marked as a hard ensemble
+  // constraint. Falling back to a GM program's physical range would make a
+  // low but technically playable note look legal to the score realizer.
+  const leadWritingRegister = isScoreOwnedLofiLead
+    ? instrumentation.registerByRole.lead
+    : instrumentation.strictRegisterByRole?.lead;
+  const generatedLeadPerformance = overrideLeadTrack
+    ? {
+      track: { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead },
+      // An external NoteIR lead has no legal pre-NoteIR attack contract. The
+      // lower two written hands still receive the Arranger's pedal score; we
+      // never inspect the finished override notes to invent controller data.
+      acgPianoPedalScore: isAcg && acgPianoScorePlan
+        ? compileAcgPianoPedalScore({ harmonic: plan, pianoScorePlan: acgPianoScorePlan })
+        : undefined,
+    }
+    : renderMgMelodyWithAcgPerformancePlan(
       plan,
       band,
       timebase,
@@ -953,12 +1023,23 @@ export function renderSongFull(
       acgLeadPresencePlan,
         acgPianoScorePlan,
         arrangement.grooveContractBySection,
-        instrumentation.strictRegisterByRole?.lead,
+        leadWritingRegister,
         motifRoadMap,
         authoredUserMotifPlan,
+        arrangement.tempoBpm,
+        arrangement.lofiLeadPresencePlan?.silenceWindows,
+        lofiLeadEntryBeats,
+        leadDebugCapture,
+        arrangement.lofiPhraseInteractionPlan,
+        suppliedLofiLeadScorePlan,
       ); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
-  const leadTrack = generatedLeadTrack;
-  const fittedLeadTrack = fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase);
+  const leadTrack = generatedLeadPerformance.track;
+  const generatedAcgPianoPedalScore = generatedLeadPerformance.acgPianoPedalScore;
+  // LOFI's score realizer has already consumed the concrete lead range before
+  // NoteIR. Do not silently octave-fold a score-owned melodic contour here.
+  const fittedLeadTrack = isScoreOwnedLofiLead
+    ? leadTrack
+    : fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase);
   tracks.push(fittedLeadTrack);
   if (inLineup('drum') && (!hasResolvedRoleLayout || drumActiveSectionIds.size > 0)) {
     tracks.splice(drumTrackInsertIndex, 0, renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), {
@@ -977,22 +1058,28 @@ export function renderSongFull(
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
-  const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;
+  const postMixTracks = band.style.toLowerCase() === 'lofi' && !arrangement.lofiFoundationPlan
+    ? applyMgLofiDenseMelodyComping(tracks, plan, timebase)
+    : tracks;
 
   // 先修复源段 lead 空拍、再复用 repeat body；此时尚未施加首段 opening gate，避免
   // “开场延迟/缺席”被当作 motif body 复制到后续 verse/chorus。replay 仍在 dynamics 之前。
-  const gapFilledTracks = isAcg || preserveArrangerLeadRests
+  const gapFilledTracks = isAcg || isScoreOwnedLofiLead || preserveArrangerLeadRests
     ? postMixTracks
     : fillLeadBarGaps(postMixTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
   const motifReplayedTracks = resolvedArchetype?.motifPolicyId === MOTIF_POLICY_REPEAT_GROUP
-    ? applyMotifBindingReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase)
+    ? isScoreOwnedLofiLead
+      ? transformScoreUnownedTracks(gapFilledTracks, (tracks) => applyMotifBindingReplay(tracks, arrangement, plan.chordTimeline, timebase))
+      : applyMotifBindingReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase)
     : gapFilledTracks;
   // ACG 的主旋律已按整曲 RoadMap + 当下和声一次实化；把旧 phrase NoteIR 复制到
   // 新和弦上会绕过 stable/scale contract，随后只能依赖末端修音。ACG 因此不再 replay
   // 成品 lead，重复感由上游 RoadMap / grammar 的同一结构而非 NoteIR 后拷贝承担。
   const replayedBaseTracks = isAcg
     ? motifReplayedTracks
-    : applyRepeatGroupReplay(motifReplayedTracks, arrangement, plan.chordTimeline, timebase);
+    : isScoreOwnedLofiLead
+      ? transformScoreUnownedTracks(motifReplayedTracks, (tracks) => applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase))
+      : applyRepeatGroupReplay(motifReplayedTracks, arrangement, plan.chordTimeline, timebase);
   const replayedTracks = replayedBaseTracks;
 
   // ★ A2 编曲密度弧:activeRolesBySection 是所有角色(含 lead)的真实在场真源，
@@ -1008,7 +1095,7 @@ export function renderSongFull(
     openingGesture: arrangement.openingGesture,
     forceImmediateOpeningRoles: isAcg ? new Set<TrackIR['role']>(['bass']) : undefined,
     preserveLeadTiming: !!overrideLeadTrack,
-    preserveLeadPresence: !!acgLeadPresencePlan,
+    preserveLeadPresence: !!acgLeadPresencePlan || isScoreOwnedLofiLead,
     patternOwnedRoleSections: timedRoleSections,
   }));
   const grooveProjectedTracks = transformScoreUnownedTracks(
@@ -1028,10 +1115,6 @@ export function renderSongFull(
   );
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
-  const reserved = {
-    lowMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi,
-    highMidi: instrumentation.melodyReservationPlan.reservedRegister.highMidi,
-  };
   // Accompaniment collision/ducking sees the authored motif as occupancy, but
   // the user notes themselves stay outside every generic lead transform.
   const interactionContextTracks = authoredUserMotifPlan
@@ -1061,7 +1144,7 @@ export function renderSongFull(
   const contextResolved = resolveInteractions(draft, occupation, {
     protectedCompFoundationKeys,
     forbidLeadCompUnison,
-    thinCompMelodyClashes: !isAcg,
+    thinCompMelodyClashes: !isAcg && !arrangement.lofiFoundationPlan,
   });
   const resolved = authoredUserMotifPlan
     ? {
@@ -1140,8 +1223,13 @@ export function renderSongFull(
   const humanRng = rng.substream('humanize');
   const velocityHumanizeByBar = new Map<number, number>();
   for (const sectionScore of Object.values(arrangement.grooveScorePlan.bySection)) {
-    const amount = arrangement.grooveContractBySection[sectionScore.sectionId]?.velocityHumanize
+    const rawAmount = arrangement.grooveContractBySection[sectionScore.sectionId]?.velocityHumanize
       ?? arrangement.songGrooveContract.velocityHumanize;
+    // In LOFI, the phrase score is the audible dynamic backbone. Per-note
+    // variation remains a quiet residual and cannot rival the 4-bar arc.
+    const amount = band.style.toLowerCase() === 'lofi'
+      ? Math.min(rawAmount, 0.035)
+      : rawAmount;
     for (const bar of sectionScore.bars) velocityHumanizeByBar.set(bar.absoluteBar, amount);
   }
   const velocityHumanizeForTick = (tick: number): number =>
@@ -1155,6 +1243,19 @@ export function renderSongFull(
       if (isScoreOwnedAcgPianoRole(track.role)) return track;
       return humanizeVelocity([track], timebase.ppq, bpbHuman, humanRng, arrangement.songGrooveContract.beatGrouping, velocityHumanizeForTick)[0]!;
     })
+    : isScoreOwnedLofiLead
+      ? (() => {
+        const unowned = humanizeVelocity(
+          grooveTracks.filter((track) => track.role !== 'lead'),
+          timebase.ppq,
+          bpbHuman,
+          humanRng,
+          arrangement.songGrooveContract.beatGrouping,
+          velocityHumanizeForTick,
+        );
+        let index = 0;
+        return grooveTracks.map((track) => track.role === 'lead' ? track : unowned[index++]!);
+      })()
     : timedRoleNames.size === 0
       ? humanizeVelocity(grooveTracks, timebase.ppq, bpbHuman, humanRng, arrangement.songGrooveContract.beatGrouping, velocityHumanizeForTick)
       : grooveTracks.map((track) => timedRoleNames.has(track.role)
@@ -1210,6 +1311,8 @@ export function renderSongFull(
   // hands after the score has already coordinated them.
   const timingSkip = isAcg
     ? new Set<string>([...pocketSkip, ...scoreOwnedAcgPianoRoles, ...timedRoleNames, 'drum'])
+    : isScoreOwnedLofiLead
+      ? new Set<string>([...pocketSkip, ...timedRoleNames, 'drum', 'lead'])
     : new Set<string>([...pocketSkip, ...timedRoleNames, 'drum']);
   const humanizedRaw = humanizeTiming(harmonySafeTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, timingSkip, arrangement.songGrooveContract.beatGrouping);
   // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带
@@ -1218,6 +1321,8 @@ export function renderSongFull(
   // 交给末端 pocket 平移，避免跨进相邻和弦后再靠 resolver 修音。
   const pocketExclude = isAcg
     ? new Set<string>(acgPianoRoles)
+    : isScoreOwnedLofiLead
+      ? new Set<string>(['lead'])
     : overrideLeadTrack ? new Set(['lead']) : undefined;
   const humanizedTracks = applyGroovePocketBySection(
     humanizedRaw,
@@ -1237,9 +1342,25 @@ export function renderSongFull(
   //   sanitize 只裁【同 pitch】collision(不同 pitch overlap / legato 连奏保留),不改 pitch/start/数量(同 tick 同 pitch
   //   duplicate 合并除外)。对【所有 lead 轨】生效,不分来源(MG lead / 走 A override lead / 未来注入 lead)。
   const SANITIZE_OPTS = { gapTicks: 1, minDurTicks: 1 };
-  const sanitizeLead = (tracks: TrackIR[]): TrackIR[] => tracks.map((t) => (t.role === 'lead' ? { ...t, notes: sanitizeLeadNoteIR(t.notes, SANITIZE_OPTS) } : t));
+  const leadNoteSignature = (notes: readonly NoteIR[]): string[] => notes
+    .map((note) => `${note.pitch as number}:${note.startTick as number}:${note.durationTicks as number}:${note.velocity}`)
+    .sort();
+  const sanitizeLead = (tracks: TrackIR[]): TrackIR[] => tracks.map((t) => {
+    if (t.role !== 'lead') return t;
+    const sanitized = sanitizeLeadNoteIR(t.notes, SANITIZE_OPTS);
+    // A score-owned LOFI lead is already token-time monophonic. Sanitizing it
+    // must be a pure identity check: silently shortening a carrier here would
+    // recreate the very renderer-side repair the score architecture removes.
+    if (isScoreOwnedLofiLead) {
+      if (leadNoteSignature(sanitized).join('|') !== leadNoteSignature(t.notes).join('|')) {
+        throw new Error('LofiLeadScorePlan emitted colliding NoteIR; refusing a late sanitizer rewrite');
+      }
+      return t;
+    }
+    return { ...t, notes: sanitized };
+  });
   const preSanitized = sanitizeLead(humanizedTracks);
-  const legatoOpts = isAcg
+  const legatoOpts = isAcg || isScoreOwnedLofiLead
     ? { ...fastLeadLegatoOptionsForStyle(band.style, timebase.ppq), enabled: false }
     : fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
   const legatoTracks = legatoOpts.enabled
@@ -1272,7 +1393,7 @@ export function renderSongFull(
     : plannedTracks;
   // ACG lead 的时值和起音由 RoadMap → scheduler → realizer 独占。即使未来 legato
   // 配置被调整，也不能在这里把短趋近/稳定到达拖进下一和弦；只保留无创的同音碰撞安全闸。
-  const balancedTracksLegato = isAcg
+  const balancedTracksLegato = isAcg || isScoreOwnedLofiLead
     ? balancedTracksPreSanitize
     : balancedTracksPreSanitize.map((t) => (
         t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
@@ -1287,17 +1408,26 @@ export function renderSongFull(
     sectionTicks.push({ id: s.id, tick: timebase.beatToTick(beats(secBeatCursor)) as number });
     secBeatCursor += s.bars * bpbProg;
   }
+  const acgSharedPianoPedalCapable = (['bass', 'comp', 'lead'] as const).every((pianoRole) => {
+    const pedal = instrumentation.pedalPlanByRole?.[pianoRole];
+    return pedal?.playerGroup === 'shared-piano'
+      && pedal.timingOwner === 'arranger-piano-score'
+      && arrangement.sections.every((section) => pedal.authorizedSectionIds?.includes(section.id))
+      && Object.keys(pedal.disabledBySection).length === 0;
+  });
   const pedalEventsForRole = (role: TrackIR['role']): { atTick: Ticks; down: boolean }[] | undefined => {
     const plannedEvents = instrumentation.pedalPlanByRole?.[role]?.events ?? [];
+    // ACG's Instrumentation plan is only the verified hardware-capability
+    // gate. Musical timing comes from the pre-NoteIR three-hand score.
+    if (isAcgPianoRole(role)) {
+      if (!acgSharedPianoPedalCapable || !generatedAcgPianoPedalScore) return undefined;
+      return generatedAcgPianoPedalScore.events.map((event) => ({
+        atTick: ticks(timebase.beatToTick(beats(event.atBeat)) as number),
+        down: event.down,
+      }));
+    }
     if (plannedEvents.length === 0) return undefined;
-    // The ACG arranger may extend a written air sentence over several harmony
-    // spans.  This is still only a projection of the score: `plannedEvents`
-    // remains the pedal-capability contract, so unsupported/fast/inactive
-    // voices cannot receive a newly invented CC64 lane.
-    const scoreProjectedEvents = isAcgPianoRole(role)
-      ? applyAcgScorePedalHolds(plannedEvents, acgPianoScorePlan?.sharedPedalHolds)
-      : plannedEvents;
-    return scoreProjectedEvents.map((event) => ({
+    return plannedEvents.map((event) => ({
       atTick: ticks(timebase.beatToTick(beats(event.atBeat)) as number),
       down: event.down,
     }));
@@ -1358,7 +1488,7 @@ export function renderSongFull(
       }
       return current;
     };
-    const rangeFittedNotes = t.role === 'drum'
+    const rangeFittedNotes = t.role === 'drum' || (isScoreOwnedLofiLead && t.role === 'lead')
       ? t.notes
       : t.notes.map((note) => {
           const program = programForSection(sectionIdForTick(note.startTick as number));
@@ -1384,7 +1514,8 @@ export function renderSongFull(
     // authored gesture. Generic instrument gates (Jazz Comp = 0.72, keyboard
     // Bass = 0.96) would otherwise silently rewrite the MIDI-derived cell
     // after every phase test had already passed.
-    const gesture = t.role === 'drum' || isAcgPianoRole(t.role) || timedRoleNames.has(t.role)
+    const gesture = t.role === 'drum' || isAcgPianoRole(t.role)
+      || (isScoreOwnedLofiLead && t.role === 'lead') || timedRoleNames.has(t.role)
       ? { notes: notesForGesture }
       : applyGestureExpressionToTrack(gestureTrack, instrumentation.gestureExpressionByRole?.[t.role], timebase);
     // CC72/74 等 Sound Controller 未经板端标定仍不可写。这里仅合并器配层已按
@@ -1420,7 +1551,7 @@ export function renderSongFull(
     if (track.role !== 'lead') return track;
     // ACG 的 harmonic arrival 已在主链锁定；这里只保留 collision sanitizer，
     // 不让末端 resolver 再改写已计划的 targetPc / approach。
-    const resolvedNotes = isAcg ? track.notes : leadAvoidExposureResolver(
+    const resolvedNotes = isAcg || isScoreOwnedLofiLead ? track.notes : leadAvoidExposureResolver(
       track.notes,
       plan,
       timebase,

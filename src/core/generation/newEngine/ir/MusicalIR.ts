@@ -33,7 +33,7 @@ export interface TrackIR {
   program?: number; // GM 乐器号(初始/tick0;BandEngine 选);irToMidi 读它发声,缺省走角色默认音色
   bank?: number;    // 可选 GM128 variation bank(Dream GMBK5X128 用 CC0;鼓轨忽略 bank)
   programChanges?: { atTick: Ticks; program: number; bank?: number }[]; // ★ 段落音色切换(同 channel,中途 CC0/programChange)
-  pedalEvents?: { atTick: Ticks; down: boolean }[];      // ★ CC64 延音踏板(comp 每和弦踩,音尾 ring)
+  pedalEvents?: { atTick: Ticks; down: boolean }[];      // ★ CC64 锁存状态变化；不是逐音重复控制器
   mix?: TrackMix;                                          // ★ tick0 混音(随生效 program 定)
   mixChanges?: { atTick: Ticks; mix: TrackMix }[];         // ★ 段落程序切换处的混音刷新(与 programChanges 同 tick)
   ccEvents?: { atTick: Ticks; controller: number; value: number }[]; // ★ 器配/手势 CC 自动化(当前硬件演奏只投影原声钢琴 CC11)

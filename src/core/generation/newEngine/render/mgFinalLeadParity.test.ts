@@ -21,7 +21,7 @@ const SAN = { gapTicks: 1, minDurTicks: 1 };
 
 // ============================================================
 // Loop 3/4(Option A strict parity)+ repeatGroup 重放(2026-06-11):
-//   final lead === renderMgMelody 原始 lead 【经 repeatGroup 重放后】(事件级一致)。
+//   final lead === renderMgMelody 的 Arranger-scored lead【经 repeatGroup 重放后】(事件级一致)。
 //   契约:每个 repeatGroup 【首次出现】== raw MG;【重复出现】== 首次出现的重放(body 复用,链接尾巴各自)。
 //   lead pitch/onset/duration 仍保持 MG+replay 契约；velocity 在 replay 后按目标段 lead-in 重新投影。
 // ============================================================
@@ -159,6 +159,13 @@ function renderExpectedRawLead(
     undefined,
     arrangement.grooveContractBySection,
     instrumentation.strictRegisterByRole?.lead,
+    undefined,
+    undefined,
+    arrangement.tempoBpm,
+    arrangement.lofiLeadPresencePlan?.silenceWindows,
+    arrangement.lofiLeadPresencePlan?.entryBeats,
+    undefined,
+    arrangement.lofiPhraseInteractionPlan,
   );
 }
 
@@ -168,14 +175,16 @@ function applyExpectedReplayPolicy(
   plan: ReturnType<typeof buildHarmonicPlanFromArrangement>,
   tb: ReturnType<typeof createTimebase>,
 ) {
-  const gapFilled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arrangement.meter));
+  const gapFilled = arrangement.lofiLeadPresencePlan
+    ? [raw]
+    : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arrangement.meter));
   const motifReplayed = arrangement.resolvedArchetype?.motifPolicyId === MOTIF_POLICY_REPEAT_GROUP
     ? applyMotifBindingReplay(gapFilled, arrangement, plan.chordTimeline, tb)
     : gapFilled;
   return applyRepeatGroupReplay(motifReplayed, arrangement, plan.chordTimeline, tb)[0];
 }
 
-describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () => {
+describe('render/mgFinalLeadParity · final lead === replay(Arranger-scored MG lead)', () => {
   // ★ ACG 已【退出】本 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形(tuck 落点
   //   重定位/瘦身 + 音域上浮 + normalize),已【不】== raw MG lead → 改由 mgBassCompLeadFidelity.test 的音乐不变量锁。
   //   本 parity 只锁 MG-grammar-backed 且不做 ACG 专属塑形的风格(pop/jazz/lofi/rnb)。

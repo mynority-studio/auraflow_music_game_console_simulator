@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { beatsPerBarOf, quantizeTakeoverBeat } from './rhythmQuantizer';
 
 describe('leadTakeoverSandbox/rhythmQuantizer', () => {
-  it('quantizes 4/4 input to the next 16th grid when requested', () => {
+  it('uses the nearest 16th and plays immediately when that grid is behind the live input', () => {
     const q = quantizeTakeoverBeat({
       beat: 1.01,
       bpm: 120,
@@ -11,8 +11,9 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
       grid: '16th',
     });
 
-    expect(q.targetBeat).toBeCloseTo(1.25);
-    expect(q.delayMs).toBeCloseTo(120);
+    expect(q.baseTargetBeat).toBeCloseTo(1);
+    expect(q.targetBeat).toBeCloseTo(1.01);
+    expect(q.delayMs).toBe(0);
     expect(q.gridStepBeats).toBe(0.25);
   });
 
@@ -42,7 +43,7 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.delayMs).toBeCloseTo(5);
   });
 
-  it('supports 32nd-note quantization', () => {
+  it('supports nearest-point 32nd-note quantization', () => {
     const q = quantizeTakeoverBeat({
       beat: 1.01,
       bpm: 120,
@@ -50,8 +51,9 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
       grid: '32nd',
     });
 
-    expect(q.targetBeat).toBeCloseTo(1.125);
-    expect(q.delayMs).toBeCloseTo(57.5);
+    expect(q.baseTargetBeat).toBeCloseTo(1);
+    expect(q.targetBeat).toBeCloseTo(1.01);
+    expect(q.delayMs).toBe(0);
   });
 
   it('uses the provided time signature instead of hard-coded 4-beat bars', () => {
@@ -77,13 +79,12 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q68.targetBeat).toBeCloseTo(3);
   });
 
-  it('can bypass tiny late hits when a grace window is configured', () => {
+  it('attaches a slightly late hit to the nearest previous grid without latency', () => {
     const q = quantizeTakeoverBeat({
       beat: 1.01,
       bpm: 120,
       timeSignature: [4, 4],
       grid: '16th',
-      lateGraceMs: 10,
     });
 
     expect(q.targetBeat).toBeCloseTo(1.01);
@@ -91,14 +92,12 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.delayMs).toBe(0);
   });
 
-  it('catches slightly late strong beats with a larger groove window', () => {
+  it('keeps a near-beat live hit immediate', () => {
     const q = quantizeTakeoverBeat({
       beat: 1.12,
       bpm: 100,
       timeSignature: [4, 4],
       grid: '16th',
-      lateGraceMs: 24,
-      strongBeatLateGraceMs: 86,
     });
 
     expect(q.baseTargetBeat).toBeCloseTo(1);
@@ -106,19 +105,17 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.delayMs).toBe(0);
   });
 
-  it('does not give the larger strong-beat window to weak 16th grids', () => {
+  it('chooses the nearest weak 16th instead of always waiting for the next one', () => {
     const q = quantizeTakeoverBeat({
       beat: 1.37,
       bpm: 100,
       timeSignature: [4, 4],
       grid: '16th',
-      lateGraceMs: 24,
-      strongBeatLateGraceMs: 86,
     });
 
-    expect(q.baseTargetBeat).toBeCloseTo(1.5);
-    expect(q.targetBeat).toBeCloseTo(1.5);
-    expect(q.delayMs).toBeCloseTo(78);
+    expect(q.baseTargetBeat).toBeCloseTo(1.25);
+    expect(q.targetBeat).toBeCloseTo(1.37);
+    expect(q.delayMs).toBe(0);
   });
 
   it('uses the current groove pocket when catching a strong beat', () => {
@@ -127,8 +124,6 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
       bpm: 100,
       timeSignature: [4, 4],
       grid: '16th',
-      lateGraceMs: 24,
-      strongBeatLateGraceMs: 86,
       grooveContract: {
         id: 'pocketed_downbeat',
         melodySwingRatio: 0.5,
@@ -146,7 +141,7 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
 
   it('applies melody swing from the current groove contract on eighth offbeats', () => {
     const q = quantizeTakeoverBeat({
-      beat: 1.49,
+      beat: 1.6,
       bpm: 120,
       timeSignature: [4, 4],
       grid: '16th',
@@ -161,12 +156,13 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.baseTargetBeat).toBeCloseTo(1.5);
     expect(q.targetBeat).toBeCloseTo(1.67);
     expect(q.grooveOffsetMs).toBeCloseTo(85);
+    expect(q.delayMs).toBeCloseTo(35);
     expect(q.grooveContractId).toBe('jazz_medium_swing');
   });
 
   it('applies weak melody pocket to non-onbeat 16th targets', () => {
     const q = quantizeTakeoverBeat({
-      beat: 1.01,
+      beat: 1.14,
       bpm: 100,
       timeSignature: [4, 4],
       grid: '16th',
@@ -181,7 +177,7 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.baseTargetBeat).toBeCloseTo(1.25);
     expect(q.targetBeat).toBeCloseTo(1.27);
     expect(q.grooveOffsetMs).toBeCloseTo(12);
-    expect(q.delayMs).toBeCloseTo(156);
+    expect(q.delayMs).toBeCloseTo(78);
   });
 
   it('clamps negative groove pocket to avoid scheduling live notes in the past', () => {
@@ -201,5 +197,33 @@ describe('leadTakeoverSandbox/rhythmQuantizer', () => {
     expect(q.baseTargetBeat).toBeCloseTo(1.5);
     expect(q.targetBeat).toBeCloseTo(q.sourceBeat);
     expect(q.delayMs).toBe(0);
+  });
+
+  it('caps a far future snap instead of making a live note wait', () => {
+    const q = quantizeTakeoverBeat({
+      beat: 1.14,
+      bpm: 72,
+      timeSignature: [4, 4],
+      grid: '16th',
+      maxDelayMs: 60,
+    });
+
+    expect(q.baseTargetBeat).toBeCloseTo(1.25);
+    expect(q.targetBeat).toBeCloseTo(q.sourceBeat);
+    expect(q.delayMs).toBe(0);
+  });
+
+  it('keeps a sequential target distinct while bounding the extra wait', () => {
+    const q = quantizeTakeoverBeat({
+      beat: 1.19,
+      bpm: 100,
+      timeSignature: [4, 4],
+      grid: '32nd',
+      afterTargetBeat: 1.25,
+      maxDelayMs: 60,
+    });
+
+    expect(q.targetBeat).toBeGreaterThan(1.25);
+    expect(q.delayMs).toBeLessThanOrEqual(60);
   });
 });

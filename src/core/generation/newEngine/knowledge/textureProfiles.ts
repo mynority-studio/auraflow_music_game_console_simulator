@@ -74,13 +74,13 @@ export interface TextureProfile {
 
 // modern(POP/RNB/JAZZ)显式 profile。
 const _MODERN_TEXTURE_PROFILES: TextureProfile[] = [
-  { id: 'lyrical_felt_sparse', textureCase: 'Lyrical_Felt_Piano_Sparse', styles: ['POP', 'RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop'], densityRange: [0.15, 0.45], energyRange: [0.15, 0.50], maxRepeatBars: 8 },
-  { id: 'lyrical_10th_broken', textureCase: 'Lyrical_10th_Broken', styles: ['POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift'], densityRange: [0.35, 0.70], energyRange: [0.35, 0.75], maxRepeatBars: 8 },
-  { id: 'ambient_pad_breath', textureCase: 'Ambient_Pad_Breath', styles: ['POP', 'RNB', 'JAZZ'], mood: 'ambient', phraseRoles: ['establish'], densityRange: [0.10, 0.35], energyRange: [0.10, 0.45], avoidOnDominantChain: true, maxRepeatBars: 4 },
-  { id: 'ambient_reverse_swell', textureCase: 'Ambient_Reverse_Swell', styles: ['POP', 'RNB'], mood: 'ambient', phraseRoles: ['lift', 'cadence'], densityRange: [0.25, 0.55], energyRange: [0.40, 0.75], preferOnCadence: true, maxRepeatBars: 2 },
-  { id: 'soft_guitar_pluck', textureCase: 'Soft_Guitar_Pluck_8ths', styles: ['POP', 'RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop'], densityRange: [0.25, 0.55], energyRange: [0.25, 0.60], maxRepeatBars: 8 },
-  { id: 'piano_question_answer', textureCase: 'Piano_Question_Answer', styles: ['POP', 'RNB', 'JAZZ'], mood: 'lyrical', phraseRoles: ['develop', 'cadence'], densityRange: [0.15, 0.50], energyRange: [0.25, 0.65], maxRepeatBars: 4 },
-  { id: 'low_pedal_wash', textureCase: 'Low_Pedal_Color_Wash', styles: ['POP', 'RNB'], mood: 'ambient', phraseRoles: ['establish', 'lift'], densityRange: [0.10, 0.40], energyRange: [0.10, 0.55], avoidOnDominantChain: true, maxRepeatBars: 4 },
+  { id: 'lyrical_felt_sparse', textureCase: 'Lyrical_Felt_Piano_Sparse', styles: ['POP', 'RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop'], densityRange: [0.15, 0.45], energyRange: [0.15, 0.50], maxRepeatBars: 8, subStyles: ['Pop Ballad Piano Intro', 'Mandopop Verse Piano'] },
+  { id: 'lyrical_10th_broken', textureCase: 'Lyrical_10th_Broken', styles: ['POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift'], densityRange: [0.35, 0.70], energyRange: [0.35, 0.75], maxRepeatBars: 8, subStyles: ['Pop Ballad Broken 10th', 'JPOP Piano Build'] },
+  { id: 'ambient_pad_breath', textureCase: 'Ambient_Pad_Breath', styles: ['POP', 'RNB', 'JAZZ'], mood: 'ambient', phraseRoles: ['establish'], densityRange: [0.10, 0.35], energyRange: [0.10, 0.45], avoidOnDominantChain: true, maxRepeatBars: 4, subStyles: ['Pop Ballad Air Pad', 'String Pad Chorus Bed'] },
+  { id: 'ambient_reverse_swell', textureCase: 'Ambient_Reverse_Swell', styles: ['POP', 'RNB'], mood: 'ambient', phraseRoles: ['lift', 'cadence'], densityRange: [0.25, 0.55], energyRange: [0.40, 0.75], preferOnCadence: true, maxRepeatBars: 2, subStyles: ['Pop Ballad Reverse Swell', 'Chorus Lift Sweep'] },
+  { id: 'soft_guitar_pluck', textureCase: 'Soft_Guitar_Pluck_8ths', styles: ['POP', 'RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop'], densityRange: [0.25, 0.55], energyRange: [0.25, 0.60], maxRepeatBars: 8, subStyles: ['Acoustic Scratch Pad', 'Lounge Pop Guitar'] },
+  { id: 'piano_question_answer', textureCase: 'Piano_Question_Answer', styles: ['POP', 'RNB', 'JAZZ'], mood: 'lyrical', phraseRoles: ['develop', 'cadence'], densityRange: [0.15, 0.50], energyRange: [0.25, 0.65], maxRepeatBars: 4, subStyles: ['Bell Piano Answer', 'Pop Ballad Counterline'] },
+  { id: 'low_pedal_wash', textureCase: 'Low_Pedal_Color_Wash', styles: ['POP', 'RNB'], mood: 'ambient', phraseRoles: ['establish', 'lift'], densityRange: [0.10, 0.40], energyRange: [0.10, 0.55], avoidOnDominantChain: true, maxRepeatBars: 4, subStyles: ['Low String Pedal Wash', 'Ballad Outro Color'] },
   { id: 'halftime_emotional_pulse', textureCase: 'HalfTime_Emotional_Pulse', styles: ['POP', 'RNB'], mood: 'drive', phraseRoles: ['lift', 'cadence'], densityRange: [0.45, 0.80], energyRange: [0.55, 0.90], maxRepeatBars: 8 },
 ];
 

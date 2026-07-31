@@ -19,6 +19,8 @@
 // 纯函数、确定性(只读 style × section × density × 在场标志);不动 IR 契约。
 // ============================================================
 
+import type { LofiPadFamily } from '../knowledge/lofiFoundationArchetypes';
+
 export type PadMode =
   | 'silent'
   | 'drone'
@@ -48,6 +50,8 @@ export interface PadCompContext {
   leadReservedLow: number; // melodyReservationPlan.reservedRegister.lowMidi
   leadReservedHigh: number;
   compTextureCase?: string;
+  /** LOFI only: Pad family was already selected by the song FoundationPlan. */
+  lofiPadFamily?: LofiPadFamily;
 }
 
 export interface PadCompDecision {
@@ -84,6 +88,53 @@ export function decidePadComp(ctx: PadCompContext): PadCompDecision {
     return silent('comp-only', omitRoot);
   }
 
+  if (style === 'lofi' && ctx.lofiPadFamily) {
+    if (ctx.lofiPadFamily === 'none') return silent('comp-only', omitRoot);
+    if (!ctx.compActive) {
+      return {
+        padMode: 'full-support',
+        interactionMode: 'pad-only',
+        padMaxVoices: 3,
+        compAllowPedal: true,
+        padOmitRoot: omitRoot,
+        padOmitFifth: false,
+        avoidExactPitchOverlap: false,
+      };
+    }
+    const base = {
+      compMaxVoices: 3,
+      compDurationScale: 1,
+      compAllowPedal: true,
+      avoidExactPitchOverlap: true,
+      padOmitRoot: omitRoot,
+    } as const;
+    if (ctx.lofiPadFamily === 'common-tone') {
+      return {
+        ...base,
+        padMode: 'drone',
+        interactionMode: 'pad-under-comp',
+        padMaxVoices: 1,
+        padOmitFifth: false,
+      };
+    }
+    if (ctx.lofiPadFamily === 'guide-bed') {
+      return {
+        ...base,
+        padMode: 'guide-tone',
+        interactionMode: 'pad-under-comp',
+        padMaxVoices: 2,
+        padOmitFifth: true,
+      };
+    }
+    return {
+      ...base,
+      padMode: 'chord-bed',
+      interactionMode: 'pad-under-comp',
+      padMaxVoices: 2,
+      padOmitFifth: true,
+    };
+  }
+
   // —— comp 不在场(intro / breakdown / outro / floating)→ pad-only,pad 承担和声 ——
   if (!ctx.compActive) {
     if (ctx.padDensity < PAD_ONLY_DRONE_DENSITY) {
@@ -104,7 +155,7 @@ export function decidePadComp(ctx: PadCompContext): PadCompDecision {
   if (style === 'jazz' || style === 'blues') {
     return silent('comp-only', omitRoot);
   }
-  // LOFI:暗 verse → cluster-mist(高区轻二度簇,ambient 雾感);其余 → warm drone(单共同音,最安全)。
+  // Legacy LOFI fixtures without a FoundationPlan retain the old fallback.
   if (style === 'lofi') {
     if (ctx.sectionRole === 'verse') {
       return { ...base, padMode: 'cluster-mist', interactionMode: 'pad-under-comp', padMaxVoices: 2, padOmitFifth: true };

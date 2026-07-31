@@ -205,7 +205,7 @@ describe('render/mgAcgReturnMainChain · one-pass ACG PIANOSONG return bricks', 
       const previousEnd = audible[index - 1].startBeat + audible[index - 1].token.duration;
       maxGap = Math.max(maxGap, audible[index].startBeat - previousEnd);
     }
-    expect(maxGap).toBeLessThanOrEqual(6.25);
+    expect(maxGap).toBeLessThanOrEqual(4.25);
   });
 
   it('does not leave a cycle-stretched generic A as a long hanging chromatic note', () => {

@@ -92,10 +92,28 @@ const STYLE_CANDIDATES: Record<string, readonly OpeningGestureCandidate[]> = {
   ],
 };
 
+const POP_BALLAD_OPENING: OpeningGestureCandidate = {
+  mode: 'textureFadeIn',
+  drumEntry: 'backbeatDelayed',
+  textureEntry: 'pianoRiff',
+  roleDelayBars: { comp: 0, pad: 1, bass: 2, drum: 2, lead: 3 },
+  pickupBars: 0,
+  intensity: 'soft',
+  weight: 3,
+};
+
 function styleKey(style: string): string {
   return Object.prototype.hasOwnProperty.call(STYLE_CANDIDATES, style.toLowerCase())
     ? style.toLowerCase()
     : 'default';
+}
+
+function isLyricalMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s) || /(硬|炸|燃|舞曲|跳舞|高速)/.test(s)) return false;
+  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s)
+    || /(抒情|慢歌|慢板|温柔|柔和|悲伤|伤感|情绪|浪漫|安静|平静|柔)/.test(s);
 }
 
 function weightedPick(candidates: readonly OpeningGestureCandidate[], rng?: Rng): OpeningGestureCandidate {
@@ -147,10 +165,13 @@ export function planOpeningGesture(
   sections: readonly Section[],
   band: BandSpec,
   rng?: Rng,
+  mood?: string,
 ): OpeningGesturePlan {
   const first = sections[0];
   const style = styleKey(band.style);
-  const candidate = weightedPick(STYLE_CANDIDATES[style] ?? STYLE_CANDIDATES.default, rng);
+  const candidate = style === 'pop' && isLyricalMood(mood)
+    ? POP_BALLAD_OPENING
+    : weightedPick(STYLE_CANDIDATES[style] ?? STYLE_CANDIDATES.default, rng);
   const active = new Set<OpeningRole>(band.instrumentPool);
   const hasDedicatedOpeningSection = first?.role === 'intro' || first?.functionTag === 'setup';
 

@@ -184,12 +184,11 @@ describe('GMBK5X128Catalog', () => {
     expect(mapProgramToDream5504(4, 'bass')).toBe(38);
   });
 
-  it('curates four non-MT32 lyrical piano colors for ACG PIANOSONG and permits them as one-piano left hand', () => {
+  it('curates pedal-safe acoustic piano colors for automatic ACG PIANOSONG while retaining explicit electric-piano left hand', () => {
     expect(ACG_PIANOSONG_PIANO_VOICES).toEqual([
       expect.objectContaining({ bank: 0, program: 0, name: 'Acoustic Grand Piano', weight: 12 }),
-      expect.objectContaining({ bank: 0, program: 1, name: 'Bright Acoustic Piano', weight: 2 }),
-      expect.objectContaining({ bank: 0, program: 2, name: 'Electric Grand Piano', weight: 1 }),
-      expect.objectContaining({ bank: 8, program: 4, name: 'Soft Electric Piano', weight: 1 }),
+      expect.objectContaining({ bank: 0, program: 1, name: 'Bright Acoustic Piano', weight: 3 }),
+      expect.objectContaining({ bank: 0, program: 3, name: 'Honky-tonk Piano', weight: 1 }),
     ]);
     for (const voice of ACG_PIANOSONG_PIANO_VOICES) {
       expect(voice.bank).not.toBe(127);

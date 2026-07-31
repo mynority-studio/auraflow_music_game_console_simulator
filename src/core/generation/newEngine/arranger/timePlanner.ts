@@ -20,7 +20,7 @@ const STYLE_TIME: Record<string, TimeFeel> = {
   lofi: { tempoBpm: 78, tempoRange: 7, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
   // 无 archetype 的 JAZZ 回退 4/4；产品链会先选 archetype，再由 contract 覆盖 meter/tempo/feel。
   jazz: { tempoBpm: 132, tempoRange: 56, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'swing', swingRatio: 0.66 } },
-  pop: { tempoBpm: 118, tempoRange: 44, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
+  pop: { tempoBpm: 96, tempoRange: 16, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
   // ★ Loop B(2026-06-08):RNB 独立 TimeFeel(原落 default=100bpm)。laidback 不靠 global swing,
   //   而由 groove pattern(groovePlanner=laidback)+ texture pocket + velocity/timing micro-feel 表达。
   rnb: { tempoBpm: 96, tempoRange: 10, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
@@ -31,7 +31,14 @@ const STYLE_TIME: Record<string, TimeFeel> = {
 };
 
 const POP_LYRICAL_TIME: TimeFeel = {
-  tempoBpm: 82,
+  tempoBpm: 76,
+  tempoRange: 10,
+  meter: { numerator: 4, denominator: 4 },
+  feel: { kind: 'straight', swingRatio: 0.5 },
+};
+
+const POP_UPBEAT_TIME: TimeFeel = {
+  tempoBpm: 124,
   tempoRange: 18,
   meter: { numerator: 4, denominator: 4 },
   feel: { kind: 'straight', swingRatio: 0.5 },
@@ -40,8 +47,15 @@ const POP_LYRICAL_TIME: TimeFeel = {
 function isLyricalMood(mood?: string): boolean {
   if (!mood) return false;
   const s = mood.toLowerCase();
-  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s)) return false;
-  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s);
+  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s) || /(硬|炸|燃|舞曲|跳舞|高速)/.test(s)) return false;
+  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s)
+    || /(抒情|慢歌|慢板|温柔|柔和|悲伤|伤感|情绪|浪漫|安静|平静|柔)/.test(s);
+}
+
+function isUpbeatMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  return /\b(drive|hype|dance|edm|fast|upbeat|energetic)\b/.test(s) || /(快歌|快速|高速|燃|炸|舞曲|跳舞|元气)/.test(s);
 }
 
 export interface TimePlan {
@@ -63,7 +77,11 @@ function feelForContract(contract: GrooveContract, fallback: Feel): Feel {
 /** tempo/meter/feel。Jazz 产品链先选 archetype/contract，再由这里读取其明确时间身份。 */
 export function planTime(style: string, rng?: Rng, mood?: string, grooveContract?: GrooveContract): TimePlan {
   const styleKey = style.toLowerCase();
-  const base = styleKey === 'pop' && isLyricalMood(mood) ? POP_LYRICAL_TIME : (STYLE_TIME[styleKey] ?? STYLE_TIME.default);
+  const base = styleKey === 'pop' && isLyricalMood(mood)
+    ? POP_LYRICAL_TIME
+    : styleKey === 'pop' && isUpbeatMood(mood)
+      ? POP_UPBEAT_TIME
+      : (STYLE_TIME[styleKey] ?? STYLE_TIME.default);
   const t: TimeFeel = grooveContract
     ? {
       tempoBpm: grooveContract.tempoBpm ?? base.tempoBpm,

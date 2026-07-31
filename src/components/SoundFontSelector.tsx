@@ -16,8 +16,21 @@ import {
     type GM128CatalogItem,
 } from '../core/sound/GMBK5X128Catalog';
 import { parseSMF } from '../core/audio/smfParser';
+import { startMidiAnalysisSession } from '../core/analysis/midi';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { sendMidiPolyphonyAudition } from '../core/generation/midiOutSandbox/midiOut';
+import {
+    midiInputTransportLabel,
+    requestMidiInputDevices,
+    type MidiDeviceInfo,
+    type MidiSupport,
+} from '../core/generation/motifSandbox/midi/webMidi';
+import {
+    getTakeoverMidiInputPreference,
+    resolveTakeoverMidiInput,
+    setTakeoverMidiInputPreference,
+    subscribeTakeoverMidiInputPreference,
+} from '../state/TakeoverMidiInputStore';
 
 /* 曲终复位上传播放态（codex P3）：globalMidiScheduler.onTrackEnd 无 unsubscribe →
  * 模块级只注册一次 + 可变回调间接层（防 dev StrictMode 双挂载重复注册；组件卸载
@@ -130,10 +143,15 @@ export const SoundFontSelector: React.FC = () => {
     const [auditioning, setAuditioning] = useState<string | null>(null);
     const [instrumentKey, setInstrumentKey] = useState<string>(DEFAULT_INSTRUMENT_KEY);
     const [midiOutState, setMidiOutState] = useState(() => Dream5504MidiOutput.getState());
+    const [takeoverMidiPreference, setTakeoverMidiPreference] = useState(getTakeoverMidiInputPreference);
+    const [takeoverMidiDevices, setTakeoverMidiDevices] = useState<MidiDeviceInfo[]>([]);
+    const [takeoverMidiStatus, setTakeoverMidiStatus] = useState<MidiSupport | 'idle'>('idle');
+    const [takeoverMidiScanning, setTakeoverMidiScanning] = useState(false);
     const auditionTimers = useRef<number[]>([]);
     const instrumentKeyRef = useRef<string>(DEFAULT_INSTRUMENT_KEY);   // subscribe 闭包用（避免 stale state）
 
     useEffect(() => Dream5504MidiOutput.subscribe(() => setMidiOutState(Dream5504MidiOutput.getState())), []);
+    useEffect(() => subscribeTakeoverMidiInputPreference(setTakeoverMidiPreference), []);
     /* 上传 MIDI 播放：file input ref + 状态行；播放走 Dream 5504 MIDI 输出。 */
     const midiFileRef = useRef<HTMLInputElement>(null);
     const [midiUploadStatus, setMidiUploadStatus] = useState<string | null>(null);
@@ -144,8 +162,13 @@ export const SoundFontSelector: React.FC = () => {
         AudioEngine.stop();
         setMidiUploadPlaying(false);
         try {
-            const parsed = parseSMF(await file.arrayBuffer());
+            const buffer = await file.arrayBuffer();
+            // Analysis is read-only and independent of hardware playback readiness.
+            // Give the worker its own buffer so transfer cannot detach the playback parser input.
+            void startMidiAnalysisSession(buffer.slice(0), { name: file.name, size: file.size });
+            const parsed = parseSMF(buffer);
             if (parsed.noteCount === 0) { setMidiUploadStatus(`${file.name}：无音符事件`); return; }
+            setMidiUploadStatus(`正在连接输出并装载 ${file.name}…`);
             await AudioEngine.playUploadedMidi(parsed.events, parsed.bpm);
             setMidiUploadPlaying(true);
             const warn = parsed.warnings.length ? ` ⚠${parsed.warnings.join('；')}` : '';
@@ -334,6 +357,33 @@ export const SoundFontSelector: React.FC = () => {
         instrumentKeyRef.current = effectiveInstrumentKey;
     }, [effectiveInstrumentKey, instrumentKey]);
 
+    const refreshTakeoverMidiInputs = async (): Promise<void> => {
+        setTakeoverMidiScanning(true);
+        const result = await requestMidiInputDevices();
+        setTakeoverMidiStatus(result.status);
+        setTakeoverMidiDevices(result.devices);
+        const matched = resolveTakeoverMidiInput(result.devices, getTakeoverMidiInputPreference());
+        const stored = getTakeoverMidiInputPreference();
+        if (matched && stored && matched.id !== stored.id) setTakeoverMidiInputPreference(matched);
+        setTakeoverMidiScanning(false);
+    };
+    const resolvedTakeoverMidiInput = resolveTakeoverMidiInput(takeoverMidiDevices, takeoverMidiPreference);
+    const missingTakeoverMidiValue = takeoverMidiPreference && !resolvedTakeoverMidiInput
+        ? `missing:${takeoverMidiPreference.id}`
+        : '';
+    const takeoverMidiSelectValue = resolvedTakeoverMidiInput?.id ?? missingTakeoverMidiValue;
+    const takeoverMidiStatusLabel = takeoverMidiScanning
+        ? '扫描中'
+        : takeoverMidiStatus === 'unsupported'
+            ? '浏览器不支持'
+            : takeoverMidiStatus === 'denied'
+                ? '权限被拒'
+                : resolvedTakeoverMidiInput
+                    ? '已固定'
+                    : takeoverMidiPreference
+                        ? takeoverMidiStatus === 'ready' ? '设备离线' : '已保存'
+                        : takeoverMidiStatus === 'ready' && takeoverMidiDevices.length === 0 ? '未发现设备' : '未设置';
+
     return (
         <div
             className="fixed left-3 top-3 z-[60] w-[min(38rem,calc(100vw_-_1.5rem))] text-zinc-300"
@@ -417,6 +467,59 @@ export const SoundFontSelector: React.FC = () => {
                                text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
                 >
                     <Play size={12} fill="currentColor" />
+                </button>
+            </div>
+
+            <div
+                className="mt-1.5 flex items-center gap-2 rounded-xl border border-teal-900/60 bg-zinc-950/90 px-3 py-2
+                           shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
+            >
+                <label htmlFor="takeover-midi-input-select" className="shrink-0 text-[11px] font-semibold tracking-widest text-teal-300/80">
+                    接管输入
+                </label>
+                <select
+                    id="takeover-midi-input-select"
+                    value={takeoverMidiSelectValue}
+                    onChange={(event) => {
+                        const nextId = event.target.value;
+                        if (!nextId) {
+                            setTakeoverMidiInputPreference(null);
+                            return;
+                        }
+                        const device = takeoverMidiDevices.find((candidate) => candidate.id === nextId);
+                        if (device) setTakeoverMidiInputPreference(device);
+                    }}
+                    className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-teal-400"
+                    title="固定 Q+T 自由接管使用的 MIDI 输入设备；保存后重开面板会自动连接。"
+                >
+                    <option value="">未设置 · Q+T 内手动连接</option>
+                    {takeoverMidiPreference && !resolvedTakeoverMidiInput && (
+                        <option value={missingTakeoverMidiValue}>
+                            固定 · {takeoverMidiPreference.name}{takeoverMidiStatus === 'ready' ? '（当前离线）' : ''}
+                        </option>
+                    )}
+                    {takeoverMidiDevices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                            {midiInputTransportLabel(device) ? `${midiInputTransportLabel(device)} · ` : ''}{device.name}
+                        </option>
+                    ))}
+                </select>
+                <span className={`shrink-0 text-[10px] ${
+                    takeoverMidiStatus === 'denied' || takeoverMidiStatus === 'unsupported'
+                        ? 'text-rose-300'
+                        : resolvedTakeoverMidiInput ? 'text-teal-300' : 'text-zinc-500'
+                }`}>
+                    {takeoverMidiStatusLabel}
+                </span>
+                <button
+                    type="button"
+                    onClick={() => void refreshTakeoverMidiInputs()}
+                    disabled={takeoverMidiScanning}
+                    className="rounded bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400 transition hover:text-zinc-200 disabled:cursor-wait disabled:opacity-60"
+                    title="授权并扫描 MIDI 输入设备；不会中断正在运行的 Q+T 接管监听。"
+                >
+                    {takeoverMidiStatus === 'denied' ? '重试' : '扫描'}
                 </button>
             </div>
 

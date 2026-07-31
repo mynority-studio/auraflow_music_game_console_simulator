@@ -7,7 +7,7 @@
 // ============================================================
 
 import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
-import { DREAM5504_DEFAULT_MASTER_VOLUME, type Dream5504MasterPlan } from './masteringProfile';
+import { DREAM5504_DEFAULT_MASTER_VOLUME } from './masteringProfile';
 import {
   DEFAULT_CHANNELS,
   DREAM5504_RAW_DEFAULT_OUTPUT,
@@ -46,7 +46,6 @@ export interface Dream5504MidiState {
   roleOutputs: RoleMap<string | null>;
   channels: RoleMap<number>;
   eventCount: number;
-  generatedMasterVolume: number | null;
   lastEvent: string;
   silentReason: string | null;
 }
@@ -95,7 +94,6 @@ class Dream5504MidiOutputController {
     roleOutputs: emptyRoleMap<string | null>(null),
     channels: DEFAULT_CHANNELS,
     eventCount: 0,
-    generatedMasterVolume: null,
     lastEvent: '等待 Dream 5504 MIDI 输出',
     silentReason: '未连接 Dream 5504 EK：已静音',
   };
@@ -103,6 +101,8 @@ class Dream5504MidiOutputController {
   private handle: MidiOutputAccessHandle | null = null;
   private listeners = new Set<Listener>();
   private schedulerUnsubscribe: (() => void) | null = null;
+  private schedulerQueueClearUnsubscribe: (() => void) | null = null;
+  private outputCache = new Map<string, MIDIOutput>();
   private lastSilentMarkMs = 0;
   private lastUiUpdateMs = 0;
 
@@ -138,6 +138,7 @@ class Dream5504MidiOutputController {
   public async enableMidi(): Promise<void> {
     const result = await requestMidiOutputAccess((devices) => this.applyDeviceList(devices));
     this.handle = result.handle ?? null;
+    this.outputCache.clear();
     this.setState({ status: result.status });
     if (result.status === 'ready') {
       const devices = result.handle?.listOutputs() ?? [];
@@ -180,7 +181,7 @@ class Dream5504MidiOutputController {
   }
 
   public disableOutput(): void {
-    this.restoreGeneratedMasterDefault();
+    this.applyDefaultMasterVolume();
     this.panic();
     this.setState({ armed: false });
     this.markSilent('Dream 5504 MIDI 输出已关闭：已静音');
@@ -209,7 +210,10 @@ class Dream5504MidiOutputController {
   public panic(): void {
     const now = performance.now();
     for (const output of this.currentRoutedOutputs()) {
-      try { sendPanic(output, now); } catch { /* best effort */ }
+      try {
+        (output as MIDIOutput & { clear?: () => void }).clear?.();
+        sendPanic(output, now);
+      } catch { /* best effort */ }
     }
     this.setState({ lastEvent: 'panic sent' });
   }
@@ -229,36 +233,18 @@ class Dream5504MidiOutputController {
   }
 
   /**
-   * Generated songs may use the documented GM2 General Master Volume NRPN.
-   * This is intentionally separate from the manual setter: raw-default mode
-   * still blocks arbitrary output processing and only permits the one score
-   * master plan computed from the final MusicalIR.
+   * Establish the Firm5504 power-up General Master Volume unconditionally.
+   * Playback branches call this at their boundary because an uploaded SMF may
+   * have changed the board's NRPN state.
    */
-  public applyGeneratedMasterPlan(plan: Dream5504MasterPlan): boolean {
-    if (!this.requireReady('下发 Dream 5504 总谱 Master')) return false;
-    const volume = clamp7(plan.volume);
-    const now = performance.now();
-    for (const output of this.currentRoutedOutputs()) {
-      try { sendNrpn7(output, 1, 0x3707, volume, now); } catch { /* best effort */ }
-    }
-    this.setState({
-      generatedMasterVolume: volume,
-      lastEvent: `Dream 5504 总谱 Master ${volume} (${plan.reason})`,
-    });
-    return true;
-  }
-
-  /** Restore the board's documented full-scale default after a generated song. */
-  public restoreGeneratedMasterDefault(): void {
-    if (this.state.generatedMasterVolume === null) return;
+  public applyDefaultMasterVolume(): boolean {
+    if (!this.requireReady('恢复 Dream 5504 默认 Master')) return false;
     const now = performance.now();
     for (const output of this.currentRoutedOutputs()) {
       try { sendNrpn7(output, 1, 0x3707, DREAM5504_DEFAULT_MASTER_VOLUME, now); } catch { /* best effort */ }
     }
-    this.setState({
-      generatedMasterVolume: null,
-      lastEvent: `Dream 5504 Master restored ${DREAM5504_DEFAULT_MASTER_VOLUME}`,
-    });
+    this.setState({ lastEvent: `Dream 5504 Master default ${DREAM5504_DEFAULT_MASTER_VOLUME}` });
+    return true;
   }
 
   /** Firm5504-EK 官方 NRPN：关闭总 EQ，并把板载输出级固定在 0 dB。 */
@@ -283,7 +269,11 @@ class Dream5504MidiOutputController {
     return ok;
   }
 
-  public sendSchedulerChannelMessage(channel0: number, message: Omit<MidiOutMessage, 'channel'>): boolean {
+  public sendSchedulerChannelMessage(
+    channel0: number,
+    message: Omit<MidiOutMessage, 'channel'>,
+    timestampMs?: number,
+  ): boolean {
     if (!this.requireReady('实时演奏')) return false;
     const role = schedulerChannelToOutputRole(channel0);
     const output = this.outputForRole(role);
@@ -295,7 +285,7 @@ class Dream5504MidiOutputController {
     const routedMessage = { ...message, channel } as MidiOutMessage;
     if (!isDream5504RawDefaultMessageAllowed(routedMessage, role)) return true;
     try {
-      sendMidiMessage(output, routedMessage);
+      sendMidiMessage(output, routedMessage, timestampMs);
       this.incrementEvent(`${role} · ch ${channel} · ${message.type}`);
       return true;
     } catch {
@@ -328,11 +318,19 @@ class Dream5504MidiOutputController {
   }
 
   private attachSchedulerBridge(): void {
-    if (this.schedulerUnsubscribe) return;
-    this.schedulerUnsubscribe = globalMidiScheduler.addMidiEventListener((event) => this.routeSchedulerEvent(event));
+    if (!this.schedulerUnsubscribe) {
+      this.schedulerUnsubscribe = globalMidiScheduler.addMidiEventListener(
+        (event, timestampMs) => this.routeSchedulerEvent(event, timestampMs),
+      );
+    }
+    if (!this.schedulerQueueClearUnsubscribe) {
+      this.schedulerQueueClearUnsubscribe = globalMidiScheduler.addMidiQueueClearListener(
+        () => this.clearScheduledMessages(),
+      );
+    }
   }
 
-  private routeSchedulerEvent(event: MidiEvent): void {
+  private routeSchedulerEvent(event: MidiEvent, timestampMs?: number): void {
     if (!this.state.armed) {
       this.markSilent('播放需要 Dream 5504 EK MIDI 输出：未连接，已静音');
       return;
@@ -345,8 +343,12 @@ class Dream5504MidiOutputController {
       return;
     }
     try {
-      if (!isDream5504RawDefaultMessageAllowed(routed.message, routed.role)) return;
-      sendMidiMessage(output, routed.message);
+      // Uploaded SMF events carry an explicit hardware-channel claim and own
+      // their file-authored CC/pitch-bend stream. Generated/live events do not,
+      // so they remain behind the strict Firm5504 default-output contract.
+      const isUploadedMidiBus = event.outputChannel !== undefined;
+      if (!isUploadedMidiBus && !isDream5504RawDefaultMessageAllowed(routed.message, routed.role, event.outputPolicy)) return;
+      sendMidiMessage(output, routed.message, timestampMs);
       this.incrementEvent(`${routed.role} · ch ${routed.message.channel} · ${routed.message.type}`);
     } catch {
       this.markSilent(`${routed.role} MIDI 发送失败：已静音`);
@@ -376,7 +378,22 @@ class Dream5504MidiOutputController {
 
   private outputForRole(role: MidiOutRole): MIDIOutput | null {
     const id = this.state.mode === 'single-port' ? this.state.singleOutputId : this.state.roleOutputs[role];
-    return this.handle?.getOutput(id ?? null) ?? null;
+    return this.outputForId(id);
+  }
+
+  private outputForId(id: string | null): MIDIOutput | null {
+    if (!id) return null;
+    const cached = this.outputCache.get(id);
+    if (cached) return cached;
+    const output = this.handle?.getOutput(id) ?? null;
+    if (output) this.outputCache.set(id, output);
+    return output;
+  }
+
+  private clearScheduledMessages(): void {
+    for (const output of this.currentRoutedOutputs()) {
+      try { (output as MIDIOutput & { clear?: () => void }).clear?.(); } catch { /* best effort */ }
+    }
   }
 
   private currentRoutedOutputs(): MIDIOutput[] {
@@ -388,13 +405,14 @@ class Dream5504MidiOutputController {
     }
     const out: MIDIOutput[] = [];
     ids.forEach((id) => {
-      const output = this.handle?.getOutput(id);
+      const output = this.outputForId(id);
       if (output) out.push(output);
     });
     return out;
   }
 
   private applyDeviceList(devices: MidiOutDeviceInfo[]): void {
+    this.outputCache.clear();
     const fallback = defaultRouteMap(devices);
     const singleOutputId = hasSelectedOutput(devices, this.state.singleOutputId)
       ? this.state.singleOutputId
@@ -420,7 +438,7 @@ class Dream5504MidiOutputController {
       this.lastUiUpdateMs = now;
       this.setState({ eventCount: nextCount, lastEvent, silentReason: null });
     } else {
-      this.state = { ...this.state, eventCount: nextCount };
+      this.state.eventCount = nextCount;
     }
   }
 

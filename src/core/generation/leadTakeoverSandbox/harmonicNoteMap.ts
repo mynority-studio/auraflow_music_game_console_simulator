@@ -3,8 +3,8 @@
 // ------------------------------------------------------------
 // Builds the 15 safe lead pads from current Q+N harmony. The core idea:
 // keep chord tones as stable anchors, supplement with KB acceptable local-scale
-// tensions, remove avoid tones, then lay the notes from bottom-left to top-right
-// inside one two-octave root window.
+// tensions, remove avoid tones, then lay the notes from top-left to bottom-right
+// in ascending pitch order inside one two-octave root window.
 // ============================================================
 
 import { mod12 } from '../newEngine/foundation';
@@ -26,6 +26,7 @@ import {
   midiName,
 } from './padLayout';
 import { beatsPerBarOf } from './rhythmQuantizer';
+import { buildMeasureNoteCells } from './measureNoteMap';
 import type {
   TakeoverChordSource,
   TakeoverMusicSnapshot,
@@ -238,20 +239,16 @@ export function buildAscendingTwoOctaveCells(
 
   const ordered = ascending.slice(0, TAKEOVER_PAD_COUNT);
   const contractPcs = roles.chordPcs.size > 0 ? roles.chordPcs : allowed;
-  const rollback = [];
-  for (let midi = highMidi; midi >= lowMidi; midi--) {
-    const pc = ((midi % 12) + 12) % 12;
-    if (!contractPcs.has(pc)) continue;
-    rollback.push(makePadCell(midi, 0, roles, true));
-  }
-
-  let rollbackCursor = 0;
+  const structuralFill = ascending.filter((cell) => contractPcs.has(cell.pc));
+  const fillPool = structuralFill.length > 0 ? structuralFill : ascending;
+  let fillCursor = 0;
   while (ordered.length < TAKEOVER_PAD_COUNT) {
-    const cell = rollback[rollbackCursor % Math.max(1, rollback.length)]
+    const cell = fillPool[fillCursor % Math.max(1, fillPool.length)]
       ?? makePadCell(lowMidi, 0, roles, true);
     ordered.push(cell);
-    rollbackCursor += 1;
+    fillCursor += 1;
   }
+  ordered.sort((left, right) => left.midi - right.midi);
 
   const cells = new Array<TakeoverPadCell>(TAKEOVER_PAD_COUNT);
   ordered.forEach((cell, orderIndex) => {
@@ -327,6 +324,19 @@ export function buildTakeoverPadMap(
   beat: number,
 ): TakeoverPadMap {
   const { current, next } = findChordAtBeat(snapshot.chords, beat);
+  if (snapshot.source === 'midi-analysis' && snapshot.layoutMode === 'measure-notes') {
+    const selected = buildMeasureNoteCells(snapshot, beat);
+    if (selected) {
+      return {
+        cells: selected.cells,
+        chord: current,
+        nextChord: next,
+        localScaleName: `${selected.measure.label} · 全音选音`,
+        source: 'midi-measure-notes',
+        measure: selected.measure,
+      };
+    }
+  }
   if (!current) {
     return {
       cells: fallbackCells(null),
@@ -366,7 +376,7 @@ export function buildTakeoverPadMap(
       chord: current,
       nextChord: next,
       localScaleName: `${PC_NAMES[localScale.rootPc] ?? 'C'} ${localScale.name}`,
-      source: 'orthogonal',
+      source: snapshot.source === 'midi-analysis' ? 'midi-chord-analysis' : 'orthogonal',
     };
   } catch {
     return {

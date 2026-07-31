@@ -16,6 +16,12 @@ export type StageName =
   | 'jazzFiveFourLead' // 5/4 Lead rhythm/grammar phrase choices
   | 'jazzFiveFourPerformance' // 5/4 score-owned microtiming/expression
   | 'grooveContract' // ★ GrooveContract 选择(独立子流;Phase D 起全 MG-backed 风格都抽,BLUES/无 rng 不抽)
+  | 'lofiFoundationArchetype'
+  | 'lofiFoundationDrum'
+  | 'lofiFoundationTop'
+  | 'lofiFoundationMutation'
+  | 'lofiLeadBlueprint'
+  | 'lofiLeadRoadMap'
   | 'drumFill' // 鼓加花变体；只在 Arranger 已限定的功能/节奏/配器候选内抽取
   | 'openingGesture'; // ★ 开头编配导演(独立子流;只决定入场计划,不扰曲式/和声/器配)
 

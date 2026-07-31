@@ -10,6 +10,7 @@ import { makeSeededRng } from './mgRng';
 import { ACG_PIANOSONG_INTERNAL_GRAMMARS, acgPianoSongGrammarForContext } from '../knowledge/melodyStyleGrammarProfiles';
 import { renderMgMelody } from './mgLeadRenderer';
 import type { ScheduledToken } from './mgTokenScheduler';
+import { hashSeedToInt } from '../../../../state/MusicGenerationSeedStore';
 
 const FULL_SONG_SEEDS = [0, 3, 7, 11, 42, 99] as const;
 const TRACE_SEEDS = Array.from({ length: 32 }, (_, index) => index);
@@ -51,14 +52,17 @@ function isOrdinaryStructuralAcgCarrier(entry: ScheduledToken, part: ChordPart):
  * RoadMap → arranger phrase overlay → internal grammar bank → scheduler
  * inputs so semantic assertions remain attached to generated song material.
  */
-function traceProductionAcgLead(seed: number): ProductionAcgTrace {
+function traceProductionAcgLead(
+  seed: number,
+  request: { mood?: 'lyrical' | 'build'; targetDuration?: number; mode?: 'major' | 'minor' } = {},
+): ProductionAcgTrace {
   const bundle = buildSongBundle({
     seed,
     styleHint: 'acg',
-    mood: 'lyrical',
-    targetDuration: 90,
+    mood: request.mood ?? 'lyrical',
+    targetDuration: request.targetDuration ?? 90,
     key: pc(0),
-    mode: 'minor',
+    mode: request.mode ?? 'minor',
   });
   const part = buildChordPart(
     harmonicPlanToMgChordDefs(bundle.harmonic),
@@ -99,7 +103,157 @@ function traceProductionAcgLead(seed: number): ProductionAcgTrace {
   };
 }
 
+function pedalDownAt(events: readonly { atTick: unknown; down: boolean }[] | undefined, atTick: number): boolean {
+  let down = false;
+  for (const event of events ?? []) {
+    if (Number(event.atTick) > atTick) break;
+    down = event.down;
+  }
+  return down;
+}
+
+/** Final-score invariant: do not leave a lone short top note before piano air. */
+function exposedShortLeadLeaks(trace: ProductionAcgTrace): Array<{ startBeat: number; durationBeats: number; gapBeats: number }> {
+  const generated = generateSongFromBundle(trace.bundle);
+  if (generated.status === 'failed' || !generated.ir) throw new Error('ACG production generation failed during continuity audit.');
+  const ppq = trace.bundle.timebase.ppq as number;
+  const pianoNotes = generated.ir.tracks
+    .filter((track) => track.role === 'lead' || track.role === 'comp' || track.role === 'bass')
+    .flatMap((track) => track.notes.map((note) => ({
+      role: track.role,
+      startBeat: (note.startTick as number) / ppq,
+      durationBeats: (note.durationTicks as number) / ppq,
+    })));
+  const lead = pianoNotes.filter((note) => note.role === 'lead');
+  const epsilon = 1e-4;
+  const leaks: Array<{ startBeat: number; durationBeats: number; gapBeats: number }> = [];
+  for (const note of lead) {
+    if (note.durationBeats > 0.5 + epsilon) continue;
+    if (lead.filter((other) => Math.abs(other.startBeat - note.startBeat) <= epsilon).length !== 1) continue;
+    const noteEnd = note.startBeat + note.durationBeats;
+    // A deliberately materialized approach → arrival, or two hand-legato
+    // atoms with a one-tick overlap, is one connected top-line gesture. It is
+    // not piano air simply because the successor begins at (or barely before)
+    // the first key's release; the final atom in that gesture is audited on
+    // its own iteration.
+    const hasConnectedLeadContinuation = lead.some((other) => other !== note
+      && other.startBeat > note.startBeat + epsilon
+      && other.startBeat <= noteEnd + epsilon
+      && other.startBeat + other.durationBeats >= noteEnd - epsilon);
+    if (hasConnectedLeadContinuation) continue;
+    const nextOnset = pianoNotes
+      .filter((other) => other.startBeat > noteEnd + epsilon)
+      .map((other) => other.startBeat)
+      .sort((left, right) => left - right)[0] ?? trace.part.totalBeats;
+    const gapBeats = nextOnset - noteEnd;
+    if (gapBeats >= 1.25 - epsilon) leaks.push({
+      startBeat: note.startBeat,
+      durationBeats: note.durationBeats,
+      gapBeats,
+    });
+  }
+  return leaks;
+}
+
 describe('render/acgProductionE2E · generated ACG PIANOSONG main chain', () => {
+  it('keeps the 7mz3vb lyrical single as a written half-note, including its b9 cadence suspension', () => {
+    const seed = hashSeedToInt('7mz3vb');
+    expect(seed).toBe(1678954363);
+    const trace = traceProductionAcgLead(seed, { mood: 'build', targetDuration: 120 });
+    const ppq = trace.bundle.timebase.ppq;
+    const breath = trace.scheduled.find((entry) => entry.token.acg?.sustain?.kind === 'breath');
+    const suspension = trace.scheduled.find((entry) => entry.token.acg?.sustain?.kind === 'dominant-b9');
+
+    // The first return is a written half note on the Arranger's shared piano
+    // clock.  Do not pin this to the former 5.875-beat local scheduler phase:
+    // BASS, COMP and LEAD now identify the same score-owned metric anchor.
+    expect(breath).toBeDefined();
+    const breathAnchor = trace.bundle.acgPianoScorePlan?.metricGrid.anchors
+      .find((anchor) => anchor.id === breath!.acgMetricAnchorId);
+    expect(breathAnchor).toBeDefined();
+    expect(breath!.startBeat).toBeCloseTo(breathAnchor!.beat, 6);
+    expect(breath!.startBeat / 0.25).toBeCloseTo(Math.round(breath!.startBeat / 0.25), 6);
+    expect(breath!.acgMetricRole).toBe('structural');
+    expect(breath!.token.duration).toBeGreaterThanOrEqual(2);
+    expect(breath!.acgReturn?.role).toBe('arrival');
+
+    // A pre-dominant stable tone is intentionally held as the following
+    // dominant's b9, then the next grammar carrier resolves it. This is a
+    // scheduler-issued exception to the ordinary chord-boundary clip, not a
+    // generic cross-chord tail.
+    expect(suspension).toBeDefined();
+    expect(suspension!.startBeat).toBeCloseTo(23.5, 6);
+    expect(suspension!.token.duration).toBeGreaterThanOrEqual(2);
+    const suspensionContract = suspension!.token.acg?.sustain;
+    expect(suspensionContract?.kind).toBe('dominant-b9');
+    if (!suspensionContract || suspensionContract.kind !== 'dominant-b9') {
+      throw new Error('Expected the 7mz3vb cadence carrier to carry a dominant-b9 contract.');
+    }
+    const dominant = trace.part.blocks[suspensionContract.targetChordIndex];
+    expect(dominant).toBeDefined();
+    expect(suspensionContract).toMatchObject({
+      kind: 'dominant-b9', targetChordIndex: dominant!.index,
+      continuationPc: (dominant!.rootPc + 1) % 12,
+    });
+
+    const sourceLead = renderMgMelody(
+      trace.bundle.harmonic,
+      trace.bundle.band,
+      trace.bundle.timebase,
+      seed,
+      trace.bundle.instrumentation.roleProgram.lead,
+      trace.bundle.arrangement.songGrooveContract,
+      trace.bundle.acgPianoScorePlan?.leadPresencePlan,
+      trace.bundle.acgPianoScorePlan,
+    );
+    // The former 1/8-beat C at 7.875 was a boundary-clipped fragment directly
+    // after this held arrival, not an intended riff. It is now an explicit R.
+    expect(sourceLead.notes.some((note) => Math.abs((note.startTick as number) / ppq - 7.875) < 1e-6)).toBe(false);
+    const writtenSuspension = sourceLead.notes.find((note) =>
+      Math.abs((note.startTick as number) / ppq - suspension!.startBeat) < 1e-6);
+    expect(writtenSuspension).toBeDefined();
+    expect(pitchClass(writtenSuspension!.pitch as number)).toBe((dominant!.rootPc + 1) % 12);
+    expect((writtenSuspension!.durationTicks as number) / ppq).toBeGreaterThanOrEqual(2);
+
+    const generated = generateSongFromBundle(trace.bundle);
+    expect(generated.status).not.toBe('failed');
+    const finalLead = generated.ir!.tracks.find((track) => track.role === 'lead')!;
+    const finalSuspension = finalLead.notes.find((note) =>
+      Math.abs((note.startTick as number) / ppq - suspension!.startBeat) < 1e-6);
+    expect(finalSuspension).toBeDefined();
+    const boundaryTick = 24 * ppq;
+    expect(finalSuspension!.startTick as number).toBeLessThan(boundaryTick);
+    expect((finalSuspension!.startTick as number) + (finalSuspension!.durationTicks as number)).toBeGreaterThan(boundaryTick);
+    // The score's re-pedal remains active while the key is still down.
+    expect(pedalDownAt(finalLead.pedalEvents, finalSuspension!.startTick as number)).toBe(true);
+    expect(pedalDownAt(finalLead.pedalEvents, boundaryTick)).toBe(true);
+  });
+
+  it('does not leave unclassified short lead singles before a real piano breath', () => {
+    // 114/157/170/273/303 were confirmed leaked examples before the
+    // continuity-slot compiler. The compact sweep ensures the rule is not a
+    // one-seed repair while keeping test time appropriate for the main chain.
+    const cases = [
+      {
+        id: 'minor/lyrical/90',
+        request: { mood: 'lyrical' as const, targetDuration: 90, mode: 'minor' as const },
+        seeds: [...new Set([
+          ...Array.from({ length: 64 }, (_, index) => index),
+          114, 157, 170, 273, 303,
+        ])],
+      },
+      {
+        id: 'major/build/120',
+        request: { mood: 'build' as const, targetDuration: 120, mode: 'major' as const },
+        seeds: Array.from({ length: 32 }, (_, index) => index),
+      },
+    ];
+    const leaks = cases.flatMap(({ id, request, seeds }) => seeds.flatMap((seed) =>
+      exposedShortLeadLeaks(traceProductionAcgLead(seed, request))
+        .map((leak) => ({ case: id, seed, ...leak }))));
+    expect(leaks).toEqual([]);
+  });
+
   it('renders several real ACG seeds without failing and retains the three piano roles', () => {
     for (const seed of FULL_SONG_SEEDS) {
       const trace = traceProductionAcgLead(seed);

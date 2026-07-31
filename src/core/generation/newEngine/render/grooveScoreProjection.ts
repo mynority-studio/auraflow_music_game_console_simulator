@@ -57,11 +57,13 @@ export function grooveScoreVelocityScale(
   const subdivisionAccent = score.subdivisionAccent[subdivisionIndex] ?? 1;
   const energy = score.energy ?? 0.5;
   const trajectory = score.trajectory ?? 'settled';
+  const phraseInteractionScale = score.lofiPhraseInteraction?.velocityScaleByRole[role] ?? 1;
   const scale = (1 + (beatStrength - 1) * weight.beat)
     * (1 + (subdivisionAccent - 1) * weight.subdivision)
     * (1 + (score.phraseAccent - 1) * weight.phrase)
     * (1 + (energy - 0.5) * 0.08 * weight.energy)
-    * TRAJECTORY_SCALE[role][trajectory];
+    * TRAJECTORY_SCALE[role][trajectory]
+    * phraseInteractionScale;
   return Math.max(0.72, Math.min(1.22, scale));
 }
 

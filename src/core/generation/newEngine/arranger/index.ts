@@ -12,4 +12,8 @@ export * from './jazzFiveFourHarmonyScore';
 export * from './jazzFiveFourLeadScore';
 export * from './jazzFiveFourEnsembleScore';
 export * from './jazzFiveFourScorePlan';
+export * from './leadScorePlan';
+export * from './lofiLeadScorePlan';
+export * from './lofiLeadBlueprintPlanner';
+export * from './lofiLeadRoadMapPlanner';
 export * from './arranger';

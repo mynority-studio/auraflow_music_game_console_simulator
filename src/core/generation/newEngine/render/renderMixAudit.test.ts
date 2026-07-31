@@ -105,9 +105,10 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     ];
     const report = auditRenderedMix(tracks, ctx('pop', 1920));
     expect(report.peakPreMasterLinear).toBeGreaterThan(1);
-    expect(report.dream5504MasterPlan.reason).toBe('peak-protection');
-    expect(report.estimatedDeviceOutputPeakDbfs).toBeLessThanOrEqual(MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs);
-    expect(report.findings.some((f) => f.code === 'master.limiterWillWork' || f.code === 'master.outputClipRisk')).toBe(false);
+    expect(report.dream5504MasterPlan.reason).toBe('unity');
+    expect(report.appliedMasterGain).toBe(1);
+    expect(report.estimatedDeviceOutputPeakDbfs).toBeGreaterThan(MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs);
+    expect(report.findings.some((f) => f.code === 'master.limiterWillWork' || f.code === 'master.outputClipRisk')).toBe(true);
   });
 
   it('同一份总谱不因 macro 名称改写 5504 master', () => {

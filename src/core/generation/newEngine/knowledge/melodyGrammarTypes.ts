@@ -47,6 +47,37 @@ export interface AcgDyadIntent {
 }
 
 /**
+ * A written long-tone contract for the ACG piano top line.  It is issued by
+ * the scheduler while the RoadMap, harmony and piano score are still live;
+ * it is never inferred from a finished NoteIR gap.
+ *
+ * `dominant-b9` is deliberately narrow: a pre-dominant stable tone may be
+ * held as the b9 over the immediately following dominant only when the
+ * scheduler has proved the target chord and its resolution slot.  The exact
+ * pc keeps the realizer from substituting some other source-chord tone after
+ * the continuation has been approved.
+ */
+export type AcgSustainedCarrierIntent =
+  | {
+    kind: 'breath';
+    minimumDurationBeats: number;
+  }
+  | {
+    /** A stable pitch shared by the current and immediately following chord. */
+    kind: 'common-tone';
+    minimumDurationBeats: number;
+    targetChordIndex: number;
+    /** Exact shared pc, pre-proved by the Arranger's continuity slot. */
+    continuationPc: number;
+  }
+  | {
+    kind: 'dominant-b9';
+    minimumDurationBeats: number;
+    targetChordIndex: number;
+    continuationPc: number;
+  };
+
+/**
  * ACG 的 arrival terminal 必须携带完整、可执行的和声合同。这里故意不允许
  * `harmonicScope` / `stableRoles` 只写其一：那会把“落在当前/下一和弦的哪个稳定
  * 声部”重新降格成 renderer 的猜测。
@@ -55,6 +86,8 @@ export interface AcgStableArrivalTokenIntent {
   harmonicScope: AcgHarmonicScope;
   stableRoles: readonly AcgStableRole[];
   dyad?: AcgDyadIntent;
+  /** Scheduler-owned written long-note / suspension meaning. */
+  sustain?: AcgSustainedCarrierIntent;
   colorIntent?: never;
 }
 
@@ -67,6 +100,7 @@ export interface AcgBorrowedPassingTokenIntent {
   harmonicScope?: never;
   stableRoles?: never;
   dyad?: never;
+  sustain?: never;
 }
 
 /**

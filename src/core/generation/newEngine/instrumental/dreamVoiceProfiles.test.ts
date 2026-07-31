@@ -5,12 +5,22 @@ import {
   DREAM5504_AUTOMATIC_ARRANGEMENT_VOICE_PROFILES,
   DREAM5504_DRUM_KIT_COUNT,
   DREAM5504_DRUM_VOICE_PROFILES,
+  DREAM5504_FULL_AUDITION_VOICE_COUNT,
+  DREAM5504_FULL_AUDITION_VOICE_PROFILES,
+  DREAM_CC_EXPRESSION_CONTRACTS,
+  DREAM_GESTURE_SUBFAMILIES,
   DREAM5504_MANUAL_ONLY_VOICE_PROFILES,
   DREAM5504_MODERN_MELODIC_VOICE_COUNT,
   DREAM5504_MODERN_MELODIC_VOICE_PROFILES,
+  DREAM5504_MT32_COMPATIBILITY_VOICE_PROFILES,
   DREAM5504_MT32_COMPATIBILITY_VOICE_COUNT,
+  dreamVoiceAuditionProfileFor,
   dreamVoiceProfileFor,
   dreamVoiceProfilesForFamily,
+  dreamVoiceProfilesForCcExpressionContract,
+  dreamVoiceProfilesForGestureSubfamily,
+  dreamVoiceProfilesForInstrumentClass,
+  dreamVoiceProfilesForPlayingMechanism,
   dreamVoiceProfilesForPerformanceFamily,
   dreamVoiceProfilesForPerformanceSubfamily,
   dreamVoiceProfilesForRole,
@@ -50,7 +60,8 @@ describe('instrumental/dreamVoiceProfiles', () => {
       family: 'organ-bass',
       performanceFamily: 'bass',
       performanceSubfamily: 'organ-bass',
-      expressionFamily: 'bass-pluck',
+      expressionFamily: 'organ-sustain',
+      gestureSubfamily: 'bass-organ-sustain',
     });
     expect(organBass?.roleCapabilities).toEqual(['bass']);
     expect(isDreamVoiceRoleCapable({ bank: 40, program: 16 }, 'comp')).toBe(false);
@@ -65,6 +76,57 @@ describe('instrumental/dreamVoiceProfiles', () => {
     expect(dreamVoiceProfileFor({ bank: 3, program: 89 })?.family).toBe('ensemble-string');
     expect(dreamVoiceProfilesForFamily('organ-bass')).toContainEqual(expect.objectContaining({ name: 'Organ Bass' }));
     expect(dreamVoiceProfilesForRole('bass')).toContainEqual(expect.objectContaining({ name: 'Organ Bass' }));
+  });
+
+  it('classifies every shipped address by a reusable gesture subfamily without admitting MT-32 into auto arrangement', () => {
+    expect(DREAM5504_FULL_AUDITION_VOICE_COUNT).toBe(407);
+    expect(DREAM5504_FULL_AUDITION_VOICE_PROFILES).toHaveLength(407);
+    expect(DREAM5504_MT32_COMPATIBILITY_VOICE_PROFILES).toHaveLength(128);
+    expect(DREAM5504_FULL_AUDITION_VOICE_PROFILES.every((profile) => !!profile.gestureFamily && !!profile.gestureSubfamily)).toBe(true);
+    expect(DREAM5504_MT32_COMPATIBILITY_VOICE_PROFILES.every((profile) => (
+      profile.addressSpace === 'mt32-compatibility'
+      && profile.arrangementStatus === 'audition-only'
+      && profile.roleCapabilities.length === 0
+    ))).toBe(true);
+
+    expect(dreamVoiceProfileFor({ bank: 127, program: 78 })).toBeUndefined();
+    expect(dreamVoiceAuditionProfileFor({ bank: 127, program: 78 })).toMatchObject({
+      name: 'Soprano Sax', gestureFamily: 'wind', gestureSubfamily: 'sax-breath', arrangementStatus: 'audition-only',
+    });
+    expect(dreamVoiceAuditionProfileFor({ bank: 127, program: 32 })).toMatchObject({
+      name: 'Fantasia Pad', gestureSubfamily: 'synth-pad-sustain', arrangementStatus: 'audition-only',
+    });
+  });
+
+  it('splits voices only when their physical gesture contract differs', () => {
+    expect(dreamVoiceProfileFor({ bank: 0, program: 0 })?.gestureSubfamily).toBe('hammered-piano-damper');
+    expect(dreamVoiceProfileFor({ bank: 8, program: 4 })?.gestureSubfamily).toBe('electric-piano-keybed');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 43 })?.gestureSubfamily).toBe('bowed-contrabass');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 44 })?.gestureSubfamily).toBe('bowed-tremolo-ensemble');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 49 })?.gestureSubfamily).toBe('bowed-slow-ensemble');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 62 })?.gestureSubfamily).toBe('synth-lead-keybed');
+    expect(dreamVoiceProfileFor({ bank: 16, program: 61 })?.arrangementStatus).toBe('manual-only');
+    expect(dreamVoiceProfileFor({ program: 40, role: 'drum' })?.gestureSubfamily).toBe('drum-brush-kit');
+    expect(dreamVoiceProfileFor({ program: 25, role: 'drum' })?.gestureSubfamily).toBe('drum-808-kit');
+    expect(dreamVoiceProfilesForGestureSubfamily('sax-breath')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Tenor Sax' }),
+      expect.objectContaining({ name: 'Breathy Tenor' }),
+    ]));
+  });
+
+  it('keeps unlike physical players in separate concrete subfamilies', () => {
+    expect(dreamVoiceProfileFor({ bank: 0, program: 34 })?.gestureSubfamily).toBe('bass-picked-pluck');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 36 })?.gestureSubfamily).toBe('bass-slap');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 21 })?.gestureSubfamily).toBe('accordion-bellows-keyhold');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 22 })?.gestureSubfamily).toBe('harmonica-breath');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 68 })?.gestureSubfamily).toBe('double-reed-breath');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 71 })?.gestureSubfamily).toBe('single-reed-breath');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 109 })?.gestureSubfamily).toBe('bagpipe-drone');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 111 })?.gestureSubfamily).toBe('world-double-reed-breath');
+    expect(dreamVoiceProfileFor({ bank: 0, program: 108 })?.gestureSubfamily).toBe('thumb-pluck');
+
+    const populated = new Set(DREAM5504_FULL_AUDITION_VOICE_PROFILES.map((voice) => voice.gestureSubfamily));
+    expect([...DREAM_GESTURE_SUBFAMILIES].every((subfamily) => populated.has(subfamily))).toBe(true);
   });
 
   it('separates acoustic, electric and synth sources within an instrument family', () => {
@@ -111,5 +173,61 @@ describe('instrumental/dreamVoiceProfiles', () => {
     expect(dreamVoiceProfilesForPerformanceSubfamily('saxophone')).toContainEqual(
       expect.objectContaining({ name: 'Tenor Sax' }),
     );
+  });
+
+  it('uses playing mechanism → instrument class → source as the canonical hierarchy', () => {
+    expect(dreamVoiceProfileFor({ bank: 0, program: 0 })).toMatchObject({
+      playingMechanism: 'keybed', instrumentClass: 'acoustic-piano', soundSource: 'acoustic',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 4 })).toMatchObject({
+      playingMechanism: 'keybed', instrumentClass: 'electric-piano', soundSource: 'electric',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 80 })).toMatchObject({
+      playingMechanism: 'keybed', instrumentClass: 'synth-keyboard', soundSource: 'synth',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 27 })).toMatchObject({
+      playingMechanism: 'plucked-string', instrumentClass: 'electric-guitar', soundSource: 'electric',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 32 })).toMatchObject({
+      playingMechanism: 'plucked-string', instrumentClass: 'acoustic-bass', soundSource: 'acoustic',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 21 })).toMatchObject({
+      playingMechanism: 'bellows-keybed', instrumentClass: 'accordion', soundSource: 'acoustic',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 22 })).toMatchObject({
+      playingMechanism: 'blown-wind', instrumentClass: 'harmonica', soundSource: 'acoustic',
+    });
+    expect(dreamVoiceProfileFor({ bank: 0, program: 25, role: 'drum' })).toMatchObject({
+      playingMechanism: 'drum-kit', instrumentClass: 'drum-kit', soundSource: 'electric',
+    });
+    expect(dreamVoiceProfilesForPlayingMechanism('plucked-string')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ instrumentClass: 'acoustic-guitar' }),
+      expect.objectContaining({ instrumentClass: 'electric-bass' }),
+    ]));
+    expect(dreamVoiceProfilesForInstrumentClass('electric-piano')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ playingMechanism: 'keybed', soundSource: 'electric' }),
+    ]));
+  });
+
+  it('maps every shipped voice to one of six reusable CC contracts or a manual-only effect', () => {
+    expect(DREAM5504_FULL_AUDITION_VOICE_PROFILES.every((voice) => (
+      voice.ccExpressionContract !== undefined || voice.family === 'sfx'
+    ))).toBe(true);
+    expect(DREAM_CC_EXPRESSION_CONTRACTS).toHaveLength(6);
+
+    expect(dreamVoiceProfileFor({ bank: 0, program: 0 })?.ccExpressionContract).toBe('piano-damper');
+    expect(dreamVoiceProfileFor({ bank: 8, program: 4 })?.ccExpressionContract).toBe('electronic-keybed');
+    expect(dreamVoiceProfileFor({ bank: 3, program: 89 })?.ccExpressionContract).toBe('continuous-acoustic');
+    expect(dreamVoiceProfileFor({ bank: 24, program: 24 })?.ccExpressionContract).toBe('plucked-struck');
+    expect(dreamVoiceProfileFor({ bank: 40, program: 16 })?.ccExpressionContract).toBe('keyed-sustain');
+    expect(dreamVoiceProfileFor({ program: 25, role: 'drum' })?.ccExpressionContract).toBe('drum');
+    expect(dreamVoiceProfileFor({ bank: 8, program: 30 })?.ccExpressionContract).toBeUndefined();
+
+    expect(dreamVoiceProfilesForCcExpressionContract('plucked-struck')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ gestureSubfamily: 'guitar-harmonics' }),
+    ]));
+    expect(dreamVoiceProfilesForCcExpressionContract('continuous-acoustic')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Rotary String', address: { bank: 3, program: 89 } }),
+    ]));
   });
 });

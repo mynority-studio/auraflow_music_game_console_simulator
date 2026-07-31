@@ -10,7 +10,7 @@ import { realizeProgressionSlots, narrowQuality } from './progressionRealizer';
 import { buildHarmonicPlanFromArrangement } from './harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
-import { PROGRESSION_POOL } from '../knowledge/progressions';
+import { PROGRESSION_POOL, progressionPrototypeById } from '../knowledge/progressions';
 import { createRandomContext, pc } from '../foundation';
 import type { Section } from '../arranger/ArrangementPlan';
 
@@ -54,6 +54,36 @@ describe('realizeProgressionSlots', () => {
     expect(rc[0].sectionKeyPc).toBe(1);
     // bVI 在 Db:rootPc = 1 + 8 = 9
     expect(rc.some((c) => c.rootPc === 9 && c.borrowedSource === 'modal_interchange')).toBe(true);
+  });
+
+  it('corpus-derived LOFI grammar transposes as functions rather than absolute MIDI notes', () => {
+    for (const id of [
+      'lofi_major_plagal_descent_2',
+      'lofi_major_whole_step_planing_4',
+      'lofi_major_parallel_minor_fall_4',
+      'lofi_minor_turnaround_4',
+      'lofi_minor_aeolian_ebb_8',
+      'lofi_minor_late_cadence_4',
+      'lofi_minor_third_bass_vamp_4',
+    ]) {
+      const slots = progressionPrototypeById(id)!.slots;
+      const realize = (sectionKey: number) => realizeProgressionSlots({
+        slots,
+        section: sec,
+        sectionKey: pc(sectionKey),
+        isModulated: false,
+        beatsPerBar: 4,
+        style: 'LOFI',
+        colorBudget: 0.5,
+        random: createRandomContext(1).substream('harmony'),
+      });
+      const inC = realize(0);
+      const inFs = realize(6);
+      expect(inFs.map((chord) => chord.rootPc), id)
+        .toEqual(inC.map((chord) => (chord.rootPc + 6) % 12));
+      expect(inFs.map((chord) => [chord.chordType, chord.durationBeats]), id)
+        .toEqual(inC.map((chord) => [chord.chordType, chord.durationBeats]));
+    }
   });
 
   it('应用属和弦同时保留局部 V/X 与可移调的目标中心', () => {

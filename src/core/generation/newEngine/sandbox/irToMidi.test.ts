@@ -157,7 +157,7 @@ describe('newEngine/sandbox/irToMidi', () => {
     ]);
   });
 
-  it('只把原声钢琴的器配 CC11/CC64 投影到硬件；Pad CC1 与所有其他音色 ccEvents 仍丢弃', () => {
+  it('只把原声钢琴 CC64 投影到硬件；CC11 与其他音量/音色控制保留在 IR', () => {
     const modulatedIR = freezeMusicalIR({
       tracks: [
         {
@@ -182,9 +182,7 @@ describe('newEngine/sandbox/irToMidi', () => {
 
     const output = musicalIRToMidiEvents(modulatedIR);
     expect(output.filter((event) => event.type === 'cc' && event.data1 === 1)).toEqual([]);
-    expect(output.filter((event) => event.type === 'cc' && event.data1 === 11)).toEqual([
-      { ticks: 240, type: 'cc', channel: CH.comp, data1: 11, data2: 90 },
-    ]);
+    expect(output.filter((event) => event.type === 'cc' && event.data1 === 11)).toEqual([]);
     expect(output.filter((event) => event.type === 'cc' && event.data1 === 64)).toEqual([
       { ticks: 0, type: 'cc', channel: CH.comp, data1: 64, data2: 127 },
       { ticks: 480, type: 'cc', channel: CH.comp, data1: 64, data2: 0 },

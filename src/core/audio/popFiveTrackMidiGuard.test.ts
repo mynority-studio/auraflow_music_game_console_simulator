@@ -38,7 +38,7 @@ describe('audio/popFiveTrackMidiGuard', () => {
     expect(applyPopFiveTrackMidiGuard(input, 'jazz')).toEqual(input);
   });
 
-  it('w5q300 的五轨出板不再出现段落 CC7 跳变或单轨 onset 峰值', () => {
+  it('w5q300 的五轨出板保持默认 CC7/CC11，并限制单轨 onset 峰值', () => {
     expect(hashSeedToInt('w5q300')).toBe(3459232512);
     const result = generateSong({
       seed: hashSeedToInt('w5q300'),
@@ -54,9 +54,10 @@ describe('audio/popFiveTrackMidiGuard', () => {
     }
 
     const guarded = applyPopFiveTrackMidiGuard(
-      musicalIRToMidiEvents(result.ir!, roomWetFor('pop')),
+      musicalIRToMidiEvents(result.ir!, roomWetFor('pop'), 'pop'),
       'pop',
     );
+    expect(guarded.some((event) => event.type === 'cc' && [7, 11].includes(event.data1))).toBe(false);
     for (const role of Object.keys(ROLE_CHANNEL) as InstrumentRole[]) {
       const noteOns = guarded.filter((event) => event.type === 'noteOn' && event.channel === ROLE_CHANNEL[role] && event.data2 > 0);
       expect(Math.max(0, ...noteOns.map((event) => event.data2)), `${role} velocity`)

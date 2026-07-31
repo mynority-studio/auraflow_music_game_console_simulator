@@ -33,6 +33,8 @@ export interface ChordSpan {
   startBeat: Beats;
   durationBeats: Beats;
   sectionId: SectionId;
+  /** Exact pooled KB candidate that authored this span, when prototype-first selection was used. */
+  sourcePrototypeId?: string;
   // —— 和声迁移 Loop 2:prototype 携带的【定义层】字段(可选,deepFreeze 机制不变)——
   //   chordType 为权威宽类型(Loop 6 起 tension/chordScale 优先读它);其余为 borrow/离调/bass intent。
   chordType?: string;              // 宽和弦类型(maj9/m9/13sus4/7b13…),对应 ChordTypeId
@@ -67,6 +69,8 @@ export interface ModulationInfo {
 }
 
 export interface HarmonicPlanData {
+  /** Optional exact identity for explicit single-prototype plans; pooled songs leave this unset. */
+  progressionPrototypeId?: string;
   romanProgression: RomanChord[];
   chordTimeline: ChordSpan[];
   chordFunctionTimeline: HarmonicFunction[];

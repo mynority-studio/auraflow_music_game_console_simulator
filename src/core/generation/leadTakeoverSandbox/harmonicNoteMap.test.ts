@@ -39,6 +39,11 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     expect(takeoverPadIndex(0, 1)).toBe(5);
     expect(takeoverPadIndex(4, 2)).toBe(14);
     expect(takeoverPadCoord(13)).toEqual({ col: 3, row: 2 });
+    expect(TAKEOVER_ASCENDING_PAD_INDICES).toEqual([
+      0, 1, 2, 3, 4,
+      5, 6, 7, 8, 9,
+      10, 11, 12, 13, 14,
+    ]);
   });
 
   it('finds current and next chord by beat', () => {
@@ -47,7 +52,7 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     expect(findChordAtBeat(snapshot.chords, 4.5).next?.roman).toBe('I');
   });
 
-  it('places safe notes from bottom-left to top-right and rolls back with chord tones at the cap', () => {
+  it('places safe notes from top-left to bottom-right without reversing repeated chord tones', () => {
     const cells = buildAscendingTwoOctaveCells([0, 2, 4, 5, 7], {
       chordPcs: new Set([0, 4, 7]),
       scalePcs: new Set([2, 5]),
@@ -55,14 +60,13 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
       rootPc: 0,
     });
 
-    expect(TAKEOVER_ASCENDING_PAD_INDICES.map((idx) => cells[idx]?.name)).toEqual([
-      'C4', 'D4', 'E4', 'F4', 'G4',
-      'C5', 'D5', 'E5', 'F5', 'G5',
-      'C6', 'C6', 'G5', 'E5', 'C5',
-    ]);
+    const ordered = TAKEOVER_ASCENDING_PAD_INDICES.map((idx) => cells[idx]?.midi ?? -1);
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
+    expect(cells[0]?.name).toBe('C4');
+    expect(cells[14]?.name).toBe('C6');
   });
 
-  it('builds 15 bottom-left-to-top-right safe lead notes from the orthogonal pitch pool', () => {
+  it('builds 15 top-left-to-bottom-right safe lead notes from the orthogonal pitch pool', () => {
     const map = buildTakeoverPadMap(snapshot, 4.25);
     expect(map.source).toBe('orthogonal');
     expect(map.cells).toHaveLength(15);
@@ -70,19 +74,80 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     const midis = map.cells.map((c) => c.midi);
     const ordered = TAKEOVER_ASCENDING_PAD_INDICES.map((idx) => map.cells[idx]?.midi ?? -1);
     expect(Math.max(...midis) - Math.min(...midis)).toBeLessThanOrEqual(24);
-    expect(ordered[0]).toBe(67); // G4 starts at bottom-left for G7.
+    expect(ordered[0]).toBe(67); // G4 starts at top-left for G7.
     expect(Math.min(...midis)).toBeGreaterThanOrEqual(67);
     expect(Math.max(...midis)).toBeLessThanOrEqual(91);
 
-    const rollbackAt = ordered.findIndex((midi, i) => i > 0 && midi < ordered[i - 1]);
-    const rising = rollbackAt < 0 ? ordered : ordered.slice(0, rollbackAt);
-    expect(rising).toEqual([...rising].sort((a, b) => a - b));
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
 
     const allowedPcs = new Set(map.cells.map((c) => c.pc));
     // G7 in jazz should have the dominant identity present and no fully chromatic spill.
     expect(allowedPcs.has(7)).toBe(true);
     expect(allowedPcs.has(11)).toBe(true);
     expect(new Set(map.cells.map((c) => c.classRole)).has('fallback')).toBe(false);
+  });
+
+  it('uses analyzed current-measure notes when selection mode is active', () => {
+    const map = buildTakeoverPadMap({
+      ...snapshot,
+      source: 'midi-analysis',
+      layoutMode: 'measure-notes',
+      measures: [{
+        id: 'm1',
+        label: 'M1',
+        startBeat: 0,
+        durationBeats: 4,
+        notes: [{
+          id: 'source-c3',
+          sourceMidi: 48,
+          priority: 400,
+          structuralRole: 'backbone',
+          metricLevel: 'downbeat',
+          melodicFunction: 'chordTone',
+        }, {
+          id: 'source-d3',
+          sourceMidi: 50,
+          priority: 120,
+          structuralRole: 'ornament',
+          metricLevel: 'offbeat',
+          melodicFunction: 'passingTone',
+        }],
+      }],
+    }, 1);
+
+    expect(map.source).toBe('midi-measure-notes');
+    expect(map.measure?.label).toBe('M1');
+    expect(new Set(map.cells.map((cell) => cell.midi)))
+      .toEqual(new Set([60, 62, 72, 74, 84]));
+    expect(map.cells.some((cell) =>
+      cell.midi === 60 && cell.classRole === 'structural')).toBe(true);
+    expect(map.cells.some((cell) =>
+      cell.midi === 62 && cell.classRole === 'ornament')).toBe(true);
+  });
+
+  it('keeps generated music on the original harmonic takeover chain even if a MIDI layout flag is stale', () => {
+    const map = buildTakeoverPadMap({
+      ...snapshot,
+      source: 'generated',
+      layoutMode: 'measure-notes',
+      measures: [{
+        id: 'stale-midi',
+        label: 'M1',
+        startBeat: 0,
+        durationBeats: 4,
+        notes: [{
+          id: 'should-not-drive-generated-mode',
+          sourceMidi: 99,
+          priority: 999,
+          structuralRole: 'backbone',
+          metricLevel: 'downbeat',
+          melodicFunction: 'chordTone',
+        }],
+      }],
+    }, 1);
+
+    expect(map.source).toBe('orthogonal');
+    expect(map.cells.some((cell) => cell.classRole === 'structural')).toBe(false);
   });
 
   it('keeps jazz takeover supplement tones free of half-step clashes for every chord macro', () => {
@@ -139,7 +204,7 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     expect(pcs.has(9)).toBe(true);  // A = 13, safe supplement
   });
 
-  it('starts the current root at the bottom-left pad and labels tensions as 9/13', () => {
+  it('starts the current root at the top-left pad and labels tensions as 9/13', () => {
     const cmaj: TakeoverMusicSnapshot = {
       ...snapshot,
       styleHint: 'pop',
@@ -152,7 +217,7 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     const aCell = map.cells.find((c) => c.pc === 9);
     const midis = map.cells.map((c) => c.midi);
 
-    expect(map.cells[TAKEOVER_ASCENDING_PAD_INDICES[0]]?.midi).toBe(60); // C4 bottom-left start.
+    expect(map.cells[TAKEOVER_ASCENDING_PAD_INDICES[0]]?.midi).toBe(60); // C4 top-left start.
     expect(Math.max(...midis)).toBeLessThanOrEqual(84);
     expect(Math.max(...midis) - Math.min(...midis)).toBeLessThanOrEqual(24);
     expect(Math.min(...midis)).toBeGreaterThanOrEqual(60);
@@ -160,7 +225,7 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     expect(aCell?.degreeLabel).toBe('13');
   });
 
-  it('places D4 at the bottom-left for D harmony and stays inside two octaves', () => {
+  it('places D4 at the top-left for D harmony and stays inside two octaves', () => {
     const dmaj: TakeoverMusicSnapshot = {
       ...snapshot,
       styleHint: 'pop',
@@ -172,14 +237,11 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     const midis = map.cells.map((c) => c.midi);
     const ordered = TAKEOVER_ASCENDING_PAD_INDICES.map((idx) => map.cells[idx]?.midi ?? -1);
     const pcs = new Set(map.cells.map((c) => c.pc));
-    const rollbackAt = ordered.findIndex((midi, i) => i > 0 && midi < ordered[i - 1]);
-    const rising = rollbackAt < 0 ? ordered : ordered.slice(0, rollbackAt);
-
-    expect(map.cells[TAKEOVER_ASCENDING_PAD_INDICES[0]]?.midi).toBe(62); // D4 bottom-left.
+    expect(map.cells[TAKEOVER_ASCENDING_PAD_INDICES[0]]?.midi).toBe(62); // D4 top-left.
     expect(Math.max(...midis)).toBeLessThanOrEqual(86);
     expect(Math.min(...midis)).toBeGreaterThanOrEqual(62);
     expect(Math.max(...midis) - Math.min(...midis)).toBeLessThanOrEqual(24);
-    expect(rising).toEqual([...rising].sort((a, b) => a - b));
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
     expect(pcs.has(2)).toBe(true);
     expect(pcs.has(6)).toBe(true);
     expect(pcs.has(7)).toBe(false); // Natural 11 is still avoided over Dmaj7.

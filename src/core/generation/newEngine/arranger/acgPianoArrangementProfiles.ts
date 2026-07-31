@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { Rng } from '../foundation';
+import type { AcgPianoOpeningKnowledgeId } from '../knowledge/acgPianoArrangementKnowledge';
 
 export const ACG_PIANO_ARRANGEMENT_PROFILE_IDS = [
   'motif-first',
@@ -26,12 +27,7 @@ export type AcgPianoArrangementFormShape =
   | 'descending-memory';
 
 /** Score-plan facing intent for the first phrase, not a renderer texture name. */
-export type AcgPianoOpeningStrategy =
-  | 'direct-theme'
-  | 'call-and-answer'
-  | 'pedal-prelude'
-  | 'wide-prelude'
-  | 'falling-pickup';
+export type AcgPianoOpeningStrategy = AcgPianoOpeningKnowledgeId;
 
 /** A compact vocabulary lets the score plan vary surfaces without losing a coherent cue identity. */
 export type AcgPianoSurfaceFamily = 'air' | 'ripple' | 'pulse' | 'vertical' | 'answer';

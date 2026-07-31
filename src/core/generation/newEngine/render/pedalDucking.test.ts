@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { buildSongBundle, traceGeneration } from '../generation';
 import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import { musicalIRToMidiEvents } from '../sandbox/irToMidi';
-import { applyAcgScorePedalHolds, duckUnderLead, renderSongFull } from './renderCoordinator';
+import { duckUnderLead, renderSongFull } from './renderCoordinator';
 import { beats, midi, ticks } from '../foundation';
 import type { TrackIR } from '../ir/MusicalIR';
 
@@ -30,47 +30,26 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
     const acgPianoPed = audiblePedalDowns('acg', 7);
     expect(compTrack('acg', 7)?.program, 'acg seed7 comp program').toBe(0);
     const plans = (['lead', 'comp', 'bass'] as const).map((role) => plannedPedalEvents('acg', 7, role));
+    const acgBundle = buildSongBundle({ seed: 7, styleHint: 'acg', mood: 'x', targetDuration: 120 });
+    const capabilityPlans = (['lead', 'comp', 'bass'] as const)
+      .map((role) => acgBundle.instrumentation.pedalPlanByRole[role]);
+    expect(capabilityPlans.every((plan) => plan?.timingOwner === 'arranger-piano-score'
+      && plan.playerGroup === 'shared-piano'
+      && plan.authorizedSectionIds?.length === acgBundle.arrangement.sections.length
+      && Object.keys(plan.disabledBySection).length === 0)).toBe(true);
     expect(plans[0]).toEqual(plans[1]);
     expect(plans[1]).toEqual(plans[2]);
     expect(acgPianoPed.length, '三条同钢琴职责均投影 CC64 down')
       .toBe(plans.flatMap((plan) => plan.filter((event) => event.down)).length);
   });
 
-  it('ACG 总谱的长空气句只去掉内部换踏板，结束和声仍保留 off → down', () => {
-    const base = [
-      { atBeat: 0, down: true },
-      { atBeat: 4, down: false },
-      { atBeat: 4, down: true },
-      { atBeat: 8, down: false },
-      { atBeat: 8, down: true },
-      { atBeat: 12, down: false },
-    ];
-    expect(applyAcgScorePedalHolds(base, [{ startBeat: 0, endBeat: 8, reason: 'opening-afterglow' }])).toEqual([
-      { atBeat: 0, down: true },
-      { atBeat: 8, down: false },
-      { atBeat: 8, down: true },
-      { atBeat: 12, down: false },
-    ]);
-  });
-
-  it('ACG 开头的总谱长留白同步延长三只钢琴手，并真实进入 CC64 输出', () => {
+  it('ACG 三手消费同一份 pre-NoteIR pedal score，器配层只保留能力授权', () => {
     const bundle = buildSongBundle({ seed: 7, styleHint: 'acg', mood: 'lyrical', targetDuration: 90 });
     const basePedal = bundle.instrumentation.pedalPlanByRole.comp?.events ?? [];
-    const opening = basePedal.slice(0, 4);
-    expect(opening).toHaveLength(4);
-    expect(opening[0]).toMatchObject({ atBeat: 0, down: true });
-    expect(opening[1]).toMatchObject({ down: false });
-    expect(opening[2]).toMatchObject({ atBeat: opening[1]!.atBeat, down: true });
-    expect(opening[3]).toMatchObject({ down: false });
-
-    const suppliedScore = {
-      ...bundle.acgPianoScorePlan!,
-      sharedPedalHolds: [{
-        startBeat: opening[0]!.atBeat,
-        endBeat: opening[3]!.atBeat,
-        reason: 'opening-afterglow' as const,
-      }],
-    };
+    expect(bundle.instrumentation.pedalPlanByRole.comp?.timingOwner).toBe('arranger-piano-score');
+    expect(basePedal).toEqual([]);
+    expect(bundle.instrumentation.pedalPlanByRole.comp?.authorizedSectionIds)
+      .toEqual(bundle.arrangement.sections.map((section) => section.id));
     const rendered = renderSongFull(
       bundle.band,
       bundle.arrangement,
@@ -82,10 +61,8 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
       undefined,
       deriveMusicIntentPlan(bundle.band.style, bundle.arrangement),
       undefined,
-      suppliedScore,
+      bundle.acgPianoScorePlan,
     );
-    const innerTick = bundle.timebase.beatToTick(beats(opening[1]!.atBeat)) as number;
-    const endTick = bundle.timebase.beatToTick(beats(opening[3]!.atBeat)) as number;
     const pedalLanes = (['lead', 'comp', 'bass'] as const).map((role) => {
       const track = rendered.ir.tracks.find((candidate) => candidate.role === role);
       expect(track, `${role} track`).toBeDefined();
@@ -93,19 +70,23 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
     });
     expect(pedalLanes[0]).toEqual(pedalLanes[1]);
     expect(pedalLanes[1]).toEqual(pedalLanes[2]);
-    expect(pedalLanes[0].some((event) => (event.atTick as number) === innerTick && !event.down), 'air must not lift at internal harmony').toBe(false);
-    expect(pedalLanes[0]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ atTick: ticks(endTick), down: false }),
-      expect.objectContaining({ atTick: ticks(endTick), down: true }),
-    ]));
+    expect(pedalLanes[0].length).toBeGreaterThan(2);
+    for (let index = 1; index < pedalLanes[0].length; index++) {
+      expect(pedalLanes[0][index]!.down).not.toBe(pedalLanes[0][index - 1]!.down);
+      expect(pedalLanes[0][index]!.atTick as number).toBeGreaterThan(pedalLanes[0][index - 1]!.atTick as number);
+    }
 
     const outgoing = musicalIRToMidiEvents(rendered.ir, 50, 'acg')
       .filter((event) => event.type === 'cc' && event.data1 === 64);
     for (const channel of [1, 2, 3]) {
       const lane = outgoing.filter((event) => event.channel === channel);
-      expect(lane.some((event) => event.ticks === innerTick && event.data2 === 0), `ch${channel} internal CC64 off`).toBe(false);
-      expect(lane.some((event) => event.ticks === endTick && event.data2 === 0), `ch${channel} phrase-end CC64 off`).toBe(true);
-      expect(lane.some((event) => event.ticks === endTick && event.data2 >= 64), `ch${channel} next-harmony CC64 on`).toBe(true);
+      const sameTickStates = new Map<number, Set<number>>();
+      for (const event of lane) {
+        const values = sameTickStates.get(event.ticks) ?? new Set<number>();
+        values.add(event.data2 >= 64 ? 1 : 0);
+        sameTickStates.set(event.ticks, values);
+      }
+      expect([...sameTickStates.values()].every((states) => states.size === 1), `ch${channel} no blind same-tick repedal`).toBe(true);
     }
   });
 
@@ -124,7 +105,7 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
     expect(planned.filter((event) => event.down).length).toBe(planned.filter((event) => !event.down).length);
   });
 
-  it('JAZZ 原声钢琴 comp 的密集切分只消费 CC11；CC64 仅可出现在总谱标注的抒情收束段', () => {
+  it('JAZZ 原声钢琴 comp 保持默认 CC11；CC64 仅可出现在总谱标注的抒情收束段', () => {
     const bundle = buildSongBundle({ seed: 9, styleHint: 'jazz', mood: 'x', targetDuration: 120 });
     const ir = gen('jazz', 9).ir;
     const comp = ir.tracks.find((track) => track.role === 'comp');
@@ -145,8 +126,7 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
     const compExpression = outgoing.filter((event) => event.type === 'cc' && event.channel === 2 && event.data1 === 11);
     expect(compPedal.length).toBeGreaterThan(0);
     expect(compPedal.every((event) => lyricalRanges.some((range) => event.ticks >= range.startTick && event.ticks <= range.endTick))).toBe(true);
-    expect(compExpression.length).toBeGreaterThan(1);
-    expect(compExpression.every((event) => [70, 80, 90, 100].includes(event.data2))).toBe(true);
+    expect(compExpression).toEqual([]);
   });
 
   it('ACG 不自动写未完成 5504 实板标定的 CC72 release', () => {

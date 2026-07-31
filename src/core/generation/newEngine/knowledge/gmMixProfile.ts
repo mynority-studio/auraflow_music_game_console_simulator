@@ -110,6 +110,15 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
   drum: { volume: 78, pan: 64, reverb: 14, chorus: 0 },
 };
 
+/** Firm5504 MIDI-MIC verified LOFI channel macro (CC7/10/91/93). */
+export const DREAM5504_LOFI_CHANNEL_MIX: Readonly<Record<InstrumentRoleName, RoleMix>> = {
+  lead: { volume: 96, pan: 58, reverb: 28, chorus: 7 },
+  comp: { volume: 92, pan: 72, reverb: 36, chorus: 11 },
+  bass: { volume: 92, pan: 64, reverb: 4, chorus: 0 },
+  drum: { volume: 97, pan: 64, reverb: 16, chorus: 0 },
+  pad: { volume: 74, pan: 84, reverb: 48, chorus: 16 },
+};
+
 // ★ melody-forward(2026-06-23,用户:走 A 整编里 motif/旋律声音小)。lead = 主奏,应明显坐在 comp/鼓之上,
 //   但原 lead CC7(79-83)反而低于 comp(85-90)→ 旋律被埋。统一抬高 lead CC7,让有效响度(CC7×velocity)
 //   回到与【试听(用户认可的平衡)】相当(实测 试听 lead eff≈69 vs 整编 59;+14 把整编拉回 ~69)。
@@ -186,6 +195,10 @@ export function mixForProgram(args: {
 }): RoleMix {
   const { role, program, hasPad, space } = args;
   const base = { ...ROLE_BASE[role] };
+
+  if (args.style.toLowerCase() === 'lofi') {
+    return { ...DREAM5504_LOFI_CHANNEL_MIX[role] };
+  }
 
   // Dream 四个正式风格完全绕过 role/program 音量表。明确重发默认值，既不
   // 依赖板子当前通道状态，也不改变 GMBK 固化音色之间的原始响度关系。

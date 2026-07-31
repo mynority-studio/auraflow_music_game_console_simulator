@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMusicSync } from './MusicGenerationService';
 import { musicalIRToMidiEvents, roomWetFor } from '../../audio/musicalIrToMidi';
-import { ACG_PIANOSONG_PIANO_VOICES } from '../../sound/GMBK5X128Voices';
+import { ACG_PIANOSONG_PIANO_VOICES, isAcousticPianoVoice } from '../../sound/GMBK5X128Voices';
 import type { BandParticipantSelection } from './types';
 
 // ============================================================
@@ -32,7 +32,8 @@ describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead
 
   it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;三轨同属同一架白名单钢琴但分轨', () => {
     const selectedAddresses = new Set<string>();
-    // 覆盖四个现代 GM 权重槽：0/0、0/1、0/2、8/4。
+    // 自动 ACG 只从已验证 CC64 的原声钢琴槽选择，避免同一架“钢琴”随机
+    // 落到没有 damper 合同的电钢。
     for (const seed of [0, 1, 2, 7, 11, 14, 21, 27]) {
       const r = generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
       expect(r.status, `seed ${seed} generation`).not.toBe('failed');
@@ -96,8 +97,7 @@ describe('musicGeneration/acgCompHardContract · §6.2 Band Selection 不能删 
 });
 
 describe('musicGeneration/acgCompHardContract · §6.3 同钢琴 program 不合并 lead/comp/bass', () => {
-  it('lead/comp/bass 分通道，但同一 CC0+program 的钢琴且只复位默认控制器', () => {
-    // seed 27 命中 CC0=8 / PC4 Soft Electric Piano，直接验证非零 bank 被发到 MIDI。
+  it('lead/comp/bass 分通道，但同一架可踩 damper 的原声钢琴同步消费 CC64', () => {
     const r = generateMusicSync({ seed: 27, styleHint: 'acg', mood: 'build', targetDuration: 90 });
     const events = musicalIRToMidiEvents(r.ir!, roomWetFor('acg'), 'acg');
     const noteOnCh = (ch: number) => events.filter((e) => e.type === 'noteOn' && e.channel === ch);
@@ -112,16 +112,22 @@ describe('musicGeneration/acgCompHardContract · §6.3 同钢琴 program 不合�
     expect(noteOnCh(3).length, 'piano left hand noteOn @ch3').toBeGreaterThan(0);
     expect(addressOf(lead)).toBe(addressOf(comp));
     expect(addressOf(bass)).toBe(addressOf(lead));
-    expect(addressOf(lead)).toBe('8/4');
+    expect(isAcousticPianoVoice(lead.bank, lead.program), addressOf(lead)).toBe(true);
     expect(progCh(1).every((e) => e.data1 === lead.program)).toBe(true);
     expect(progCh(2).every((e) => e.data1 === comp.program)).toBe(true);
     expect(progCh(3).every((e) => e.data1 === bass.program)).toBe(true);
     expect(cc0Ch(1).some((e) => e.data2 === (lead.bank ?? 0))).toBe(true);
     expect(cc0Ch(2).some((e) => e.data2 === (comp.bank ?? 0))).toBe(true);
     expect(cc0Ch(3).some((e) => e.data2 === (bass.bank ?? 0))).toBe(true);
-    expect(events.filter((e) => e.type === 'cc' && e.channel === 1).every((e) => [0, 121].includes(e.data1))).toBe(true);
-    expect(events.filter((e) => e.type === 'cc' && e.channel === 2).every((e) => [0, 121].includes(e.data1))).toBe(true);
-    expect(events.filter((e) => e.type === 'cc' && e.channel === 3).every((e) => [0, 121].includes(e.data1))).toBe(true);
+    expect(events.filter((e) => e.type === 'cc' && e.channel === 1).every((e) => [0, 64, 121].includes(e.data1))).toBe(true);
+    expect(events.some((e) => e.type === 'cc' && [7, 11].includes(e.data1))).toBe(false);
+    expect(events.filter((e) => e.type === 'cc' && e.channel === 2).every((e) => [0, 64, 121].includes(e.data1))).toBe(true);
+    expect(events.filter((e) => e.type === 'cc' && e.channel === 3).every((e) => [0, 64, 121].includes(e.data1))).toBe(true);
+    for (const channel of [1, 2, 3]) {
+      const damper = events.filter((e) => e.type === 'cc' && e.channel === channel && e.data1 === 64);
+      expect(damper.some((e) => e.data2 >= 64), `ch${channel} CC64 down`).toBe(true);
+      expect(damper.some((e) => e.data2 === 0), `ch${channel} CC64 off`).toBe(true);
+    }
   });
 });
 

@@ -19,6 +19,7 @@ import {
 
 /** prototype 选择结果:slots + 该 prototype 的 transformPolicy(prototype 段离调变体门控)。 */
 export interface SelectedProgression {
+  prototypeId: string;
   slots: ProgressionSlot[];
   transformPolicy?: ProgressionTransformPolicy;
 }

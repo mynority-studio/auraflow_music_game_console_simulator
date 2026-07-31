@@ -100,7 +100,7 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
     }
   });
 
-  it('short/no-intro repeat source: opening gate 只影响首段，不会把 lead 空洞复制到目标段，且 golden musicality 干净', () => {
+  it('short/no-intro LOFI repeat source: intentional four-bar Lead rest survives replay, then target enters on its scored response bar', () => {
     const { ir, audit, plans, arr, tb } = pipeline(64062, 'lofi');
     const replay = plans.find((candidate) => candidate.sourceId === arr.sections[0]?.id);
     expect(replay, '首段实际作为 repeat source').toBeDefined();
@@ -112,8 +112,17 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
     const sourceEarly = win(ir, 'lead', replay!.sourceStartTick + 16, replay!.sourceStartTick + earlyWidth);
     const targetEarly = win(ir, 'lead', replay!.targetStartTick + 16, replay!.targetStartTick + earlyWidth);
 
-    expect(targetEarly.length, '目标 repeat 的早段 body 应恢复').toBeGreaterThan(sourceEarly.length);
-    expect(targetEarly.length).toBeGreaterThan(0);
+    expect(sourceEarly, '源段开头是 Arranger intentional rest').toHaveLength(0);
+    expect(targetEarly, '目标段必须保留同一 intentional rest').toHaveLength(0);
+    const firstActiveBar = arr.lofiLeadPresencePlan?.activeBarsBySection[replay!.targetId]?.[0];
+    expect(firstActiveBar).toBeDefined();
+    const targetResponse = win(
+      ir,
+      'lead',
+      replay!.targetStartTick + firstActiveBar! * barTicks,
+      replay!.targetStartTick + (firstActiveBar! + 1) * barTicks,
+    );
+    expect(targetResponse.length, '目标段在 Arranger 选定的 response bar 发声').toBeGreaterThan(0);
     const musicalityRules = new Set([
       'transition-pickup-missing',
       'section-downbeat-anchor-missing',

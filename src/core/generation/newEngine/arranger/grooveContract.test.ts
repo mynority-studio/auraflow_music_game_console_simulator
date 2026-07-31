@@ -71,14 +71,52 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
 
   it('★ POP 抒情 mood 复用现有 ballad contract / 柔化 BPM、鼓 groove 与收尾', () => {
     const p = plan(7, 'pop', 'calm-build');
+    const zh = plan(7, 'pop', '抒情慢pop');
     expect(p.songGrooveContractId).toBe('pop_ballad_halftime');
+    expect(zh.songGrooveContractId).toBe('pop_ballad_halftime');
+    expect(p.songGrooveContract.articulation).toBe('ballad');
     expect(p.tempoBpm).toBeGreaterThanOrEqual(64);
     expect(p.tempoBpm).toBeLessThanOrEqual(100);
+    const firstSection = p.sections[0];
+    const hasDedicatedOpeningSection = firstSection.role === 'intro' || firstSection.functionTag === 'setup';
+    expect(p.openingGesture.textureEntry).toBe(hasDedicatedOpeningSection ? 'pianoRiff' : 'none');
+    expect(p.openingGesture.intensity).toBe('soft');
+    expect(['backbeatDelayed', 'none']).toContain(p.openingGesture.drumEntry);
+    expect(p.openingGesture.drumEntry).not.toBe('fourOnFloorRamp');
+    expect(p.openingGesture.drumEntry).not.toBe('tomPickup');
     const hook = p.sections.find((s) => s.functionTag === 'hook')!;
     const story = p.sections.find((s) => s.functionTag === 'story')!;
     expect(p.grooveBySection[hook.id]).toBe('straight');
     expect(p.grooveBySection[story.id]).toBe('sparse');
     expect(p.endingStyle).toBe('fade');
+    const drumContracts = Object.values(p.drumPerformanceBySection);
+    expect(drumContracts.every((drum) => drum.patternFamily === 'ballad-halftime')).toBe(true);
+    expect(drumContracts.every((drum) => drum.feelProfileId === 'pop-ballad-soft')).toBe(true);
+    expect(drumContracts.every((drum) => drum.snarePolicy === 'rim')).toBe(true);
+    expect(drumContracts.every((drum) => drum.velocityProfile === 'ghosted')).toBe(true);
+    expect(drumContracts.every((drum) => drum.tomPolicy === 'none' && drum.cymbalPolicy === 'none')).toBe(true);
+    expect(drumContracts.every((drum) => drum.fillPolicy === 'none' || drum.fillPolicy === 'light')).toBe(true);
+    expect(drumContracts.every((drum) => drum.densityCeiling <= 0.42)).toBe(true);
+    for (const section of p.sections) {
+      expect(p.rolePerformanceBySection.lead[section.id].continuity, section.id).toBe('legato-flow');
+      expect(p.rolePerformanceBySection.comp[section.id].keyboardMotion, section.id).toBe('lyrical');
+    }
+    expect(p.grooveScorePlan.boundaries.every((boundary) => boundary.intensity === 1)).toBe(true);
+    expect(p.grooveScorePlan.boundaries.every((boundary) => boundary.drumFillFamily === 'pop-snare-pickup')).toBe(true);
+    expect(p.grooveScorePlan.boundaries.every((boundary) => boundary.landing !== 'kick-crash')).toBe(true);
+  });
+
+  it('★ POP 华语/日系 mood 收窄到 radio/JPOP/ballad,不默认抽 CityPop 快推感', () => {
+    const allowed = new Set(['pop_radio_straight', 'pop_jpop_push_8ths', 'pop_ballad_halftime']);
+    for (const mood of ['华语流行', '日系流行', 'mandopop', 'jpop'] as const) {
+      for (let seed = 1; seed <= 64; seed++) {
+        const p = plan(seed, 'pop', mood);
+        expect(allowed.has(p.songGrooveContractId), `${mood}/${seed}: ${p.songGrooveContractId}`).toBe(true);
+        expect(p.songGrooveContractId, `${mood}/${seed}`).not.toBe('pop_citypop_boogie');
+        expect(p.tempoBpm, `${mood}/${seed}`).toBeGreaterThanOrEqual(80);
+        expect(p.tempoBpm, `${mood}/${seed}`).toBeLessThanOrEqual(112);
+      }
+    }
   });
 
   it('★ JAZZ 当前只开放已验证的 4/4 archetype，跨 seed 保持确定', () => {
@@ -152,6 +190,26 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     }
   });
 
+  it('★ POP radio/JPOP 下发 live-lounge 鼓手 feel,允许 ghost/backbeat 细节', () => {
+    for (const id of ['pop_radio_straight', 'pop_jpop_push_8ths'] as const) {
+      const perf = drumIntentPlan('pop', id);
+      for (const section of drumIntentSections) {
+        const drum = perf[section.id];
+        expect(drum.feelProfileId, `${id}/${section.id}`).toBe('pop-live-lounge');
+        if (drum.patternFamily === 'ballad-halftime') {
+          expect(drum.snarePolicy, `${id}/${section.id}`).toBe('rim');
+          expect(drum.densityCeiling, `${id}/${section.id}`).toBeLessThanOrEqual(0.30);
+        } else {
+          expect(drum.snarePolicy, `${id}/${section.id}`).toBe('ghost-before-backbeat');
+          expect(drum.densityCeiling, `${id}/${section.id}`).toBeGreaterThanOrEqual(section.functionTag === 'setup' ? 0.32 : 0.64);
+        }
+        expect(drum.velocityProfile, `${id}/${section.id}`).toBe('ghosted');
+        expect(drum.timingProfile, `${id}/${section.id}`).toBe('behind-snare');
+        expect(drum.feelOffsetMs, `${id}/${section.id}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it('★ LOFI 主体 loop 必须是 hiphop 鼓机语感,不能落到 minimal/tight', () => {
     for (let seed = 1; seed <= 100; seed++) {
       const p = plan(seed, 'lofi');
@@ -159,7 +217,7 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
       expect(loopSections.length, `seed ${seed} 应有 loop 主体段`).toBeGreaterThan(0);
       for (const s of loopSections) {
         const perf = p.drumPerformanceBySection[s.id];
-        expect(['tr808-lofi-boombap', 'tr808-lofi-dusty-break'], `seed ${seed}/${s.id}`).toContain(perf.patternFamily);
+        expect(['tr808-lofi-boombap', 'tr808-lofi-dusty-break', 'tr808-lofi-soul-halftime'], `seed ${seed}/${s.id}`).toContain(perf.patternFamily);
         expect(perf.timingProfile, `seed ${seed}/${s.id}`).toBe('dilla-late');
       }
     }

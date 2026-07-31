@@ -54,6 +54,10 @@ export interface RolePedalPlan {
   role: InstrumentRoleName;
   /** Several writing roles may belong to one physical piano and one pedal lane. */
   playerGroup?: 'shared-piano';
+  /** ACG timing is compiled after all three score-time hands exist. */
+  timingOwner?: 'instrumentation' | 'arranger-piano-score';
+  /** Hardware-authorized sections when timing belongs to the arranger score. */
+  authorizedSectionIds?: readonly SectionId[];
   events: readonly PedalBeatEvent[];
   disabledBySection: Partial<Record<SectionId, 'non-piano-voice' | 'independent-piano-bass' | 'fast-keyboard-motion' | 'inactive'>>;
 }
@@ -241,9 +245,9 @@ export interface InstrumentationPlanData {
   spaceProfile: SpaceProfile;
   // ★ 手势表情层(吹奏/气息模拟):器配层据最终 program 下发表情计划,render 只消费计划,不再自行按 GM 号猜。
   gestureExpressionByRole: Record<InstrumentRoleName, GestureExpressionPlan>;
-  // CC64 is score-owned: Arrangement declares keyboard motion, Instrumentation
-  // resolves a concrete voice-safe pedal plan, and render only converts beats
-  // to TrackIR ticks. No style-based pedal guess is allowed downstream.
+  // CC64 capability is voice-owned here. Legacy styles retain a voice-safe
+  // beat plan; ACG declares `arranger-piano-score` and compiles musical timing
+  // only after BASS/COMP/LEAD score-time attacks are all known.
   pedalPlanByRole: Partial<Record<InstrumentRoleName, RolePedalPlan>>;
   // 慢速 CC 自动化同样由器配层据完整 CC0+Program 能力下发。当前只开放原声钢琴的
   // CC11 乐句动态；render 不按 GM program 猜控制器，MIDI adapter 也只放行该已验证路径。

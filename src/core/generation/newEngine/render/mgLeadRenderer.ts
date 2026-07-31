@@ -26,16 +26,25 @@ import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
 import type { RoadMap } from './mgRoadMapParser';
 import { expandGrammarForBrick, expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { expandGrammarForBrickMatchingRhythm } from './mgRhythmShapeMatcher';
-import { reserveScheduledTokensForAuthoredSpans, scheduleBrickExpansions } from './mgTokenScheduler';
-import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
+import { applyScheduledLeadSilence, ensureScheduledLeadEntries, reserveScheduledTokensForAuthoredSpans, scheduleBrickExpansions } from './mgTokenScheduler';
+import { planAcgLeadAfterglowHolds, scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
+import { scheduleLofiLeadScoreTokens } from './mgLofiLeadScoreScheduler';
 import type { AcgLeadPresencePlan } from './acgLeadPresencePlan';
 import type { AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
+import {
+  acgPianoRestIntentsFromAfterglow,
+  compileAcgPianoPedalScore,
+  type AcgPianoPedalAttackIntent,
+  type AcgPianoPedalScore,
+} from '../arranger/acgPianoPedalScore';
+import type { LofiPhraseInteractionPlan } from '../arranger/ArrangementPlan';
+import type { LofiLeadScorePlan } from '../arranger/lofiLeadScorePlan';
 import { acgDynamicsNoteKey, type AcgDynamicsTaggedTrack } from './acgDynamics';
 import { fallbackTokensForBrick } from './mgAdvisor';
 import { realizeTokens, type MgNoteEvent } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
 import { renderStyleFeel, feelForStyle, feelFromGrooveContract, type ImprovisorStyleFeel } from './mgStyleRenderer';
-import { fitMidiToProgramRange } from '../knowledge/instruments';
+import { fitMidiToProgramRange, playableRangeForRole } from '../knowledge/instruments';
 import {
   shapeMelodyHarmony,
   // ★ Phase C-2(directive 3.4):post-shaper 生产链(shapeMelodyHarmony 之后的最终 lead 整形)。
@@ -53,6 +62,9 @@ import {
 } from '../knowledge/melodyStyleGrammarProfiles';
 import { makeSeededRng } from './mgRng';
 import { authoredLeadSpans, type AuthoredUserMotifBrickPlan } from './userMotifBrick';
+import { compileLofiPhraseLead } from './lofiPhraseLeadCompiler';
+import { lofiLeadGrammarForRole, type LofiLeadGrammarRole } from '../knowledge/lofiLeadGrammarBank';
+import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI' | 'ACG';
@@ -104,8 +116,12 @@ export function buildMgLeadRoadMap(
   band: BandSpec,
   timebase: Timebase,
   acgPianoScorePlan?: AcgPianoScorePlan,
+  lofiLeadScorePlan?: LofiLeadScorePlan,
 ): RoadMap {
   if (band.style.toLowerCase() === 'acg' && acgPianoScorePlan?.roadMap) return acgPianoScorePlan.roadMap;
+  if (band.style.toLowerCase() === 'lofi' && lofiLeadScorePlan?.roadMap) {
+    return materializeLofiScoreRoadMap(lofiLeadScorePlan.roadMap);
+  }
   const chords = harmonicPlanToMgChordDefs(plan);
   const part = buildChordPart(chords, [timebase.meter.numerator, timebase.meter.denominator]);
   const songKeyPc = ((band.key as number) % 12 + 12) % 12;
@@ -141,11 +157,99 @@ function grammarForStyle(s: MgStyle, leadProgram?: number) {
     : ENRICHED_GRAMMAR;
 }
 
+/** A score-owned rest is a grammar result, never an empty expansion fallback. */
+function lofiScoreRestTokens(durationBeats: number): AbstractMelodyToken[] {
+  return [{ kind: 'R', duration: Math.max(0, durationBeats) }];
+}
+
+/**
+ * The bundle deliberately deep-freezes its arranger score. Grammar/runtime
+ * APIs still use mutable RoadMap arrays, so detach a small snapshot here
+ * rather than weakening score ownership with casts.
+ */
+function materializeLofiScoreRoadMap(
+  source: NonNullable<LofiLeadScorePlan['roadMap']>,
+): RoadMap {
+  return {
+    bricks: source.bricks.map((brick) => ({
+      name: brick.name,
+      family: brick.family,
+      startBeat: brick.startBeat,
+      durationBeats: brick.durationBeats,
+      chordIndices: [...brick.chordIndices],
+      ...(brick.keyPc === undefined ? {} : { keyPc: brick.keyPc }),
+      cost: brick.cost,
+    })),
+    totalCost: source.totalCost,
+    segments: source.segments.map((segment) => ({ ...segment })),
+  };
+}
+
+function lofiGrammarRoleForScoreBrick(
+  scorePlan: LofiLeadScorePlan,
+  brick: RoadMap['bricks'][number],
+): LofiLeadGrammarRole | undefined {
+  const brickEnd = brick.startBeat + brick.durationBeats;
+  const slot = scorePlan.slots
+    .filter((candidate) => candidate.role !== 'rest'
+      && candidate.startBeat < brickEnd - 1e-4
+      && candidate.endBeat > brick.startBeat + 1e-4)
+    .sort((left, right) => {
+      const leftStartsHere = left.startBeat <= brick.startBeat + 1e-4 ? 0 : 1;
+      const rightStartsHere = right.startBeat <= brick.startBeat + 1e-4 ? 0 : 1;
+      return leftStartsHere - rightStartsHere
+        || left.startBeat - right.startBeat
+        || left.id.localeCompare(right.id);
+    })[0];
+  if (!slot) return undefined;
+  switch (slot.role) {
+    case 'statement-carrier': return 'statement-carrier';
+    case 'answer-riff': return 'answer-riff';
+    case 'return-hold': return 'return-hold';
+    case 'rest': return undefined;
+  }
+}
+
+function applyArrangerLeadSilence(
+  events: readonly MgNoteEvent[],
+  windows: readonly { startBeat: number; endBeat: number }[],
+): MgNoteEvent[] {
+  if (windows.length === 0) return [...events];
+  return events.filter((event) => {
+    if (event.part !== 'melody' || event.duration <= 0) return true;
+    return !windows.some((window) =>
+      event.time >= window.startBeat - 1e-6
+      && event.time < window.endBeat - 1e-6);
+  });
+}
+
 /** 生产 lead:HarmonicPlan → MG 全链 → lead TrackIR。
  *  ★ Loop 1(2026-06-09,strict parity):MG seed = 【song seed 直通】(makeSeededRng(songSeed)),
  *    不再经 RandomContext 的 melody 子流 int() 派生 → 与 MG oracle 同 seed 同旋律(事件级可比)。
  *    newEngine 其它模块(伴奏/人性化/器配)仍用 RandomContext 子流。 */
-export function renderMgMelody(
+/** Extra ACG performance intent produced before TrackIR exists. */
+export interface MgLeadPerformanceResult {
+  track: TrackIR;
+  /** Complete pre-NoteIR damper score shared by ACG BASS/COMP/LEAD. */
+  acgPianoPedalScore?: AcgPianoPedalScore;
+}
+
+/**
+ * Optional read-only audit seam. The production renderer writes a detached
+ * snapshot after score-time grammar, phrase and local-harmony compilation but
+ * before NoteIR exists. Nothing downstream reads this object, so enabling an
+ * audit cannot change the generated score or consume another random number.
+ */
+export interface MgLeadDebugCapture {
+  grammarEvents?: MgNoteEvent[];
+}
+
+/**
+ * Production lead plus the small amount of score-time ACG performance intent
+ * that cannot be represented by a lead NoteIR alone.  Existing callers that
+ * need only a track should use `renderMgMelody` below.
+ */
+export function renderMgMelodyWithAcgPerformancePlan(
   plan: HarmonicPlan,
   band: BandSpec,
   timebase: Timebase,
@@ -164,13 +268,29 @@ export function renderMgMelody(
   roadMapOverride?: RoadMap,
   /** User-authored ownership already fitted to the shared production RoadMap. */
   authoredUserMotifPlan?: AuthoredUserMotifBrickPlan,
-): TrackIR {
+  /** Tempo converts the research-backed afterglow seconds into musical beats. */
+  tempoBpm?: number,
+  /** LOFI only: Arranger-authored breathing windows, consumed as rest tokens. */
+  leadSilenceWindows?: readonly { startBeat: number; endBeat: number }[],
+  /** LOFI only: required response entries for Arranger-active bars. */
+  leadEntryBeats?: readonly number[],
+  /** Diagnostics only: captures the final score-time grammar layer before NoteIR. */
+  debugCapture?: MgLeadDebugCapture,
+  /** LOFI only: shared phrase arc, motif and ensemble-role score. */
+  lofiPhraseInteractionPlan?: Readonly<LofiPhraseInteractionPlan>,
+  /** LOFI only: immutable post-harmony score; bypasses legacy phrase rewriting. */
+  lofiLeadScorePlan?: LofiLeadScorePlan,
+): MgLeadPerformanceResult {
   const program = leadProgram ?? band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);
-  if (chords.length === 0) return { role: 'lead', notes: [], program };
+  if (chords.length === 0) return {
+    track: { role: 'lead', notes: [], program },
+    acgPianoPedalScore: undefined,
+  };
 
   const seed = songSeed; // MG seed = song seed 直通(strict parity)
   const style = toMgStyle(band.style);
+  const isScoreOwnedLofiLead = style === 'LOFI' && lofiLeadScorePlan !== undefined;
   const songKeyPc = ((band.key as number) % 12 + 12) % 12;
   const musicKey = NOTE_NAMES[songKeyPc];
   // 模式名:modal regime 用具体教会调式(首字母大写);否则 major→Ionian / minor→Aeolian。
@@ -183,9 +303,11 @@ export function renderMgMelody(
   const mgRng = makeSeededRng(seed);
   const part = buildChordPart(chords, meter);
   // ★ Phase B:style-aware functional RoadMap(当前 MG 真源,554-brick catalog DP cover)。
-  const roadMap = roadMapOverride ?? (style === 'ACG' && acgPianoScorePlan?.roadMap
-    ? acgPianoScorePlan.roadMap
-    : parseFunctionalRoadMap({ part, songKeyPc, style }));
+  const roadMap = isScoreOwnedLofiLead && lofiLeadScorePlan?.roadMap
+    ? materializeLofiScoreRoadMap(lofiLeadScorePlan.roadMap)
+    : roadMapOverride ?? (style === 'ACG' && acgPianoScorePlan?.roadMap
+      ? acgPianoScorePlan.roadMap
+      : parseFunctionalRoadMap({ part, songKeyPc, style }));
   const expandForRhythmIdentity = (
     grammar: Parameters<typeof expandGrammarForBrick>[0],
     brick: RoadMap['bricks'][number],
@@ -216,6 +338,34 @@ export function renderMgMelody(
         });
       return { brickIndex, brick, tokens: expandForRhythmIdentity(grammar, brick) };
     })
+    : isScoreOwnedLofiLead
+      ? roadMap.bricks.map((brick, brickIndex) => {
+        if ((lofiLeadScorePlan?.events?.length ?? 0) > 0) {
+          // Arranger RoadMap bricks have already resolved an existing LOFI
+          // grammar texture into exact score events. Do not expand a second,
+          // renderer-owned lick over that authored result.
+          return {
+            brickIndex,
+            brick,
+            tokens: lofiScoreRestTokens(brick.durationBeats),
+          };
+        }
+        const role = lofiGrammarRoleForScoreBrick(lofiLeadScorePlan!, brick);
+        const grammar = role
+          ? lofiLeadGrammarForRole(role, LOFI_ENRICHED_GRAMMAR, {
+            family: brick.family,
+            name: brick.name,
+            durationBeats: brick.durationBeats,
+          })
+          : undefined;
+        return {
+          brickIndex,
+          brick,
+          // An empty score bank is a deliberate release. Do not fall through
+          // to fallbackTokensForBrick and resurrect an unplanned lick.
+          tokens: grammar ? expandForRhythmIdentity(grammar, brick) : lofiScoreRestTokens(brick.durationBeats),
+        };
+      })
     : authoredUserMotifPlan
       ? roadMap.bricks.map((brick, brickIndex) => ({
         brickIndex,
@@ -228,16 +378,84 @@ export function renderMgMelody(
         mgRng,
       );
   for (let i = 0; i < perBrick.length; i++) {
-    if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);
+    if (perBrick[i].tokens.length === 0) {
+      perBrick[i].tokens = isScoreOwnedLofiLead
+        ? lofiScoreRestTokens(perBrick[i].brick.durationBeats)
+        : fallbackTokensForBrick(perBrick[i].brick);
+    }
   }
   // ★ MG full-parity G4:ACG 走 cycle-cadence 调度(一条长句铺满和声 cycle,钢琴呼吸),非 brick-by-brick lick chain。
   const generatedSchedule = style === 'ACG'
     ? scheduleAcgCycleCadencePhrases(perBrick, part, { leadPresencePlan: acgLeadPresencePlan, pianoScorePlan: acgPianoScorePlan })
     : scheduleBrickExpansions(perBrick);
-  const scheduled = reserveScheduledTokensForAuthoredSpans(
+  const ownershipReserved = reserveScheduledTokensForAuthoredSpans(
     generatedSchedule,
     authoredLeadSpans(authoredUserMotifPlan),
   );
+  const scoreScheduled = isScoreOwnedLofiLead
+    ? scheduleLofiLeadScoreTokens(ownershipReserved, part, lofiLeadScorePlan)
+    : ownershipReserved;
+  // A score scheduler may create an entry fallback for an otherwise silent
+  // slot. Reserve user material once more so that fallback cannot re-enter an
+  // exact authored quote after it has been scheduled.
+  const scoreOwnershipReserved = isScoreOwnedLofiLead
+    ? reserveScheduledTokensForAuthoredSpans(scoreScheduled, authoredLeadSpans(authoredUserMotifPlan))
+    : scoreScheduled;
+  const silenceScheduled = isScoreOwnedLofiLead
+    ? scoreOwnershipReserved
+    : applyScheduledLeadSilence(
+      scoreOwnershipReserved,
+      leadSilenceWindows ?? [],
+    );
+  const scheduled = isScoreOwnedLofiLead
+    ? silenceScheduled
+    : ensureScheduledLeadEntries(
+      silenceScheduled,
+      leadEntryBeats ?? [],
+      timebase.meter.numerator * (4 / timebase.meter.denominator),
+    );
+  // The lead's single-note tail is a scheduler contract, not a renderer
+  // repair. It may only cross a boundary when the score says the two lower
+  // hands remain silent, and it later executes only on an authorized CC64
+  // lane.
+  const acgAfterglowPedalHolds = style === 'ACG'
+    ? planAcgLeadAfterglowHolds(scheduled, part, acgPianoScorePlan, tempoBpm)
+    : [];
+  const acgLeadPedalAttacks: AcgPianoPedalAttackIntent[] = style === 'ACG'
+    ? [
+      ...scheduled.flatMap((entry, index) => {
+        const audible = entry.token.kind !== 'R'
+          && entry.token.kind !== 'SlopeEnter'
+          && entry.token.kind !== 'SlopeExit';
+        return audible && entry.token.duration > 1e-4
+          ? [{
+            id: `lead:scheduled:${index}`,
+            atBeat: entry.startBeat,
+            durationBeats: entry.token.duration,
+            role: 'lead' as const,
+            voiceCount: entry.acgReturn?.dyad ? 2 : 1,
+          }]
+          : [];
+      }),
+      ...(authoredUserMotifPlan?.notes ?? []).map((note, index) => ({
+        id: `lead:authored:${index}`,
+        atBeat: note.onsetBeat,
+        durationBeats: note.durationBeat,
+        role: 'lead' as const,
+        voiceCount: 1,
+      })),
+    ]
+    : [];
+  // This is the final three-hand score-time compilation point: scheduled
+  // lead attacks already exist, while no NoteIR has been realized yet.
+  const acgPianoPedalScore = style === 'ACG' && acgPianoScorePlan
+    ? compileAcgPianoPedalScore({
+      harmonic: plan,
+      pianoScorePlan: acgPianoScorePlan,
+      leadAttacks: acgLeadPedalAttacks,
+      leadRests: acgPianoRestIntentsFromAfterglow(acgAfterglowPedalHolds),
+    })
+    : undefined;
   // ★ MG full-parity G2(已激活,commit 29a1805):本地音阶语境(style/key/mode)穿透 guide-tone +
   //   token realization → 候选池走 orthogonal admission(结构音 = chord contract ∩ resolved local scale)。
   //   全风格 lead 走 contract∩local scale;JAZZ/RNB 真 chord-scale 色彩音。repeat-group comp off-by-1 已证
@@ -245,6 +463,19 @@ export function renderMgMelody(
   const localScaleContext = { style, key: musicKey, mode: musicMode };
   const authoredRegisterCenter = leadRegister
     ? Math.round(leadRegister.lowMidi + (leadRegister.highMidi - leadRegister.lowMidi) * 0.4)
+    : undefined;
+  // Score-owned LOFI receives the concrete playable range before pitch
+  // realization. The three old NoteIR range-fold passes must therefore be
+  // identity-only for this path; a structural PC is never repaired later.
+  const lofiScoreRegisterRange = isScoreOwnedLofiLead
+    ? (() => {
+      const hard = program === undefined ? [0, 127] as const : playableRangeForRole('lead', program);
+      const lowMidi = Math.max(hard[0], leadRegister?.lowMidi ?? hard[0]);
+      const highMidi = Math.min(hard[1], leadRegister?.highMidi ?? hard[1]);
+      return lowMidi <= highMidi
+        ? { lowMidi, highMidi }
+        : { lowMidi: hard[0], highMidi: hard[1] };
+    })()
     : undefined;
   const rawGuideTonePlan = buildGuideTonePlan({
     chordPart: part,
@@ -263,7 +494,9 @@ export function renderMgMelody(
     guideTonePlan,
     preserveSlopeGrammar: style === 'LOFI' || style === 'ACG', // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)
     registerCenter: style === 'ACG' ? 74 : authoredRegisterCenter, // ACG lead 是钢琴最高声部；locked ensemble 使用其作者音区中心
+    lofiScoreRegisterRange,
     localScaleContext,
+    preserveTokenBoundaries: isScoreOwnedLofiLead,
   });
   // ★ 旋律 timing owner = MG StyleRenderer(单一所有权,Loop A 校正):lead 在此用 MG style feel 的 swing
   //   (jazz/blues 0.67 摆动;pop/rnb/lofi 0.5 直)。renderCoordinator 末尾的 applySwing【跳过 lead】(swing.ts:22),
@@ -277,7 +510,7 @@ export function renderMgMelody(
   // ACG return-brick 的起止拍是和声合同的一部分。通用 StyleFeel 会把 noteOn
   // 提前到前一和弦、使原本合法的稳定音跨界变成非法悬挂；ACG 的触键/力度在
   // 上游 token velocity + coordinator 的非时值表达层完成，因此这里不改它的时间与时值。
-  if (style !== 'ACG') {
+  if (style !== 'ACG' && !isScoreOwnedLofiLead) {
     const groups: Array<{ contract: LeadGrooveContract | undefined; events: MgNoteEvent[] }> = [];
     for (const event of melody) {
       const span = plan.chordTimeline.find((candidate) =>
@@ -300,7 +533,7 @@ export function renderMgMelody(
   // ACG 的音符内容（尤其 return-brick）在 RoadMap → scheduler → realizer 一次生成完成。
   // 不能再让通用 shaper 事后删音、加 connector 或 snap pitch，否则会破坏显式的趋近→稳定到达。
   // StyleFeel 仍是演奏层（微时值/力度），不是再作曲；其它风格保持既有 MG shaper 链。
-  if (style !== 'ACG') {
+  if (style !== 'ACG' && !isScoreOwnedLofiLead) {
     const applyLofi = style === 'LOFI';
     melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);
     melody = enforceMonophonicMelody(melody);
@@ -308,7 +541,22 @@ export function renderMgMelody(
     melody = extendMelodyTailHolds(melody, chords, style, musicKey, musicMode);
     melody = finalizeMelodyBoundaryVoiceLeading(melody, chords, style, musicKey, musicMode, tonalCharacter);
   }
-  melody = placeMelodyOctaveContinuously(melody, style);
+  if (style === 'LOFI' && !isScoreOwnedLofiLead) {
+    melody = compileLofiPhraseLead(
+      melody,
+      plan,
+      lofiPhraseInteractionPlan,
+      timebase.meter.numerator * (4 / timebase.meter.denominator),
+    );
+  }
+  if (debugCapture) {
+    debugCapture.grammarEvents = melody.map((event) => ({ ...event }));
+  }
+  if (!isScoreOwnedLofiLead) melody = placeMelodyOctaveContinuously(melody, style);
+  // Generic harmony shaping may propose a connector after token scheduling.
+  // Re-apply the Arranger onset admission while events are still score-time
+  // MG objects; no finished NoteIR is deleted or repaired downstream.
+  if (!isScoreOwnedLofiLead) melody = applyArrangerLeadSilence(melody, leadSilenceWindows ?? []);
 
   // ── MgNoteEvent[](beat)→ NoteIR[](tick)──
   let previousOutputPitch: number | null = null;
@@ -316,11 +564,11 @@ export function renderMgMelody(
   const notes: NoteIR[] = melody
     .filter((e) => e.part === 'melody' && e.duration > 0)
     .map((e) => {
-      const rangeFittedPitch = program !== undefined
+      const rangeFittedPitch = !isScoreOwnedLofiLead && program !== undefined
         ? fitMidiToProgramRange(e.noteNumber, 'lead', program)
         : Math.max(0, Math.min(127, Math.round(e.noteNumber)));
       let pitch = rangeFittedPitch;
-      if (style !== 'JAZZ' && style !== 'BLUES' && style !== 'ACG'
+      if (!isScoreOwnedLofiLead && style !== 'JAZZ' && style !== 'BLUES' && style !== 'ACG'
           && previousOutputPitch !== null && Math.abs(pitch - previousOutputPitch) > 12) {
         const candidates = [-24, -12, 0, 12, 24]
           .map((offset) => rangeFittedPitch + offset)
@@ -351,10 +599,53 @@ export function renderMgMelody(
 
   // ACG 的句间边界、趋近和到达都已在主链明确写时值；不能再用通用 legato
   // 把一颗旧音拖过下一和弦并改变其和声身份。其它风格保持原有演奏层连音。
-  const legatoNotes = style === 'ACG'
+  const legatoNotes = style === 'ACG' || isScoreOwnedLofiLead
     ? notes
     : connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
   const rendered: AcgDynamicsTaggedTrack = { role: 'lead', notes: legatoNotes, program };
   if (quietDyadNoteKeys.length > 0) rendered.__acgQuietDyadNoteKeys = quietDyadNoteKeys;
-  return rendered;
+  return { track: rendered, acgPianoPedalScore };
+}
+
+/** Backward-compatible track-only entry point used by existing callers/tests. */
+export function renderMgMelody(
+  plan: HarmonicPlan,
+  band: BandSpec,
+  timebase: Timebase,
+  songSeed: number,
+  leadProgram?: number,
+  grooveContract?: LeadGrooveContract,
+  acgLeadPresencePlan?: AcgLeadPresencePlan,
+  acgPianoScorePlan?: AcgPianoScorePlan,
+  grooveContractBySection?: Readonly<Record<string, LeadGrooveContract>>,
+  leadRegister?: { lowMidi: number; highMidi: number },
+  roadMapOverride?: RoadMap,
+  authoredUserMotifPlan?: AuthoredUserMotifBrickPlan,
+  tempoBpm?: number,
+  leadSilenceWindows?: readonly { startBeat: number; endBeat: number }[],
+  leadEntryBeats?: readonly number[],
+  debugCapture?: MgLeadDebugCapture,
+  lofiPhraseInteractionPlan?: Readonly<LofiPhraseInteractionPlan>,
+  lofiLeadScorePlan?: LofiLeadScorePlan,
+): TrackIR {
+  return renderMgMelodyWithAcgPerformancePlan(
+    plan,
+    band,
+    timebase,
+    songSeed,
+    leadProgram,
+    grooveContract,
+    acgLeadPresencePlan,
+    acgPianoScorePlan,
+    grooveContractBySection,
+    leadRegister,
+    roadMapOverride,
+    authoredUserMotifPlan,
+    tempoBpm,
+    leadSilenceWindows,
+    leadEntryBeats,
+    debugCapture,
+    lofiPhraseInteractionPlan,
+    lofiLeadScorePlan,
+  ).track;
 }

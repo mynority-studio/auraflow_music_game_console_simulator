@@ -2,8 +2,20 @@ import { describe, it, expect } from 'vitest';
 import {
   diatonicQuality, pickProgressionDegrees,
   PROGRESSION_POOL, listProgressionPrototypes, pickProgressionPrototype, fitProgressionToBars,
+  progressionPrototypeById,
 } from './progressions';
 import { createRandomContext } from '../foundation';
+import { isKnownChordType } from './chords';
+
+const CORPUS_DERIVED_LOFI_IDS = [
+  'lofi_major_plagal_descent_2',
+  'lofi_major_whole_step_planing_4',
+  'lofi_major_parallel_minor_fall_4',
+  'lofi_minor_turnaround_4',
+  'lofi_minor_aeolian_ebb_8',
+  'lofi_minor_late_cadence_4',
+  'lofi_minor_third_bass_vamp_4',
+] as const;
 
 describe('knowledge/progressions', () => {
   it('大调自然 7 和弦品质', () => {
@@ -38,10 +50,10 @@ describe('knowledge/progressions', () => {
 });
 
 describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
-  it('POOL = approved 48 + Jazz 5/4 minor vamp = 49,不含 legacy,id 唯一', () => {
-    expect(PROGRESSION_POOL).toHaveLength(49);
+  it('POOL includes the original short-loop repair and seven corpus-derived LOFI grammars', () => {
+    expect(PROGRESSION_POOL).toHaveLength(63);
     expect(PROGRESSION_POOL.some((p) => p.id.startsWith('legacy_'))).toBe(false);
-    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(49);
+    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(PROGRESSION_POOL.length);
     expect(PROGRESSION_POOL.filter((p) => p.style === 'ACG')).toHaveLength(12); // 旧 ACG 7 + rooted-minor 5
   });
 
@@ -113,6 +125,64 @@ describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
       expect(p.transformPolicy?.allowTonicization).toBe(false);
       expect(p.transformPolicy?.allowBorrowed).toBe(false);
     }
+  });
+
+  it('corpus-derived LOFI grammar preserves function, harmonic rhythm and playable chord types', () => {
+    for (const id of CORPUS_DERIVED_LOFI_IDS) {
+      const prototype = progressionPrototypeById(id);
+      expect(prototype, id).toBeDefined();
+      expect(prototype!.style).toBe('LOFI');
+      expect(prototype!.slots.reduce((sum, slot) => sum + (slot.beats ?? 4), 0), id)
+        .toBe(prototype!.lengthBars * 4);
+      expect(prototype!.slots.every((slot) => isKnownChordType(slot.type)), id).toBe(true);
+    }
+
+    expect(progressionPrototypeById('lofi_major_plagal_descent_2')!.slots)
+      .toMatchObject([
+        { roman: 'IV', type: 'add9', bassRole: '3rd', beats: 1.5 },
+        { roman: 'ii', type: 'm9', beats: 2.5 },
+        { roman: 'I', type: 'maj7' },
+      ]);
+    expect(progressionPrototypeById('lofi_major_whole_step_planing_4')!.slots
+      .map((slot) => [slot.roman, slot.type, slot.beats]))
+      .toEqual([
+        ['I', 'maj7', 8],
+        ['II', 'maj', 4],
+        ['II', 'maj7', 4],
+      ]);
+    expect(progressionPrototypeById('lofi_major_parallel_minor_fall_4')!.slots
+      .map((slot) => [slot.roman, slot.type, slot.beats]))
+      .toEqual([
+        ['I', 'maj', undefined],
+        ['i', 'min', undefined],
+        ['bVII', 'maj', 8],
+      ]);
+    expect(progressionPrototypeById('lofi_minor_turnaround_4')!.slots.map((slot) => slot.roman))
+      .toEqual(['III', 'ii', 'V', 'i', 'V', 'V']);
+    expect(progressionPrototypeById('lofi_minor_turnaround_4')!.slots.at(-1))
+      .toMatchObject({ roman: 'V', type: 'maj', beats: 2 });
+    expect(progressionPrototypeById('lofi_minor_aeolian_ebb_8')!.slots.slice(-2)
+      .map((slot) => [slot.roman, slot.type]))
+      .toEqual([['i', 'min'], ['VII', 'maj']]);
+    expect(progressionPrototypeById('lofi_minor_late_cadence_4')!.slots
+      .map((slot) => [slot.roman, slot.type, slot.beats]))
+      .toEqual([
+        ['i', 'min', 8],
+        ['VI', 'maj', 6],
+        ['VII', 'add9', 2],
+      ]);
+    expect(progressionPrototypeById('lofi_minor_third_bass_vamp_4')!.slots[0])
+      .toMatchObject({ roman: 'i', type: 'm9', bassRole: '3rd', beats: 16 });
+  });
+
+  it('descending Soul shell is upgraded to IVmaj9 → iii11 → ii11 → Imaj9', () => {
+    const slots = progressionPrototypeById('lofi_descending_soul_4')!.slots;
+    expect(slots.map((slot) => [slot.roman, slot.type])).toEqual([
+      ['IV', 'maj9'],
+      ['iii', 'm11'],
+      ['ii', 'm11'],
+      ['I', 'maj9'],
+    ]);
   });
 
   it('fitProgressionToBars(8→16 / →4)长度正确', () => {

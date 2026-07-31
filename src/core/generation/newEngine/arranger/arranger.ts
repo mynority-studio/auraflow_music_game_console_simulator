@@ -18,6 +18,8 @@ import { planOpeningGesture } from './openingGesturePlanner';
 import { planDrumPerformance } from './drumPerformancePlanner';
 import { planGrooveScore } from './grooveScorePlanner';
 import { planRolePerformance } from './performanceContractPlanner';
+import { planLofiLeadPresence } from './lofiLeadPresencePlanner';
+import { planLofiPhraseInteraction } from './lofiPhraseInteractionPlanner';
 import { beatsPerBarOf } from './phraseTiming';
 import {
   JAZZ_5_4_ARCHETYPE_ID,
@@ -39,6 +41,10 @@ import { roleRhythmPattern } from '../knowledge/roleRhythmPatterns';
 import { planJazzFiveFourHarmonicDirectives } from './jazzFiveFourHarmonyScore';
 import { planJazzFiveFourLeadDirectives } from './jazzFiveFourLeadScore';
 import { planJazzFiveFourEnsembleScore } from './jazzFiveFourEnsembleScore';
+import { planLofiFoundation } from './lofiFoundationPlanner';
+import { planLofiLeadBlueprint } from './lofiLeadBlueprintPlanner';
+import { planLofiLeadRoadMap } from './lofiLeadRoadMapPlanner';
+import { grooveContractById } from '../knowledge/grooveContracts';
 
 export interface ArrangementOptions {
   rng?: RandomContext; // 有 → seed 选曲式 + 段落长度变化(不同 seed 不同曲式)
@@ -70,6 +76,22 @@ export function buildArrangementPlan(
     : undefined;
   const jazzGrooveContract = jazzArchetype?.grooveContract;
   const time = planTime(band.style, opts.rng?.substream('time'), opts.mood, jazzGrooveContract); // tempo/meter 服从已选 archetype
+  const lofiFoundationPlan = planLofiFoundation({
+    style: band.style,
+    mode: band.mode,
+    rng: opts.rng,
+  });
+  const lofiGrooveContract = lofiFoundationPlan
+    ? grooveContractById(lofiFoundationPlan.grooveContractId)
+    : undefined;
+  if (lofiFoundationPlan && !lofiGrooveContract) {
+    throw new Error(`LOFI foundation selected unknown GrooveContract ${lofiFoundationPlan.grooveContractId}`);
+  }
+  const lofiLeadBlueprintPlan = planLofiLeadBlueprint({
+    style: band.style,
+    foundationArchetypeId: lofiFoundationPlan?.archetypeId,
+    rng: opts.rng,
+  });
   const targetBars = opts.targetDuration !== undefined && Number.isFinite(opts.targetDuration) && opts.targetDuration > 0
     ? opts.targetDuration * time.tempoBpm / 60 / beatsPerBarOf(time.meter)
     : undefined;
@@ -88,6 +110,32 @@ export function buildArrangementPlan(
     ? resolveArrangementArchetype(jazzArchetype, sections.map((section) => section.id))
     : undefined;
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
+  const lofiLeadPresencePlan = band.style.toLowerCase() === 'lofi'
+    ? planLofiLeadPresence(
+      sections,
+      time.meter,
+      lofiFoundationPlan?.leadSpace,
+      lofiLeadBlueprintPlan,
+    )
+    : undefined;
+  const lofiPhraseInteractionPlan = lofiLeadPresencePlan
+    ? planLofiPhraseInteraction({
+      sections,
+      phrases,
+      motifBindings,
+      leadPresence: lofiLeadPresencePlan,
+      leadBlueprint: lofiLeadBlueprintPlan,
+      phraseBars: time.phraseBreathing.phraseBars,
+      beatsPerBar: beatsPerBarOf(time.meter),
+    })
+    : undefined;
+  const lofiLeadRoadMapPlan = planLofiLeadRoadMap({
+    style: band.style,
+    phraseInteraction: lofiPhraseInteractionPlan,
+    leadBlueprint: lofiLeadBlueprintPlan,
+    beatsPerBar: beatsPerBarOf(time.meter),
+    rng: opts.rng,
+  });
   const jazzFiveFourHarmonyDirectives = planJazzFiveFourHarmonicDirectives({
     meter: time.meter,
     sections,
@@ -145,7 +193,7 @@ export function buildArrangementPlan(
       if (authoredEntry) entryBySection[section.id] = authoredEntry;
     }
   }
-  const openingGesture = planOpeningGesture(sections, band, opts.rng?.substream('openingGesture')); // 全曲开头入场导演(独立子流)
+  const openingGesture = planOpeningGesture(sections, band, opts.rng?.substream('openingGesture'), opts.mood); // 全曲开头入场导演(独立子流)
   // ★ GrooveContract(arranger 拥有)。Phase D 起全 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)走真 pool
   //   (独立 grooveContract 子流);BLUES/无 rng → legacy 派生兜底。feel.swingRatio 从 contract.compSwingRatio 派生。
   // JAZZ 两条主线都使用 archetype 明确指定的合同；非 JAZZ 仍走原 pool。
@@ -154,7 +202,7 @@ export function buildArrangementPlan(
       song: jazzGrooveContract,
       bySection: Object.fromEntries(sections.map((section) => [section.id, jazzGrooveContract])),
     }
-    : planGrooveContract(sections, band.style, time.feel, opts.rng, opts.mood);
+    : planGrooveContract(sections, band.style, time.feel, opts.rng, opts.mood, lofiGrooveContract);
   const grooveScorePlan = planGrooveScore(
     sections,
     groove.bySection,
@@ -164,12 +212,15 @@ export function buildArrangementPlan(
     {
       climaxMap: dynamics.climaxMap,
       fillVariantSeed: opts.rng?.substream('drumFill').int(0x7fffffff),
+      lofiFoundationPlan,
+      lofiPhraseInteractionPlan,
       bassPatternIdBySection: Object.fromEntries(sections.map((section) => [
         section.id,
         sectionPolicyById?.[section.id]
           && !sectionPolicyById[section.id].activeRoles.includes('bass')
           ? undefined
-          : sectionPolicyById?.[section.id]?.rolePatternByRole.bass
+          : lofiFoundationPlan?.bassPatternId
+            ?? sectionPolicyById?.[section.id]?.rolePatternByRole.bass
             ?? groove.bySection[section.id]?.bassPattern,
       ])),
       // The archetype role map also contains ordinary renderer vocabulary
@@ -243,7 +294,6 @@ export function buildArrangementPlan(
       }
     }
   }
-
   const data: ArrangementPlanData = {
     sections,
     phrases,
@@ -268,6 +318,11 @@ export function buildArrangementPlan(
     jazzFiveFourHarmonyDirectives,
     jazzFiveFourLeadDirectives,
     jazzFiveFourEnsembleScore,
+    lofiFoundationPlan,
+    lofiLeadBlueprintPlan,
+    lofiLeadRoadMapPlan,
+    lofiLeadPresencePlan,
+    lofiPhraseInteractionPlan,
     songGrooveContract: groove.song,
     songGrooveContractId: groove.song.id,
     grooveContractBySection: groove.bySection,

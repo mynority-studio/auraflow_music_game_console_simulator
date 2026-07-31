@@ -20,11 +20,16 @@ import type {
   AcgStableArrivalTokenIntent,
   TokenKind,
 } from '../knowledge/melodyGrammarTypes';
-import type { AcgReturnGestureIntent, ScheduledToken } from './mgTokenScheduler';
+import type {
+  AcgReturnGestureIntent,
+  LofiLeadScoreTokenIntent,
+  ScheduledToken,
+} from './mgTokenScheduler';
 import { acgStableToneCandidates, buildPitchSets } from './mgPitchClassSets';
 import type { LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
 import { chooseNote, type ChoiceResult, type NoteChooserContext } from './mgNoteChooser';
 import { guideToneAtBeat, materializeGuideTone, type GuideTonePlan } from './mgGuideTonePlanner';
+import { ACG_PIANO_METRIC_KNOWLEDGE } from '../knowledge/acgPianoArrangementKnowledge';
 
 /** MG NoteEvent 的窄等价物(realizeTokens 实际写入字段)。完整 MG NoteEvent 另含
  *  chordSymbol/pitchOffset/pitchEnvelope/instrument —— realizeTokens 不写,故省。 */
@@ -47,6 +52,15 @@ export interface MgNoteEvent {
   //   brick name/family —— post-shaper 生产链(enforceMonophonic/boundaryVL/tailHolds/finalizeVL,Phase C)
   //   据 grammarSlopeRole(inside/last)/grammarTokenKind 做边界/解决决策。additive:不改 pitch/time/dur/vel。
   grammarTokenKind?: TokenKind;
+  /** Read-only provenance: local pitch-class pool supplied to this token chooser. */
+  localAdmissionPcs?: number[];
+  /**
+   * LOFI only: the local-harmony owner at token realization time. Repeated
+   * pitches may merge inside one span, but never across this boundary: doing
+   * so can collapse a new-chord chromatic A into the preceding L/C terminal
+   * and erase the approach-resolution grammar.
+   */
+  localHarmonySpanId?: string;
   grammarSlopeRole?: 'inside' | 'last';
   brickName?: string;
   brickFamily?: string;
@@ -56,6 +70,16 @@ export interface MgNoteEvent {
   acgReturnRole?: AcgReturnGestureIntent['role'];
   /** 同一 arrival grammar token 直接实化出的下方 dyad 声部。 */
   acgReturnVoice?: 'topline' | 'dyad';
+  /** LOFI post-harmony score provenance; no NoteIR repair authored this note. */
+  lofiScoreEventId?: string;
+  lofiScoreSourceCellId?: string;
+  lofiScoreSourceEventIndex?: number;
+  lofiLeadRoadMapBrickId?: string;
+  lofiLeadBrickKind?: string;
+  lofiLeadTextureTag?: string;
+  lofiLeadTextureResolution?: string;
+  lofiSourceGrammarRuleId?: string;
+  lofiSourceGrammarBrickType?: string;
 }
 // body(LickGen 忠实区段)用 NoteEvent;在本模块即 MgNoteEvent。
 type NoteEvent = MgNoteEvent;
@@ -78,6 +102,12 @@ export interface LickGenArgs {
   initialPrevMidi?: number | null;
   /** Default register center (e.g., G4 = 67). */
   registerCenter?: number;
+  /**
+   * LOFI score-owned material receives its actual playable register before
+   * NoteIR exists. This keeps later program-range fitting from having to
+   * rewrite a score-authored pitch or contour.
+   */
+  lofiScoreRegisterRange?: { lowMidi: number; highMidi: number };
   /** Optional seeded PRNG. When provided, NoteChooser sample-picks by
    *  softmax (IV-style variety). Omit for deterministic argmax. */
   rng?: () => number;
@@ -120,6 +150,18 @@ function brickEventMeta(entry: ScheduledToken): Pick<MgNoteEvent, 'brickIndex' |
   };
 }
 
+/** Consume the Arranger's ACG accent anchor while tokens still own identity. */
+function scheduledMetricVelocity(entry: ScheduledToken, baseVelocity: number): number {
+  if (entry.acgMetricStrength === undefined) return baseVelocity;
+  const strength = Math.max(0, Math.min(1, entry.acgMetricStrength));
+  const scale = entry.acgMetricRole === 'structural'
+    ? ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentBase
+      + strength * ACG_PIANO_METRIC_KNOWLEDGE.structuralAccentRange
+    : ACG_PIANO_METRIC_KNOWLEDGE.flowAccentBase
+      + strength * ACG_PIANO_METRIC_KNOWLEDGE.flowAccentRange;
+  return Math.max(1, Math.min(127, Math.round(baseVelocity * scale)));
+}
+
 function pushOrMergeRepeat(
   events: NoteEvent[],
   ev: NoteEvent,
@@ -140,11 +182,15 @@ function pushOrMergeRepeat(
     const sameReturnAtom = last.acgReturnGestureId === ev.acgReturnGestureId
       ? last.acgReturnRole === ev.acgReturnRole
       : last.acgReturnGestureId === undefined && ev.acgReturnGestureId === undefined;
+    const sameLocalHarmonySpan = last.localHarmonySpanId === undefined
+      || ev.localHarmonySpanId === undefined
+      || last.localHarmonySpanId === ev.localHarmonySpanId;
     if (last.part === 'melody'
         && last.noteNumber === ev.noteNumber
         && Math.abs(last.time + last.duration - ev.time) < 1e-4
         && sameBrick
-        && sameReturnAtom) {
+        && sameReturnAtom
+        && sameLocalHarmonySpan) {
       last.duration += ev.duration;
       // ★ Phase B-2(MG LickGen 77-78):合并时传递 grammar 元数据(last 取最强 slope role + 首个 token kind)。
       if (ev.grammarSlopeRole === 'last') last.grammarSlopeRole = 'last';
@@ -161,6 +207,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
     chordPart,
     initialPrevMidi,
     registerCenter,
+    lofiScoreRegisterRange,
     rng,
     guideTonePlan,
     preserveSlopeGrammar,
@@ -192,7 +239,8 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
 
   for (let i = 0; i < scheduledTokens.length; i++) {
     const entry = scheduledTokens[i];
-    const { token, startBeat } = entry;
+    const token = entry.token;
+    const startBeat = snapToChordBoundary(chordPart, entry.startBeat);
 
     // Slope markers toggle state, emit no audio.
     if (token.kind === 'SlopeEnter') {
@@ -263,43 +311,208 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
       continue;
     }
 
+    // ── LOFI score-owned carrier / stable arrival ───────────────────────
+    // LOFI keeps its hip-hop pocket, but an exposed top-line atom is written
+    // by LofiLeadScorePlan before realization.  The sidecar is deliberately
+    // consumed here (not by a NoteIR repair): it proves the source span,
+    // stable roles and, if needed, the sole common-tone continuation.
+    const lofiScoreIntent = entry.lofiScore;
+    if (lofiScoreIntent?.exactPitchMidi !== undefined && token.kind !== 'R') {
+      const exactAdmission = validateExactLofiScorePitch({
+        intent: lofiScoreIntent,
+        chord,
+        chordPart,
+        startBeat,
+        duration: token.duration,
+        range: lofiScoreRegisterRange,
+      });
+      if (!exactAdmission) continue;
+      pushOrMergeRepeat(events, {
+        noteNumber: lofiScoreIntent.exactPitchMidi,
+        time: startBeat,
+        duration: token.duration,
+        velocity: scheduledMetricVelocity(entry, 100),
+        part: 'melody',
+        origin: lofiScoreIntent.phraseRole === 'return'
+          ? 'return'
+          : lofiScoreIntent.phraseRole === 'statement' ? 'motif' : 'develop',
+        lickSource: true,
+        grammarTokenKind: token.kind,
+        localHarmonySpanId: chord.spanId,
+        localAdmissionPcs: exactAdmission,
+        grammarSlopeRole: slopeRoleAt(i),
+        lofiScoreEventId: lofiScoreIntent.scoreEventId,
+        lofiScoreSourceCellId: lofiScoreIntent.sourceCellId,
+        lofiScoreSourceEventIndex: lofiScoreIntent.sourceEventIndex,
+        lofiLeadRoadMapBrickId: lofiScoreIntent.leadRoadMapBrickId,
+        lofiLeadBrickKind: lofiScoreIntent.leadBrickKind,
+        lofiLeadTextureTag: lofiScoreIntent.leadTextureTag,
+        lofiLeadTextureResolution: lofiScoreIntent.leadTextureResolution,
+        lofiSourceGrammarRuleId: lofiScoreIntent.sourceGrammarRuleId,
+        lofiSourceGrammarBrickType: lofiScoreIntent.sourceGrammarBrickType,
+        ...brickEventMeta(entry),
+      }, preserveTokenBoundaries);
+      prevMidi = lofiScoreIntent.exactPitchMidi;
+      triadicState = undefined;
+      continue;
+    }
+    if (lofiScoreIntent
+      && lofiScoreRequiresStableRole({
+        intent: lofiScoreIntent,
+        token,
+        startBeat,
+        chord,
+        chordPart,
+      })
+      && token.kind !== 'R') {
+      const continuationPc = lofiScoreContinuationPc(
+        lofiScoreIntent,
+        chord,
+        chordPart,
+        startBeat,
+        token.duration,
+      );
+      if (continuationPc === null) continue;
+      const choice = chooseLofiScoreStableNote({
+        ctx: {
+          sets,
+          prevMidi,
+          registerCenter,
+          triadicState,
+          slopeConstraint: activeSlope ?? undefined,
+          rng,
+        },
+        chord,
+        stableRoles: lofiScoreIntent.stableRoles,
+        continuationPc,
+        range: lofiScoreRegisterRange,
+      });
+      if (choice.midi === null) continue;
+      pushOrMergeRepeat(events, {
+        noteNumber: choice.midi,
+        time: startBeat,
+        duration: clipToLocalHarmonyBoundary({
+          duration: token.duration,
+          startBeat,
+          midi: choice.midi,
+          sourceChord: chord,
+          chordPart,
+          localScaleContext,
+        }),
+        velocity: scheduledMetricVelocity(entry, 100),
+        part: 'melody',
+        origin: lofiScoreIntent.phraseRole === 'return'
+          ? 'return'
+          : lofiScoreIntent.phraseRole === 'statement' ? 'motif' : 'develop',
+        lickSource: true,
+        degree: token.kind === 'X' && token.degree !== undefined ? String(token.degree) : undefined,
+        grammarTokenKind: token.kind,
+        localHarmonySpanId: chord.spanId,
+        localAdmissionPcs: lofiStableAdmissionPcs(chord, lofiScoreIntent.stableRoles, continuationPc),
+        grammarSlopeRole: slopeRoleAt(i),
+        ...brickEventMeta(entry),
+      }, preserveTokenBoundaries);
+      prevMidi = choice.midi;
+      triadicState = choice.triadicState;
+      continue;
+    }
+
     // APPROACH + target as a locked pair per IV LickGen.java:2052+.
-    // IV's APPROACH consumes the IMMEDIATELY-NEXT rhythm-string entry
-    // as its target; it does NOT scan forward across rests, markers, or
-    // other A tokens to find a future target. Matching that semantics:
-    // accept the next token ONLY if it's a playable kind in stream
-    // order. SlopeEnter/SlopeExit between A and target means target
-    // belongs to a different slope group (slope-state mismatch), so
-    // fall through to generic emission instead of locking pairs across
-    // slope boundaries with the wrong activeSlope constraint.
-    if (token.kind === 'A' && i + 1 < scheduledTokens.length) {
-      const nextKind = scheduledTokens[i + 1].token.kind;
+    // IV's generic APPROACH consumes the IMMEDIATELY-NEXT rhythm-string
+    // entry as its target; it does NOT scan forward across rests, markers,
+    // or other A tokens to find a future target. Matching that semantics:
+    // accept the next token ONLY if it's a playable kind in stream order.
+    // Score-owned LOFI is the narrow explicit exception below: its scheduler
+    // has already certified one exact target slot, which may be separated by
+    // zero-time slope markers.
+    if (token.kind === 'A') {
+      // LOFI score approaches carry the exact target slot issued by the
+      // scheduler. Unlike the generic MG path, that proof may cross zero-time
+      // slope markers. If it cannot be re-found exactly, fail closed rather
+      // than emit a detached chromatic A.
+      const isScoreOwnedApproach = entry.lofiScore !== undefined;
+      const scoreApproachTarget = isScoreOwnedApproach
+        ? resolveLofiScoreApproachTarget(scheduledTokens, i, entry.lofiScore!, activeSlope)
+        : undefined;
+      if (isScoreOwnedApproach && !scoreApproachTarget) continue;
+      if (isScoreOwnedApproach && isLofiScoreStructuralAttack(startBeat, chord, chordPart)) continue;
+      const targetIdx = scoreApproachTarget?.index ?? i + 1;
+      if (targetIdx < scheduledTokens.length) {
+      const nextKind = scheduledTokens[targetIdx]!.token.kind;
       const playable = nextKind !== 'A' && nextKind !== 'R'
                     && nextKind !== 'SlopeEnter' && nextKind !== 'SlopeExit';
       if (playable) {
-        const targetIdx = i + 1;
-        const targetEntry = scheduledTokens[targetIdx];
-        const targetChord = getCurrentChordAtBeat(chordPart, targetEntry.startBeat);
+        const targetEntry = scheduledTokens[targetIdx]!;
+        const targetStartBeat = snapToChordBoundary(chordPart, targetEntry.startBeat);
+        const targetChord = getCurrentChordAtBeat(chordPart, targetStartBeat);
         if (targetChord) {
-          const targetNext = getNextChordAtBeat(chordPart, targetEntry.startBeat);
+          const targetNext = getNextChordAtBeat(chordPart, targetStartBeat);
           const targetSets = buildPitchSets({ chord: targetChord, nextChord: targetNext, localScaleContext });
-          let targetChoice = chooseNoteWithGuideTone({
-            token: targetEntry.token,
-            chord: targetChord,
-            startBeat: targetEntry.startBeat,
-            chordPart,
-            guideTonePlan,
-            preserveSlopeGrammar,
-            acgMainChain,
-            forceAcgStableAnchor: acgMainChain,
-            ctx: {
-              sets: targetSets, prevMidi, registerCenter, triadicState,
-              slopeConstraint: activeSlope ?? undefined,
-              rng,
-            },
-          });
+          const targetCtx: NoteChooserContext = {
+            sets: targetSets,
+            prevMidi,
+            registerCenter,
+            triadicState,
+            slopeConstraint: scoreApproachTarget?.slopeConstraint ?? activeSlope ?? undefined,
+            rng,
+          };
+          const targetLofiIntent = targetEntry.lofiScore;
+          const targetRequiresStableRole = targetLofiIntent !== undefined
+            && lofiScoreRequiresStableRole({
+              intent: targetLofiIntent,
+              token: targetEntry.token,
+              startBeat: targetStartBeat,
+              chord: targetChord,
+              chordPart,
+            });
+          const targetContinuationPc = targetRequiresStableRole
+            ? lofiScoreContinuationPc(
+              targetLofiIntent!,
+              targetChord,
+              chordPart,
+              targetStartBeat,
+              targetEntry.token.duration,
+            )
+            : undefined;
+          // A score-owned approach is one atomic gesture. Its landing must
+          // consume the score's stable-role contract rather than the generic
+          // C-token chooser; otherwise a later guide-tone preference could
+          // make the pair resolve to an arbitrary local color tone.
+          if (targetContinuationPc === null) {
+            i = targetIdx;
+            continue;
+          }
+          let targetChoice = targetRequiresStableRole
+            ? chooseLofiScoreStableNote({
+              ctx: targetCtx,
+              chord: targetChord,
+              stableRoles: targetLofiIntent!.stableRoles,
+              continuationPc: targetContinuationPc,
+              range: lofiScoreRegisterRange,
+            })
+            : chooseNoteWithGuideTone({
+              token: targetEntry.token,
+              chord: targetChord,
+              startBeat: targetStartBeat,
+              chordPart,
+              guideTonePlan,
+              preserveSlopeGrammar,
+              acgMainChain,
+              forceAcgStableAnchor: acgMainChain,
+              ctx: targetCtx,
+            });
           if (acgMainChain && targetChoice.midi !== null) {
             targetChoice = { ...targetChoice, midi: fitAcgSopranoRegister(targetChoice.midi) };
+          }
+          // A short score-owned target may still use grammar color rather
+          // than the stable-carrier branch above. Pick its octave against the
+          // sounding line now, while the token still owns its role, instead
+          // of relying on a later NoteIR octave repair.
+          if (targetLofiIntent && lofiScoreRegisterRange && targetChoice.midi !== null) {
+            targetChoice = {
+              ...targetChoice,
+              midi: fitLofiScoreMidiToRange(targetChoice.midi, lofiScoreRegisterRange, prevMidi),
+            };
           }
           if (targetChoice.midi !== null) {
             // Emit A using the target as anchor.
@@ -309,6 +522,19 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
               slopeConstraint: activeSlope ?? undefined,
               rng,
             });
+            if (entry.lofiScore && lofiScoreRegisterRange && approachChoice.midi !== null) {
+              approachChoice = {
+                ...approachChoice,
+                // An approach is anchored to its already-committed target,
+                // not simply to the earlier line. This retains the intended
+                // semitone resolution when selecting its playable octave.
+                midi: fitLofiScoreMidiToRange(
+                  approachChoice.midi,
+                  lofiScoreRegisterRange,
+                  targetChoice.midi,
+                ),
+              };
+            }
             if (acgMainChain && approachChoice.midi !== null) {
               approachChoice = { ...approachChoice, midi: fitAcgSopranoRegister(approachChoice.midi) };
             }
@@ -316,14 +542,28 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
               pushOrMergeRepeat(events, {
                 noteNumber: approachChoice.midi,
                 time: startBeat,
-                duration: clipToSongEnd(token.duration, startBeat, chordPart.totalBeats),
-                velocity: 100,
+                duration: clipToLocalHarmonyBoundary({
+                  duration: token.duration,
+                  startBeat,
+                  midi: approachChoice.midi,
+                  sourceChord: chord,
+                  chordPart,
+                  localScaleContext,
+                }),
+                velocity: scheduledMetricVelocity(entry, 100),
                 part: 'melody',
                 origin: 'develop',
                 // P2-3: mark provenance so audit scripts can identify
                 // improvisor-pipeline emissions vs other paths.
                 lickSource: true,
                 grammarTokenKind: token.kind,
+                localHarmonySpanId: localScaleContext?.style.toUpperCase() === 'LOFI'
+                  ? chord.spanId : undefined,
+                localAdmissionPcs: [...new Set([
+                  ...sets.chordTones,
+                  ...sets.colorTones,
+                  ...sets.scaleTones,
+                ])].sort((a, b) => a - b),
                 grammarSlopeRole: slopeRoleAt(i),
                 ...brickEventMeta(entry),
               }, preserveTokenBoundaries);
@@ -333,9 +573,16 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
             const targetTok = targetEntry.token;
             pushOrMergeRepeat(events, {
               noteNumber: targetChoice.midi,
-              time: targetEntry.startBeat,
-              duration: clipToSongEnd(targetTok.duration, targetEntry.startBeat, chordPart.totalBeats),
-              velocity: 100,
+              time: targetStartBeat,
+              duration: clipToLocalHarmonyBoundary({
+                duration: targetTok.duration,
+                startBeat: targetStartBeat,
+                midi: targetChoice.midi,
+                sourceChord: targetChord,
+                chordPart,
+                localScaleContext,
+              }),
+              velocity: scheduledMetricVelocity(targetEntry, 100),
               part: 'melody',
               origin: 'develop',
               lickSource: true,
@@ -343,16 +590,36 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
               degree: targetTok.kind === 'X' && targetTok.degree !== undefined
                 ? String(targetTok.degree) : undefined,
               grammarTokenKind: targetTok.kind,
+              localHarmonySpanId: localScaleContext?.style.toUpperCase() === 'LOFI'
+                ? targetChord.spanId : undefined,
+              localAdmissionPcs: targetRequiresStableRole
+                ? lofiStableAdmissionPcs(targetChord, targetLofiIntent!.stableRoles, targetContinuationPc)
+                : [...new Set([
+                  ...targetSets.chordTones,
+                  ...targetSets.colorTones,
+                  ...targetSets.scaleTones,
+                ])].sort((a, b) => a - b),
               grammarSlopeRole: slopeRoleAt(targetIdx),
               ...brickEventMeta(targetEntry),
             }, preserveTokenBoundaries);
             prevMidi = targetChoice.midi;
             triadicState = targetChoice.triadicState;
+            // The marker sequence lay between A and its exact target. We
+            // consumed it while validating the atomic pair, so preserve its
+            // state for the token that follows this target.
+            if (scoreApproachTarget) activeSlope = scoreApproachTarget.slopeConstraint;
             // Skip iteration past the locked target
             i = targetIdx;
             continue;
           }
         }
+      }
+      }
+      // A score-issued A has no legal generic fallback: the scheduler's
+      // target proof is part of its token contract.
+      if (isScoreOwnedApproach) {
+        if (scoreApproachTarget) i = scoreApproachTarget.index;
+        continue;
       }
       // Fallthrough: no target found, emit A as a generic scale-step
       // (no lookahead) so the token isn't lost.
@@ -378,20 +645,34 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
     if (acgMainChain && choice.midi !== null) {
       choice = { ...choice, midi: fitAcgSopranoRegister(choice.midi) };
     }
+    if (entry.lofiScore && lofiScoreRegisterRange && choice.midi !== null) {
+      choice = {
+        ...choice,
+        // Connected crawls / answer material keep their grammar PC, but
+        // choose the nearest playable octave to the current score-owned
+        // voice. This is a score-time realization decision, not a final-IR
+        // contour correction.
+        midi: fitLofiScoreMidiToRange(choice.midi, lofiScoreRegisterRange, prevMidi),
+      };
+    }
     triadicState = choice.triadicState;
 
     if (choice.midi !== null) {
-      // No chord-boundary clipping. IV LickGen does NOT shorten notes at
-      // chord changes. Held notes ring through, and the listener perceives
-      // the new harmonic frame coloring the held pitch (a load-bearing
-      // jazz idiom: held b7 over a chord change becomes the new chord's
-      // M3 etc.). Only clip at the SONG end so playback doesn't extend
-      // past the form's last beat.
+      // IV normally permits held notes through chord changes. LOFI keeps that
+      // continuity only for a pitch admitted by the following local harmony;
+      // an illegal suspension ends at the boundary while still in score-time.
       pushOrMergeRepeat(events, {
         noteNumber: choice.midi,
         time: startBeat,
-        duration: clipToSongEnd(token.duration, startBeat, chordPart.totalBeats),
-        velocity: 100,
+        duration: clipToLocalHarmonyBoundary({
+          duration: token.duration,
+          startBeat,
+          midi: choice.midi,
+          sourceChord: chord,
+          chordPart,
+          localScaleContext,
+        }),
+        velocity: scheduledMetricVelocity(entry, 100),
         part: 'melody',
         origin: 'develop',
         // P2-3: provenance + degree label (when emitted from X-token).
@@ -399,6 +680,13 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
         degree: token.kind === 'X' && token.degree !== undefined
           ? String(token.degree) : undefined,
         grammarTokenKind: token.kind,
+        localHarmonySpanId: localScaleContext?.style.toUpperCase() === 'LOFI'
+          ? chord.spanId : undefined,
+        localAdmissionPcs: [...new Set([
+          ...sets.chordTones,
+          ...sets.colorTones,
+          ...sets.scaleTones,
+        ])].sort((a, b) => a - b),
         grammarSlopeRole: slopeRoleAt(i),
         ...brickEventMeta(entry),
       }, preserveTokenBoundaries);
@@ -413,6 +701,72 @@ const ACG_RETURN_MAX_MIDI = 86;
 const ACG_RETURN_DYAD_MIN_MIDI = 57;
 
 function normalizePc(pc: number): number { return ((pc % 12) + 12) % 12; }
+
+function exactLofiAdmissionPcs(
+  chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
+  role: NonNullable<LofiLeadScoreTokenIntent['harmonicRole']>,
+): number[] {
+  const normalize = (values: readonly number[] | undefined) =>
+    [...new Set((values ?? []).map(normalizePc))];
+  const avoid = new Set(normalize(chord.avoidTonePcs));
+  const stable = normalize(chord.stableTonePcs).filter((pc) => !avoid.has(pc));
+  const color = normalize(chord.colorTonePcs).filter((pc) => !avoid.has(pc));
+  const scale = normalize(chord.chordScalePcs).filter((pc) => !avoid.has(pc));
+  if (role === 'anchor' || role === 'terminal') {
+    const localStable = scale.length > 0 ? stable.filter((pc) => scale.includes(pc)) : stable;
+    return localStable.length > 0 ? localStable : stable;
+  }
+  if (role === 'color') {
+    const localColor = scale.length > 0 ? color.filter((pc) => scale.includes(pc)) : color;
+    return localColor.length > 0 ? localColor : scale.length > 0 ? scale : stable;
+  }
+  const moving = scale.filter((pc) => !stable.includes(pc));
+  return moving.length > 0 ? moving : scale.length > 0 ? scale : stable;
+}
+
+/**
+ * Validate the Arranger/Harmony score at its final boundary. This function
+ * may reject a stale contract, but it never substitutes or clips a pitch.
+ */
+function validateExactLofiScorePitch(args: {
+  intent: LofiLeadScoreTokenIntent;
+  chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>;
+  chordPart: ChordPart;
+  startBeat: number;
+  duration: number;
+  range?: { lowMidi: number; highMidi: number };
+}): number[] | null {
+  const midi = args.intent.exactPitchMidi;
+  const expectedPc = args.intent.exactPitchClass;
+  const role = args.intent.harmonicRole;
+  const admittedSpanIds = args.intent.admittedSpanIds;
+  if (midi === undefined || !Number.isInteger(midi) || midi < 0 || midi > 127
+    || expectedPc === undefined || normalizePc(midi) !== normalizePc(expectedPc)
+    || !role || !admittedSpanIds || admittedSpanIds.length === 0
+    || args.duration <= 0
+    || args.chord.spanId !== args.intent.sourceSpanId
+    || admittedSpanIds[0] !== args.intent.sourceSpanId
+    || (args.range && (midi < args.range.lowMidi || midi > args.range.highMidi))) return null;
+  const sourceAdmission = exactLofiAdmissionPcs(args.chord, role);
+  if (!sourceAdmission.includes(normalizePc(midi))) return null;
+
+  const endBeat = args.startBeat + args.duration;
+  const soundingBlocks = args.chordPart.blocks.filter(
+    (block) =>
+      args.startBeat < block.endBeat - 1e-4
+      && endBeat > block.startBeat + 1e-4,
+  );
+  if (soundingBlocks.length === 0) return null;
+  for (let index = 0; index < soundingBlocks.length; index++) {
+    const block = soundingBlocks[index]!;
+    if (!block.spanId || !admittedSpanIds.includes(block.spanId)) return null;
+    if (index > 0) {
+      const stable = (block.stableTonePcs ?? []).map(normalizePc);
+      if (!stable.includes(normalizePc(midi))) return null;
+    }
+  }
+  return sourceAdmission;
+}
 
 /** `never` fields in the compile-time grammar union intentionally prevent
  * mixed intents. Runtime input can still be legacy/untyped, so validate it
@@ -723,7 +1077,10 @@ function pushAcgReturnEvent(
     // bass root and rolled middle hand.  Bar normalization may lift a quiet
     // phrase a little, so keep the source gesture deliberately cantabile
     // rather than f-level: this is authored expression, not a later peak fix.
-    velocity: voice === 'dyad' ? 34 : role === 'arrival' ? 82 : role === 'approach' ? 76 : 72,
+    velocity: scheduledMetricVelocity(
+      entry,
+      voice === 'dyad' ? 34 : role === 'arrival' ? 82 : role === 'approach' ? 76 : 72,
+    ),
     part: 'melody',
     origin: 'return',
     lickSource: true,
@@ -769,7 +1126,25 @@ function chooseNoteWithGuideTone(args: {
     // stableToneMap/chordScaleMap contract. Choose a legal soprano pitch
     // directly, preserving the slope as a preference rather than allowing it
     // to override harmony. This is still token realization, not a NoteIR fix.
-    if (stableContract) return chooseAcgPlanStableNote(ctx, chord, stableContract.stableRoles);
+    if (stableContract) {
+      const continuationPc = acgSustainContinuationPc(
+        stableContract,
+        chord,
+        chordPart,
+        startBeat,
+        token.duration,
+      );
+      // A malformed cross-harmony carrier must not quietly degrade into a
+      // different stable source tone. The scheduler has to prove this exact
+      // continuation before a keyboard may hold it through a re-pedal.
+      if (continuationPc === null) return { midi: null, triadicState: ctx.triadicState };
+      return chooseAcgPlanStableNote(
+        ctx,
+        chord,
+        stableContract.stableRoles,
+        continuationPc,
+      );
+    }
     const choice = chooseNote(token, ctx);
     // A paired approach is deliberately permitted to be an immediate
     // neighbour outside the current pool.  All other free grammar terminals
@@ -809,13 +1184,232 @@ function chooseAcgPlanStableNote(
   ctx: NoteChooserContext,
   chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
   stableRoles: readonly AcgStableArrivalTokenIntent['stableRoles'][number][],
+  continuationPc?: number,
 ): ChoiceResult {
-  const pcs = [...new Set(acgStableToneCandidates(chord, stableRoles).map((candidate) => candidate.pc))];
+  const candidates = acgStableToneCandidates(chord, stableRoles);
+  const pcs = [...new Set((continuationPc === undefined
+    ? candidates
+    : candidates.filter((candidate) => candidate.pc === continuationPc))
+    .map((candidate) => candidate.pc))];
   // A declared role set that has no stable∩scale candidates is a broken
   // scheduler contract. Do not fall back to generic chord spelling, because
   // that would weaken stableRoles after the token has been issued.
   if (pcs.length === 0) return { midi: null, triadicState: ctx.triadicState };
   return chooseAcgSopranoFromPcs(ctx, pcs);
+}
+
+/**
+ * Execute LOFI's score-owned stable carrier.  This stays deliberately
+ * smaller than the ACG path: there is no dominant-b9 or piano dyad branch,
+ * only a current-chord stable tone or the exact common tone proven by the
+ * arranger.  Any mismatch fails closed before a NoteIR exists.
+ */
+function lofiScoreContinuationPc(
+  intent: LofiLeadScoreTokenIntent,
+  sourceChord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
+  chordPart: ChordPart,
+  startBeat: number,
+  duration: number,
+): number | undefined | null {
+  if (intent.role === 'rest'
+    || intent.sourceSpanId !== sourceChord.spanId
+    || intent.stableRoles.length === 0
+    || !intent.stableRoles.every((role) => role === 'root'
+      || role === 'third' || role === 'fifth' || role === 'seventh')) return null;
+  const carrier = intent.carrier;
+  if (!carrier) {
+    return intent.harmonicScope === 'current-chord'
+      && startBeat + duration <= sourceChord.endBeat + 1e-4
+      ? undefined
+      : null;
+  }
+  if (!Number.isFinite(carrier.minimumDurationBeats)
+    || duration + 1e-4 < carrier.minimumDurationBeats) return null;
+  if (carrier.kind === 'breath') {
+    return intent.harmonicScope === 'current-chord'
+      && startBeat + duration <= sourceChord.endBeat + 1e-4
+      ? undefined
+      : null;
+  }
+  const target = chordPart.blocks[carrier.targetChordIndex];
+  const pc = carrier.continuationPc;
+  const sourceHasPc = acgStableToneCandidates(sourceChord, intent.stableRoles)
+    .some((candidate) => candidate.pc === pc);
+  const targetHasPc = target
+    ? acgStableToneCandidates(target, ['root', 'third', 'fifth', 'seventh'])
+      .some((candidate) => candidate.pc === pc)
+    : false;
+  if (intent.harmonicScope !== 'common-tone-next-chord'
+    || !target
+    || target.index !== sourceChord.index + 1
+    || target.spanId !== carrier.targetSpanId
+    || !sourceHasPc
+    || !targetHasPc
+    || !Number.isInteger(pc) || pc < 0 || pc > 11
+    || startBeat + duration <= target.startBeat + 1e-4
+    || startBeat + duration > target.endBeat + 1e-4) return null;
+  return pc;
+}
+
+function lofiStableAdmissionPcs(
+  chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
+  stableRoles: readonly LofiLeadScoreTokenIntent['stableRoles'][number][],
+  continuationPc?: number,
+): number[] {
+  return [...new Set(acgStableToneCandidates(chord, stableRoles)
+    .filter((candidate) => continuationPc === undefined || candidate.pc === continuationPc)
+    .map((candidate) => candidate.pc))].sort((a, b) => a - b);
+}
+
+function chooseLofiScoreStableNote(args: {
+  ctx: NoteChooserContext;
+  chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>;
+  stableRoles: readonly LofiLeadScoreTokenIntent['stableRoles'][number][];
+  continuationPc?: number;
+  range?: { lowMidi: number; highMidi: number };
+}): ChoiceResult {
+  const pcs = lofiStableAdmissionPcs(args.chord, args.stableRoles, args.continuationPc);
+  if (pcs.length === 0) return { midi: null, triadicState: args.ctx.triadicState };
+  const candidates: number[] = [];
+  const lowMidi = Math.max(0, Math.ceil(args.range?.lowMidi ?? 48));
+  const highMidi = Math.min(127, Math.floor(args.range?.highMidi ?? 88));
+  for (let midi = lowMidi; midi <= highMidi; midi++) {
+    if (pcs.includes(normalizePc(midi))) candidates.push(midi);
+  }
+  if (candidates.length === 0) return { midi: null, triadicState: args.ctx.triadicState };
+  const reference = args.ctx.prevMidi ?? args.ctx.registerCenter ?? 67;
+  const slope = args.ctx.slopeConstraint;
+  let pool = candidates;
+  let target = reference;
+  if (slope) {
+    const desired = (slope.dirMin + slope.dirMax) / 2;
+    target = reference + desired;
+    const directed = desired > 0
+      ? candidates.filter((midi) => midi >= reference + Math.max(1, slope.dirMin))
+      : desired < 0
+        ? candidates.filter((midi) => midi <= reference + Math.min(-1, slope.dirMax))
+        : candidates;
+    if (directed.length > 0) pool = directed;
+  }
+  // This is an admission rule for the score realizer, not a later contour
+  // repair. A slope may prefer a direction, but it cannot author an exposed
+  // octave-plus leap merely because the directed pool has no nearby member.
+  if (args.ctx.prevMidi !== null) {
+    const nearbyCandidates = candidates.filter((midi) => Math.abs(midi - args.ctx.prevMidi!) <= 12);
+    if (nearbyCandidates.length === 0) return { midi: null, triadicState: args.ctx.triadicState };
+    const nearbyDirected = pool.filter((midi) => Math.abs(midi - args.ctx.prevMidi!) <= 12);
+    pool = nearbyDirected.length > 0 ? nearbyDirected : nearbyCandidates;
+  }
+  const bestDistance = Math.min(...pool.map((midi) => Math.abs(midi - target)));
+  const best = pool.filter((midi) => Math.abs(midi - target) === bestDistance);
+  const chosen = best.length > 1 && args.ctx.rng
+    ? best[Math.min(best.length - 1, Math.floor(args.ctx.rng() * best.length))]
+    : best[0];
+  return { midi: chosen, triadicState: args.ctx.triadicState };
+}
+
+/** Keep score-owned short atoms in the same physically playable register. */
+function fitLofiScoreMidiToRange(
+  midi: number,
+  range: { lowMidi: number; highMidi: number },
+  referenceMidi?: number | null,
+): number | null {
+  const low = Math.max(0, Math.ceil(range.lowMidi));
+  const high = Math.min(127, Math.floor(range.highMidi));
+  if (low > high) return null;
+  const pc = normalizePc(midi);
+  const candidates: number[] = [];
+  for (let candidate = low; candidate <= high; candidate++) {
+    if (normalizePc(candidate) === pc) candidates.push(candidate);
+  }
+  if (candidates.length === 0) return null;
+  const reference = referenceMidi ?? midi;
+  return candidates.sort((left, right) => Math.abs(left - reference) - Math.abs(right - reference)
+    || Math.abs(left - midi) - Math.abs(right - midi)
+    || Math.abs(left - 67) - Math.abs(right - 67))[0] ?? null;
+}
+
+/**
+ * A LOFI `A` token is legal only with the exact target certified by the
+ * score scheduler. Markers have no duration and can sit between the two
+ * tokens, so consume only those markers while locating the target; any other
+ * audible atom means the contract has been broken and the approach must drop.
+ */
+function resolveLofiScoreApproachTarget(
+  scheduledTokens: readonly ScheduledToken[],
+  approachIndex: number,
+  intent: LofiLeadScoreTokenIntent,
+  initialSlope: { dirMin: number; dirMax: number } | null,
+): { index: number; slopeConstraint: { dirMin: number; dirMax: number } | null } | null {
+  const shortGesture = intent.shortGesture;
+  if (!shortGesture || shortGesture.class !== 'approach-target') return null;
+  let slopeConstraint = initialSlope;
+  for (let index = approachIndex + 1; index < scheduledTokens.length; index++) {
+    const candidate = scheduledTokens[index]!;
+    if (candidate.startBeat > shortGesture.targetStartBeat + 1e-4) return null;
+    if (candidate.token.kind === 'SlopeEnter') {
+      slopeConstraint = { dirMin: candidate.token.dirMin, dirMax: candidate.token.dirMax };
+      continue;
+    }
+    if (candidate.token.kind === 'SlopeExit') {
+      slopeConstraint = null;
+      continue;
+    }
+    const isExactTarget = Math.abs(candidate.startBeat - shortGesture.targetStartBeat) <= 1e-4
+      && candidate.lofiScore?.slotId === shortGesture.targetSlotId
+      && candidate.token.kind !== 'A'
+      && candidate.token.kind !== 'R'
+      && candidate.token.duration > 0;
+    return isExactTarget ? { index, slopeConstraint } : null;
+  }
+  return null;
+}
+
+/**
+ * Execute an arranger-proved cross-harmony carrier.  This is validation, not
+ * a pitch-selection fallback: the scheduler has already written the exact pc
+ * and target span into the token contract.
+ */
+function acgSustainContinuationPc(
+  intent: AcgStableArrivalTokenIntent,
+  sourceChord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
+  chordPart: ChordPart,
+  startBeat: number,
+  duration: number,
+): number | undefined | null {
+  const sustain = intent.sustain;
+  if (!sustain || sustain.kind === 'breath') return undefined;
+  const target = chordPart.blocks[sustain.targetChordIndex];
+  const pc = sustain.continuationPc;
+  if (sustain.kind === 'common-tone') {
+    const sourceHasPc = acgStableToneCandidates(sourceChord, intent.stableRoles)
+      .some((candidate) => candidate.pc === pc);
+    const targetHasPc = target
+      ? acgStableToneCandidates(target, ['root', 'third', 'fifth', 'seventh'])
+        .some((candidate) => candidate.pc === pc)
+      : false;
+    if (!target
+      || target.index !== sourceChord.index + 1
+      || !sourceHasPc
+      || !targetHasPc
+      || !Number.isFinite(sustain.minimumDurationBeats)
+      || duration + 1e-4 < sustain.minimumDurationBeats
+      || startBeat + duration <= target.startBeat + 1e-4
+      || startBeat + duration > target.endBeat + 1e-4
+      || !Number.isInteger(pc) || pc < 0 || pc > 11) return null;
+    return pc;
+  }
+  if (!target
+    || sourceChord.functionHint !== 'S'
+    || target.functionHint !== 'D'
+    || target.index !== sourceChord.index + 1
+    || ((target.rootPc + 1) % 12) !== pc
+    || !Number.isFinite(sustain.minimumDurationBeats)
+    || duration + 1e-4 < sustain.minimumDurationBeats
+    || startBeat + duration <= target.startBeat + 1e-4
+    || startBeat + duration > target.endBeat + 1e-4
+    || !Number.isInteger(pc) || pc < 0 || pc > 11) return null;
+  return pc;
 }
 
 /** Fallback for free ACG grammar motion (for example an impossible slope
@@ -955,6 +1549,36 @@ function isStrongBeat(beat: number, chordPart: ChordPart): boolean {
   return false;
 }
 
+/**
+ * Short LOFI grammar remains available for connective weak positions, but a
+ * note that begins a chord or a metrically structural beat is heard as a
+ * landing.  In that context its score sidecar is a hard stable-role contract,
+ * rather than a mere preference for the generic token chooser.
+ */
+function isLofiScoreStructuralAttack(
+  startBeat: number,
+  chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>,
+  chordPart: ChordPart,
+): boolean {
+  return Math.abs(startBeat - chord.startBeat) <= 1e-4
+    || isStrongBeat(startBeat, chordPart);
+}
+
+function lofiScoreRequiresStableRole(args: {
+  readonly intent: LofiLeadScoreTokenIntent;
+  readonly token: AbstractMelodyToken;
+  readonly startBeat: number;
+  readonly chord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>;
+  readonly chordPart: ChordPart;
+}): boolean {
+  // An approach is never a valid structural landing; the scheduler normally
+  // turns it into an explicit release before this point.  Keeping it out of
+  // this branch makes the defensive fail-closed check in the A path explicit.
+  if (args.token.kind === 'A' || args.token.kind === 'R') return false;
+  if (!args.intent.shortGesture) return true;
+  return isLofiScoreStructuralAttack(args.startBeat, args.chord, args.chordPart);
+}
+
 /** Clip a note's duration so it doesn't ring past the song's final
  *  beat. IV uses slot-based timing and an end-of-leadsheet boundary;
  *  this is the equivalent. Returns at least 0.01 so empty events
@@ -963,4 +1587,56 @@ function clipToSongEnd(duration: number, startBeat: number, songEnd: number): nu
   const remain = songEnd - startBeat;
   if (remain <= 0.01) return 0.01;
   return Math.min(duration, remain);
+}
+
+function snapToChordBoundary(chordPart: ChordPart, beat: number): number {
+  const boundary = chordPart.blocks.find((block) =>
+    Math.abs(block.startBeat - beat) <= 1e-6);
+  return boundary?.startBeat ?? beat;
+}
+
+/**
+ * LOFI grammar is locally harmonic by construction. A held terminal may cross
+ * a chord boundary only when its pitch remains admitted by every crossed
+ * chord; otherwise its authored duration ends exactly at the first boundary.
+ * This happens during realization, before feel/shaping and before NoteIR.
+ */
+function clipToLocalHarmonyBoundary(args: {
+  duration: number;
+  startBeat: number;
+  midi: number;
+  sourceChord: NonNullable<ReturnType<typeof getCurrentChordAtBeat>>;
+  chordPart: ChordPart;
+  localScaleContext?: LocalScaleContext;
+}): number {
+  const {
+    duration,
+    startBeat,
+    midi,
+    sourceChord,
+    chordPart,
+    localScaleContext,
+  } = args;
+  const songClipped = clipToSongEnd(duration, startBeat, chordPart.totalBeats);
+  if (localScaleContext?.style.toUpperCase() !== 'LOFI') return songClipped;
+  const plannedEnd = startBeat + songClipped;
+  const pitchClass = ((midi % 12) + 12) % 12;
+  for (let index = sourceChord.index + 1; index < chordPart.blocks.length; index++) {
+    const target = chordPart.blocks[index];
+    if (target.startBeat >= plannedEnd - 1e-6) break;
+    const targetSets = buildPitchSets({
+      chord: target,
+      nextChord: chordPart.blocks[index + 1] ?? null,
+      localScaleContext,
+    });
+    const admitted = new Set([
+      ...targetSets.chordTones,
+      ...targetSets.colorTones,
+      ...targetSets.scaleTones,
+    ]);
+    if (!admitted.has(pitchClass)) {
+      return Math.max(0.01, target.startBeat - startBeat);
+    }
+  }
+  return songClipped;
 }

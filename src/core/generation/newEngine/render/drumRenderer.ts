@@ -63,6 +63,10 @@ const TOM_DRUMS = new Set<number>([DRUM.TOM_LO, DRUM.TOM_MID, DRUM.TOM_HI]);
 const SNARE_DRUMS = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP]);
 const PRIMARY_SNARE_DRUMS = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK]);
 
+function isSoftBalladPerformance(performance: Readonly<DrumPerformanceContract> | undefined): boolean {
+  return performance?.patternFamily === 'ballad-halftime' || performance?.feelProfileId === 'pop-ballad-soft';
+}
+
 interface FollowCandidate {
   beat: number;
   velocity: number;
@@ -142,14 +146,20 @@ function ensureSnareAnchors(
 ): DrumHit[] {
   const out = hits.map((hit) => ({ ...hit }));
   const drum = performance?.snarePolicy === 'rim' ? DRUM.SIDESTICK : DRUM.SNARE;
+  const softBallad = isSoftBalladPerformance(performance);
   const velocity = performance?.snarePolicy === 'rim'
-    ? 70 + (performance?.intensity ?? 1) * 3
+    ? softBallad ? 54 + (performance?.intensity ?? 1) * 4 : 70 + (performance?.intensity ?? 1) * 3
     : 82 + (performance?.intensity ?? 1) * 5;
   for (const beat of interaction.structuralSnareBeats) {
     const existing = out.find((hit) => PRIMARY_SNARE_DRUMS.has(hit.drum) && nearBeat(hit.beat, beat));
     if (existing) {
       existing.beat = beat;
-      existing.vel = Math.max(existing.vel, velocity);
+      if (performance?.snarePolicy === 'rim') {
+        existing.drum = DRUM.SIDESTICK;
+        existing.vel = Math.min(Math.max(existing.vel, velocity), softBallad ? 66 : 78);
+      } else {
+        existing.vel = Math.max(existing.vel, velocity);
+      }
     } else {
       out.push({ drum, beat, vel: velocity });
     }
@@ -165,12 +175,15 @@ function applyKickFollow(
   performance: Readonly<DrumPerformanceContract> | undefined,
 ): DrumHit[] {
   const intensity = performance?.intensity ?? 1;
+  const softBallad = isSoftBalladPerformance(performance);
   const sourceResponses = interaction.kickFollow === 'bass'
     ? pickResponses(sourceCandidates, interaction.kickResponseLimit, score, interaction.structuralKickBeats, true)
     : [];
   const targets = new Map<number, number>();
   const pulseVelocity = performance?.patternFamily.startsWith('jazz')
     ? 40 + intensity * 4
+    : softBallad
+      ? 66 + intensity * 5
     : 86 + intensity * 6;
   for (const beat of interaction.structuralKickBeats) targets.set(Math.round(beat * 1000), pulseVelocity);
   for (const candidate of sourceResponses) {
@@ -200,7 +213,7 @@ function applyKickFollow(
     const [key, velocity] = target;
     if (used.has(key)) continue;
     used.add(key);
-    out.push({ ...hit, beat: key / 1000, vel: Math.max(hit.vel, velocity) });
+    out.push({ ...hit, beat: key / 1000, vel: softBallad ? Math.min(Math.max(hit.vel, velocity), 86) : Math.max(hit.vel, velocity) });
   }
   for (const [key, velocity] of targets) {
     if (!used.has(key)) out.push({ drum: DRUM.KICK, beat: key / 1000, vel: velocity });
@@ -392,7 +405,9 @@ function scoreVelocity(velocity: number, hit: DrumHit, score: Readonly<GrooveBar
       : score.trajectory === 'peak' ? 1.04
         : score.trajectory === 'falling' ? 0.97
           : 1;
-  return clampVel(velocity * beatFactor * subdivisionFactor * score.phraseAccent * energyFactor * trajectoryFactor);
+  const phraseInteractionFactor = score.lofiPhraseInteraction?.velocityScaleByRole.drum ?? 1;
+  return clampVel(velocity * beatFactor * subdivisionFactor * score.phraseAccent
+    * energyFactor * trajectoryFactor * phraseInteractionFactor);
 }
 
 function fillPolicyFor(
@@ -456,6 +471,11 @@ function pushFill(
   const amount = performance?.fillAmount ?? (policy === 'light' ? 1 : policy === 'turnaround' ? 2 : 3);
   const complexity = performance?.fillComplexity ?? amount;
   if (amount <= 0) return;
+  if (isSoftBalladPerformance(performance)) {
+    push(DRUM.SIDESTICK, b0 + beatsPerBar - 0.75, 42);
+    if (amount >= 2 || complexity >= 2) push(DRUM.SIDESTICK, b0 + beatsPerBar - 0.25, 50);
+    return;
+  }
   if (policy === 'light') {
     if (complexity >= 2) push(DRUM.SNARE, b0 + beatsPerBar - 1.25, 54);
     push(DRUM.SNARE, b0 + beatsPerBar - 0.75, 72);
@@ -485,6 +505,7 @@ function pushGrooveFill(
   b0: number,
   beatsPerBar: number,
   boundary: Readonly<GrooveBoundaryScore>,
+  performance?: Readonly<DrumPerformanceContract>,
 ): void {
   const end = b0 + beatsPerBar;
   const start = end - Math.min(beatsPerBar, Math.max(0.25, boundary.durationBeats));
@@ -492,14 +513,26 @@ function pushGrooveFill(
     if (beat >= start - 1e-6 && beat < end - 1e-6) push(drum, beat, velocity);
   };
   const strong = boundary.intensity >= 2;
+  const softBallad = isSoftBalladPerformance(performance);
+  const snareDrum = performance?.snarePolicy === 'rim' || softBallad ? DRUM.SIDESTICK : DRUM.SNARE;
 
   if (boundary.drumFillFamily === 'pop-snare-pickup') {
+    if (softBallad) {
+      at(DRUM.SIDESTICK, end - 0.75, 42);
+      if (boundary.intensity >= 2) at(DRUM.SIDESTICK, end - 0.25, 50);
+      return;
+    }
     at(DRUM.SNARE, end - 0.75, 68);
     at(DRUM.SNARE, end - 0.5, 82);
     at(DRUM.OHAT, end - 0.25, 74);
     return;
   }
   if (boundary.drumFillFamily === 'pop-tom-build') {
+    if (softBallad || performance?.tomPolicy === 'none') {
+      at(snareDrum, end - 0.75, softBallad ? 44 : 62);
+      at(snareDrum, end - 0.25, softBallad ? 52 : 72);
+      return;
+    }
     if (strong) {
       at(DRUM.SNARE, end - 1.5, 78);
       at(DRUM.TOM_HI, end - 1.25, 86);
@@ -537,11 +570,6 @@ function pushGrooveFill(
     }
     return;
   }
-  if (boundary.drumFillFamily === 'lofi-one-shot') {
-    at(DRUM.SIDESTICK, Math.max(start, end - 0.5), 52);
-    at(DRUM.KICK, end - 0.25, 74);
-    return;
-  }
   if (boundary.drumFillFamily === 'jazz-bossa-cross-stick') {
     at(DRUM.SIDESTICK, end - 0.75, 50);
     at(DRUM.SIDESTICK, end - 0.25, 62);
@@ -566,7 +594,9 @@ const DRUM_BY_FILL_VOICE: Readonly<Record<GrooveDrumFillVoice, number>> = {
 function scoredGrooveFillHits(
   beatsPerBar: number,
   boundary: Readonly<GrooveBoundaryScore>,
+  performance?: Readonly<DrumPerformanceContract>,
 ): DrumHit[] {
+  if (isSoftBalladPerformance(performance)) return [];
   const score = boundary.fillScore;
   if (!score) return [];
   return score.hits
@@ -582,11 +612,14 @@ function pushLanding(
   pushUnique: (drum: number, beat: number, vel: number, dur?: number) => void,
   beat: number,
   boundary: Readonly<GrooveBoundaryScore>,
+  performance?: Readonly<DrumPerformanceContract>,
 ): void {
+  const softBallad = isSoftBalladPerformance(performance);
+  const kickVelocity = softBallad ? (boundary.intensity >= 3 ? 84 : 74) : boundary.intensity >= 3 ? 112 : 96;
   if (boundary.landing === 'kick' || boundary.landing === 'kick-crash' || boundary.landing === 'kick-ride') {
-    pushUnique(DRUM.KICK, beat, boundary.intensity >= 3 ? 112 : 96, 0.5);
+    pushUnique(DRUM.KICK, beat, kickVelocity, 0.5);
   }
-  if (boundary.landing === 'kick-crash') pushUnique(DRUM.CRASH, beat, boundary.intensity >= 3 ? 108 : 94, 1);
+  if (boundary.landing === 'kick-crash' && !softBallad && cymbalAllowed(performance)) pushUnique(DRUM.CRASH, beat, boundary.intensity >= 3 ? 108 : 94, 1);
   if (boundary.landing === 'ride' || boundary.landing === 'kick-ride') pushUnique(DRUM.RIDE, beat, boundary.intensity >= 3 ? 88 : 76, 0.75);
 }
 
@@ -732,7 +765,7 @@ export function renderDrums(
     }
     const landing = boundaryByLandingBar.get(bar);
     if (landing && performance?.role !== 'silent' && performance?.entryMode !== 'none') {
-      pushLanding(pushUnique, b0, landing);
+      pushLanding(pushUnique, b0, landing, performanceForBar(landing.sourceBar) ?? performance);
     }
     // ★ crash 落点:fill 推进后的【新段下拍】= 经典"fill→crash";非 jazz/非 sparse。
     const prevPerformance = bar > 0 ? performanceForBar(bar - 1) : undefined;
@@ -740,7 +773,7 @@ export function renderDrums(
       push(DRUM.CRASH, b0, 96, 1.0);
     }
     if (boundary) {
-      const scoredFill = scoredGrooveFillHits(beatsPerBar, boundary);
+      const scoredFill = scoredGrooveFillHits(beatsPerBar, boundary, performance);
       if (scoredFill.length > 0) {
         scoredFill.forEach((hit, index) => {
           const velocity = scoreVelocity(
@@ -750,8 +783,8 @@ export function renderDrums(
           );
           pushHit(hit, b0 + hit.beat, velocity, performance);
         });
-      } else {
-        pushGrooveFill(push, b0, beatsPerBar, boundary);
+      } else if (boundary.drumFillFamily !== 'lofi-one-shot') {
+        pushGrooveFill(push, b0, beatsPerBar, boundary, performance);
       }
     } else if (legacyFill) {
       pushFill(push, b0, beatsPerBar, fillPolicyFor(performance, opts.bigFillBars?.has(bar) ?? false), performance);

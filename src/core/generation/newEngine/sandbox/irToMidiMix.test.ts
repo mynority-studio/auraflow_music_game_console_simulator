@@ -56,4 +56,29 @@ describe('newEngine/sandbox/irToMidi — Dream 5504 raw-default contract', () =>
     expect(events.filter((event) => event.type === 'noteOn').map((event) => [event.channel, event.data1, event.data2]))
       .toEqual([[2, 60, 80], [2, 64, 80], [9, 36, 90]]);
   });
+
+  it('仅 LOFI 消费 IR 的最终混音真源，并为硬件出口附加授权', () => {
+    const lofiEvents = musicalIRToMidiEvents(ir, 0, 'lofi');
+    const mixControllers = new Set([7, 10, 91, 93]);
+    const compMix = lofiEvents
+      .filter((event) => event.channel === 2 && event.type === 'cc' && mixControllers.has(event.data1))
+      .map((event) => [event.data1, event.data2, event.outputPolicy]);
+    const drumMix = lofiEvents
+      .filter((event) => event.channel === 9 && event.type === 'cc' && mixControllers.has(event.data1))
+      .map((event) => [event.data1, event.data2, event.outputPolicy]);
+
+    expect(compMix).toEqual([
+      [7, 12, 'lofi-channel-mix'], [10, 1, 'lofi-channel-mix'],
+      [91, 127, 'lofi-channel-mix'], [93, 127, 'lofi-channel-mix'],
+      [7, 127, 'lofi-channel-mix'], [10, 127, 'lofi-channel-mix'],
+      [91, 127, 'lofi-channel-mix'], [93, 127, 'lofi-channel-mix'],
+    ]);
+    expect(drumMix).toEqual([
+      [7, 1, 'lofi-channel-mix'], [10, 1, 'lofi-channel-mix'],
+      [91, 127, 'lofi-channel-mix'], [93, 127, 'lofi-channel-mix'],
+    ]);
+    expect(musicalIRToMidiEvents(ir, 0, 'pop').some(
+      (event) => event.type === 'cc' && mixControllers.has(event.data1),
+    )).toBe(false);
+  });
 });

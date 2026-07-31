@@ -3,7 +3,7 @@ import { midi, ticks } from '../generation/newEngine/foundation';
 import type { TrackIR } from '../generation/newEngine/ir/MusicalIR';
 import { DREAM5504_DEFAULT_MASTER_VOLUME, DREAM5504_MASTER_PEAK_CEILING, planDream5504Master } from './masteringProfile';
 
-describe('masteringProfile · Dream 5504 score master plan', () => {
+describe('masteringProfile · Dream 5504 default-master audit', () => {
   const plan = (tracks: TrackIR[]) => planDream5504Master({ tracks, ppq: 480, durationTicks: 960 });
 
   it('leaves sparse material at the documented board default', () => {
@@ -17,7 +17,7 @@ describe('masteringProfile · Dream 5504 score master plan', () => {
     expect(master.reason).toBe('unity');
   });
 
-  it('attenuates dense overlap and never crosses the ceiling after MIDI integer quantisation', () => {
+  it('reports dense overlap without attenuating the board Master', () => {
     const dense: TrackIR[] = [
       {
         role: 'lead', mix: { volume: 100, pan: 64, reverb: 0, chorus: 0 },
@@ -33,8 +33,9 @@ describe('masteringProfile · Dream 5504 score master plan', () => {
       },
     ];
     const master = plan(dense);
-    expect(master.volume).toBeLessThan(DREAM5504_DEFAULT_MASTER_VOLUME);
-    expect(master.reason).toBe('peak-protection');
-    expect(master.peakPreMasterLinear * master.gain).toBeLessThanOrEqual(DREAM5504_MASTER_PEAK_CEILING);
+    expect(master.volume).toBe(DREAM5504_DEFAULT_MASTER_VOLUME);
+    expect(master.gain).toBe(1);
+    expect(master.reason).toBe('unity');
+    expect(master.peakPreMasterLinear).toBeGreaterThan(DREAM5504_MASTER_PEAK_CEILING);
   });
 });

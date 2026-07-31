@@ -16,9 +16,9 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Cable, Drum, Hand, Piano } from 'lucide-react';
+import { Activity, Cable, FileSearch, Hand, Piano } from 'lucide-react';
 
-export type DevPanelId = 'pipeline' | 'motif' | 'midiOut' | 'takeover' | 'drumAudition';
+export type DevPanelId = 'pipeline' | 'midiAnalysis' | 'motif' | 'midiOut' | 'takeover';
 
 export interface DevPanelMeta {
     id: DevPanelId;
@@ -39,6 +39,11 @@ export const DEV_PANELS: DevPanelMeta[] = [
         dot: 'bg-sky-400', activeRing: 'border-sky-400/50 bg-sky-500/10', activeText: 'text-sky-300',
     },
     {
+        id: 'midiAnalysis', label: 'MIDI 分析', hint: 'Read-only MIDI analysis monitor', combo: 'Q+A',
+        icon: FileSearch,
+        dot: 'bg-cyan-400', activeRing: 'border-cyan-400/50 bg-cyan-500/10', activeText: 'text-cyan-300',
+    },
+    {
         id: 'motif', label: 'Motif 沙盒', hint: 'Motif weaver', combo: 'Q+R',
         icon: Piano,
         dot: 'bg-fuchsia-400', activeRing: 'border-fuchsia-400/50 bg-fuchsia-500/10', activeText: 'text-fuchsia-300',
@@ -47,11 +52,6 @@ export const DEV_PANELS: DevPanelMeta[] = [
         id: 'midiOut', label: 'MIDI 输出', hint: '5-track MIDI out', combo: 'Q+M',
         icon: Cable,
         dot: 'bg-emerald-400', activeRing: 'border-emerald-400/50 bg-emerald-500/10', activeText: 'text-emerald-300',
-    },
-    {
-        id: 'drumAudition', label: '鼓机试听', hint: 'POP drum machine patterns', combo: 'Q+D',
-        icon: Drum,
-        dot: 'bg-orange-400', activeRing: 'border-orange-400/50 bg-orange-500/10', activeText: 'text-orange-300',
     },
     {
         id: 'takeover', label: '用户接管沙盒', hint: 'Lead takeover', combo: 'Q+T',

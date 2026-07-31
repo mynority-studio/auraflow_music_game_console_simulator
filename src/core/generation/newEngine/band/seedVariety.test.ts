@@ -27,16 +27,18 @@ describe('band · seed 派生音乐身份多样性 (①key ③tempo ④mode)', (
     expect(modes.size).toBeGreaterThanOrEqual(3);
   });
 
-  it('③ tempo:POP 跨 seed保持多速度；Jazz 4/4 保持宽速域', () => {
-    expect(planTime('pop').tempoBpm).toBe(118); // 无 rng = 中心
+  it('③ tempo:POP 默认收回到中慢速；显式 upbeat 才进入快歌域；Jazz 4/4 保持宽速域', () => {
+    expect(planTime('pop').tempoBpm).toBe(96); // 无 rng = 中心
+    expect(planTime('pop', undefined, '抒情华语慢歌').tempoBpm).toBe(76);
+    expect(planTime('pop', undefined, 'upbeat dance 快歌').tempoBpm).toBe(124);
     expect(planTime('jazz').tempoBpm).toBe(132);
     expect(planTime('jazz').meter).toEqual({ numerator: 4, denominator: 4 });
     const popTempos = new Set<number>();
     const jazzFourFourTempos = new Set<number>();
     for (let s = 0; s < 16; s++) {
       const bpm = planTime('pop', createRandomContext(s).substream('time')).tempoBpm;
-      expect(bpm).toBeGreaterThanOrEqual(74);
-      expect(bpm).toBeLessThanOrEqual(162);
+      expect(bpm).toBeGreaterThanOrEqual(80);
+      expect(bpm).toBeLessThanOrEqual(112);
       popTempos.add(bpm);
       const jazzFourFour = planTime('jazz', createRandomContext(s).substream('time'), undefined, JAZZ_4_4_GROOVE_CONTRACT);
       expect(jazzFourFour.meter).toEqual({ numerator: 4, denominator: 4 });
@@ -47,8 +49,12 @@ describe('band · seed 派生音乐身份多样性 (①key ③tempo ④mode)', (
     expect(popTempos.size).toBeGreaterThanOrEqual(4); // 多个不同速度
     expect(jazzFourFourTempos.size).toBeGreaterThanOrEqual(4);
     const popWide = Array.from({ length: 64 }, (_, s) => planTime('pop', createRandomContext(s).substream('time')).tempoBpm);
-    expect(Math.min(...popWide)).toBeLessThanOrEqual(90);  // 抒情 pop
-    expect(Math.max(...popWide)).toBeGreaterThanOrEqual(145); // 欢快 pop
+    expect(Math.min(...popWide)).toBeLessThanOrEqual(84);  // 默认 POP 可落中慢速
+    expect(Math.max(...popWide)).toBeGreaterThanOrEqual(108); // 但不默认冲到快歌域
+    const upbeatWide = Array.from({ length: 64 }, (_, s) => planTime('pop', createRandomContext(s).substream('time'), 'upbeat 快歌').tempoBpm);
+    expect(Math.min(...upbeatWide)).toBeGreaterThanOrEqual(106);
+    expect(Math.max(...upbeatWide)).toBeLessThanOrEqual(142);
+    expect(Math.max(...upbeatWide)).toBeGreaterThanOrEqual(136);
   });
 
   it('★ 端到端:不同 seed 出不同身份(key/tempo 组合)不再"就那么几首"', () => {

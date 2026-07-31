@@ -94,6 +94,8 @@ export function harmonicPlanToMgChordDefs(plan: HarmonicPlan): ProductionChord[]
     // 这些是只读语义标签；普通 MG 旋律路径不消费时行为不变。
     spanId: span.id,
     stableTonePcs: [...(plan.stableToneMap[span.id] ?? [])].map(Number),
+    colorTonePcs: [...(plan.colorToneMap[span.id] ?? [])].map(Number),
+    avoidTonePcs: [...(plan.avoidNoteMap[span.id] ?? [])].map(Number),
     chordScalePcs: [...(plan.chordScaleMap[span.id] ?? [])].map(Number),
   }));
 }

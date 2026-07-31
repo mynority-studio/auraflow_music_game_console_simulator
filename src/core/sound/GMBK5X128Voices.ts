@@ -35,14 +35,14 @@ export interface GM128VoiceRequest {
  * CC0 + Program 地址；编曲层会把同一个地址同时下发给右手旋律、和声
  * 与左手 bass，避免三条轨被误听成三台不同键盘。
  *
- * 权重刻意强偏向大钢琴：电钢只作为极少数梦幻篇章色彩，而不改变
- * ACG PIANOSONG 的纯钢琴核心。
+ * 自动调色板只放已经验证能消费 CC64 的原声钢琴。电钢仍可供显式
+ * audition/手动编制使用，但不进入会写抒情长尾的自动 ACG 选择；否则
+ * 同一首“钢琴曲”会随机落到没有可靠 damper 的声音上。
  */
 const ACG_PIANOSONG_PIANO_ADDRESSES = [
   { bank: 0, program: 0, weight: 12 },  // Acoustic Grand Piano
-  { bank: 0, program: 1, weight: 2 },   // Bright Acoustic Piano
-  { bank: 0, program: 2, weight: 1 },   // Electric Grand Piano
-  { bank: 8, program: 4, weight: 1 },   // Soft Electric Piano
+  { bank: 0, program: 1, weight: 3 },   // Bright Acoustic Piano
+  { bank: 0, program: 3, weight: 1 },   // Honky-tonk Piano (small weathered color)
 ] as const;
 
 export interface AcgPianoSongVoice {
@@ -69,9 +69,12 @@ export const ACG_PIANOSONG_PIANO_VOICES: readonly AcgPianoSongVoice[] = Object.f
   }),
 );
 
-/** ACG 左手钢琴允许的 GM Program；bank 由上面的完整地址另行约束。 */
+/**
+ * ACG 左手允许的 GM Program。自动 palette 以外的 Electric/Soft Electric
+ * Piano 保留给显式 audition，不可据此推断它们支持自动 CC64。
+ */
 export const ACG_PIANOSONG_PIANO_PROGRAMS: readonly number[] = Object.freeze(
-  [...new Set(ACG_PIANOSONG_PIANO_VOICES.map((voice) => voice.program))],
+  [...new Set([...ACG_PIANOSONG_PIANO_VOICES.map((voice) => voice.program), 2, 4])],
 );
 
 export function isAcgPianoSongPianoProgram(program: number | undefined): boolean {

@@ -6,8 +6,8 @@
 // ============================================================
 
 import { buildTakeoverPadMap } from './harmonicNoteMap';
+import { findMeasureAtBeat } from './measureNoteMap';
 import {
-  beatsPerBarOf,
   quantizeTakeoverBeat,
   type TakeoverQuantizeGrid,
   type TakeoverQuantizeResult,
@@ -20,6 +20,7 @@ import type {
   TakeoverMusicSnapshot,
   TakeoverPadMap,
 } from './types';
+import { TAKEOVER_UPLOADED_BACKING_GAIN_SCALE } from './types';
 
 interface HeldPad {
   midi: number;
@@ -32,16 +33,14 @@ interface HeldPad {
 
 export const DEFAULT_LEAD_TAKEOVER_CONFIG: LeadTakeoverConfig = {
   leadChannel: 1,
-  takeoverThreshold: 3,
-  silenceBarsToRelease: 1,
-  handoffBars: 1,
+  nativeLeadMuteEnabled: true,
   defaultVelocity: 104,
   quantizeEnabled: true,
   quantizeGrid: '16th',
   fastInputGrid: '32nd',
   fastInputBeatWindow: 0.25,
-  lateGraceMs: 42,
-  strongBeatLateGraceMs: 86,
+  simultaneousInputWindowMs: 24,
+  maxSnapDelayMs: 60,
   noteOffTailMs: 34,
 };
 
@@ -51,13 +50,9 @@ function initialState(): LeadTakeoverState {
     inputCount: 0,
     firstInputBeat: null,
     lastInputBeat: null,
-    muteAtBeat: null,
     leadMuted: false,
+    backingDucked: false,
   };
-}
-
-function handoffBeat(anchorBeat: number, beatsPerBar: number, handoffBars: number): number {
-  return anchorBeat + beatsPerBar * handoffBars;
 }
 
 function timingFromQuantize(q: TakeoverQuantizeResult, targetBeat = q.targetBeat, delayMs = q.delayMs): LeadTakeoverTiming {
@@ -79,9 +74,10 @@ export class LeadTakeoverController {
   private snapshot: TakeoverMusicSnapshot | null = null;
   private currentPadMap: TakeoverPadMap | null = null;
   private currentPadMapKey: string | null = null;
-  private heldPads = new Map<number, HeldPad>();
+  private heldPads = new Map<string, HeldPad>();
   private noteIdSeq = 0;
   private lastNoteOnBeat: number | null = null;
+  private lastNoteOnTargetBeat: number | null = null;
 
   constructor(config: Partial<LeadTakeoverConfig> = {}) {
     this.config = { ...DEFAULT_LEAD_TAKEOVER_CONFIG, ...config };
@@ -92,9 +88,19 @@ export class LeadTakeoverController {
   }
 
   public setSnapshot(snapshot: TakeoverMusicSnapshot | null, beat = 0): TakeoverPadMap | null {
+    const sameSnapshot = this.snapshot === snapshot;
     this.snapshot = snapshot;
-    this.currentPadMapKey = snapshot ? this.padMapKeyForBeat(beat) : null;
-    this.currentPadMap = snapshot ? buildTakeoverPadMap(snapshot, beat) : null;
+    if (!snapshot) {
+      this.currentPadMapKey = null;
+      this.currentPadMap = null;
+      return null;
+    }
+    const nextKey = this.padMapKeyForBeat(beat);
+    if (sameSnapshot && this.currentPadMap && nextKey === this.currentPadMapKey) {
+      return this.currentPadMap;
+    }
+    this.currentPadMapKey = nextKey;
+    this.currentPadMap = buildTakeoverPadMap(snapshot, beat);
     return this.currentPadMap;
   }
 
@@ -109,6 +115,13 @@ export class LeadTakeoverController {
 
   private padMapKeyForBeat(beat: number): string | null {
     if (!this.snapshot) return null;
+    if (this.snapshot.source === 'midi-analysis'
+      && this.snapshot.layoutMode === 'measure-notes') {
+      const measure = findMeasureAtBeat(this.snapshot.measures ?? [], beat);
+      return measure
+        ? `measure-notes:${measure.id}:${measure.startBeat}:${measure.notes.length}`
+        : `measure-notes:fallback:${this.snapshot.measures?.length ?? 0}`;
+    }
     const currentIdx = this.snapshot.chords.findIndex((c) => beat >= c.startBeat && beat < c.startBeat + c.durationBeats);
     if (currentIdx < 0) return `fallback:${this.snapshot.chords.length}`;
     const current = this.snapshot.chords[currentIdx];
@@ -143,6 +156,12 @@ export class LeadTakeoverController {
       && deltaBeats < this.config.fastInputBeatWindow;
   }
 
+  private isSequentialInput(deltaBeats: number): boolean {
+    if (!this.snapshot || !this.isFastInput(deltaBeats)) return false;
+    const deltaMs = deltaBeats * (60000 / this.snapshot.bpm);
+    return deltaMs > this.config.simultaneousInputWindowMs;
+  }
+
   private gridForNoteOn(beat: number): TakeoverQuantizeGrid {
     if (this.lastNoteOnBeat === null) return this.config.quantizeGrid;
     return this.isFastInput(beat - this.lastNoteOnBeat)
@@ -157,18 +176,32 @@ export class LeadTakeoverController {
       : this.config.quantizeGrid;
   }
 
-  public noteOn(padIndex: number, beat: number, velocity = this.config.defaultVelocity): LeadTakeoverAction[] {
-    if (this.heldPads.has(padIndex)) return [];
+  private heldPadKey(padIndex: number, sourceId?: string): string {
+    return sourceId ?? `pad:${padIndex}`;
+  }
+
+  public noteOn(
+    padIndex: number,
+    beat: number,
+    velocity = this.config.defaultVelocity,
+    sourceId?: string,
+  ): LeadTakeoverAction[] {
+    const heldKey = this.heldPadKey(padIndex, sourceId);
+    if (this.heldPads.has(heldKey)) return [];
+    const noteOnDelta = this.lastNoteOnBeat === null ? Number.POSITIVE_INFINITY : beat - this.lastNoteOnBeat;
     const grid = this.gridForNoteOn(beat);
+    const grooveContract = this.grooveContractForBeat(beat);
     const timing = this.snapshot && this.config.quantizeEnabled
       ? quantizeTakeoverBeat({
         beat,
         bpm: this.snapshot.bpm,
         timeSignature: this.snapshot.timeSignature,
         grid,
-        lateGraceMs: this.config.lateGraceMs,
-        strongBeatLateGraceMs: this.config.strongBeatLateGraceMs,
-        grooveContract: this.grooveContractForBeat(beat),
+        grooveContract,
+        maxDelayMs: this.config.maxSnapDelayMs,
+        ...(this.lastNoteOnTargetBeat !== null && this.isSequentialInput(noteOnDelta)
+          ? { afterTargetBeat: this.lastNoteOnTargetBeat }
+          : {}),
       })
       : null;
     const targetBeat = timing?.targetBeat ?? beat;
@@ -177,7 +210,7 @@ export class LeadTakeoverController {
     if (!cell) return [];
 
     const noteId = `lt-${++this.noteIdSeq}`;
-    this.heldPads.set(padIndex, {
+    this.heldPads.set(heldKey, {
       midi: cell.midi,
       noteId,
       noteOnSourceBeat: beat,
@@ -188,6 +221,7 @@ export class LeadTakeoverController {
       quantizeGrid: timing?.grid ?? grid,
     });
     this.lastNoteOnBeat = beat;
+    this.lastNoteOnTargetBeat = targetBeat;
     if (this.state.inputCount === 0) this.state.firstInputBeat = beat;
     this.state.inputCount += 1;
     this.state.lastInputBeat = beat;
@@ -205,19 +239,36 @@ export class LeadTakeoverController {
         : {}),
     }];
 
-    if (this.state.mode === 'idle' && this.state.inputCount >= this.config.takeoverThreshold && this.snapshot) {
-      const bpb = beatsPerBarOf(this.snapshot.timeSignature);
-      this.state.mode = 'pending-handoff';
-      this.state.muteAtBeat = handoffBeat(this.state.firstInputBeat ?? beat, bpb, this.config.handoffBars);
+    if (!this.state.backingDucked && this.snapshot?.source === 'midi-analysis') {
+      this.state.backingDucked = true;
+      actions.unshift({ type: 'backing-gain', scale: TAKEOVER_UPLOADED_BACKING_GAIN_SCALE });
+    }
+
+    if (this.state.mode === 'idle' && this.snapshot) {
+      if (this.config.nativeLeadMuteEnabled) {
+        this.state.mode = 'takeover';
+        this.state.leadMuted = true;
+        actions.unshift({
+          type: 'lead-mute',
+          channel: this.config.leadChannel,
+          muted: true,
+        });
+      } else {
+        // A Standard MIDI File may put lead and accompaniment on the same
+        // channel. Channel-level mute is unsafe there, but the selected-note
+        // layout and takeover voice remain usable.
+        this.state.mode = 'takeover';
+      }
     }
 
     return actions;
   }
 
-  public noteOff(padIndex: number, beat?: number): LeadTakeoverAction[] {
-    const held = this.heldPads.get(padIndex);
+  public noteOff(padIndex: number, beat?: number, sourceId?: string): LeadTakeoverAction[] {
+    const heldKey = this.heldPadKey(padIndex, sourceId);
+    const held = this.heldPads.get(heldKey);
     if (!held) return [];
-    this.heldPads.delete(padIndex);
+    this.heldPads.delete(heldKey);
     const grid = beat !== undefined ? this.gridForNoteOff(held, beat) : held.quantizeGrid;
     const timing = this.snapshot && this.config.quantizeEnabled && beat !== undefined
       ? quantizeTakeoverBeat({
@@ -225,9 +276,8 @@ export class LeadTakeoverController {
         bpm: this.snapshot.bpm,
         timeSignature: this.snapshot.timeSignature,
         grid,
-        lateGraceMs: 0,
-        strongBeatLateGraceMs: 0,
         grooveContract: this.grooveContractForBeat(beat),
+        maxDelayMs: this.config.maxSnapDelayMs,
       })
       : null;
     const noteOffTargetBeat = timing
@@ -257,46 +307,47 @@ export class LeadTakeoverController {
 
   public tick(beat: number): LeadTakeoverAction[] {
     if (!this.snapshot) return [];
-    const actions: LeadTakeoverAction[] = [];
-    const bpb = beatsPerBarOf(this.snapshot.timeSignature);
-
-    if (this.state.mode === 'pending-handoff'
-      && this.state.muteAtBeat !== null
-      && beat >= this.state.muteAtBeat
-      && !this.state.leadMuted) {
-      this.state.mode = 'takeover';
-      this.state.leadMuted = true;
-      actions.push({ type: 'lead-mute', channel: this.config.leadChannel, muted: true });
-    }
-
-    const releaseAnchor = Math.max(
-      this.state.lastInputBeat ?? beat,
-      this.state.muteAtBeat ?? beat,
-    );
-    if (this.state.mode === 'takeover'
-      && this.heldPads.size === 0
-      && beat - releaseAnchor >= bpb * this.config.silenceBarsToRelease) {
-      this.state = initialState();
-      actions.push({ type: 'lead-mute', channel: this.config.leadChannel, muted: false });
-      actions.push({ type: 'panic', channel: this.config.leadChannel });
-    }
-
-    return actions;
+    void beat;
+    return [];
   }
 
-  public reset(): LeadTakeoverAction[] {
+  /**
+   * A cleared pad state must not hand the generated lead back to the engine.
+   * Only closing Q+T explicitly restores it.
+   */
+  public reset(options: { restoreNativeLead?: boolean } = {}): LeadTakeoverAction[] {
     const actions: LeadTakeoverAction[] = [];
     for (const held of this.heldPads.values()) {
       actions.push({ type: 'lead-note-off', channel: this.config.leadChannel, noteId: held.noteId, midi: held.midi });
     }
     this.heldPads.clear();
-    if (this.state.leadMuted) {
+    const preserveMute = this.state.leadMuted && !options.restoreNativeLead;
+    const preserveBackingDuck = this.state.backingDucked && !options.restoreNativeLead;
+    if (preserveMute) {
+      // Reassert the transport mute after a Q+H result swap or sandbox reset.
+      // The previous delayed hard-mute may have been cancelled during cleanup.
+      actions.push({ type: 'lead-mute', channel: this.config.leadChannel, muted: true });
+    }
+    if (this.state.leadMuted && options.restoreNativeLead) {
       actions.push({ type: 'lead-mute', channel: this.config.leadChannel, muted: false });
       actions.push({ type: 'panic', channel: this.config.leadChannel });
     }
-    this.state = initialState();
+    if (preserveBackingDuck) {
+      actions.push({ type: 'backing-gain', scale: TAKEOVER_UPLOADED_BACKING_GAIN_SCALE });
+    } else if (this.state.backingDucked && options.restoreNativeLead) {
+      actions.push({ type: 'backing-gain', scale: 1 });
+    }
+    this.state = preserveMute || preserveBackingDuck
+      ? {
+          ...initialState(),
+          mode: preserveMute ? 'takeover' : 'idle',
+          leadMuted: preserveMute,
+          backingDucked: preserveBackingDuck,
+        }
+      : initialState();
     this.noteIdSeq = 0;
     this.lastNoteOnBeat = null;
+    this.lastNoteOnTargetBeat = null;
     return actions;
   }
 }

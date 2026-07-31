@@ -11,6 +11,7 @@
 
 import { mod12 } from '../foundation';
 import { getChordVoicingAesthetics, type RegisterHint } from './chordIntervalRoles';
+import { minimumVoiceLeadingDistance } from '../instrumental/foundationVoiceLeading';
 
 export const CHORD_RANGE = { LOW: 48, HIGH: 81 } as const;
 
@@ -89,11 +90,7 @@ export function placeVoicingMidi(
 
       // 3. 声部进行(贴 prev 最近,系数 1.2)+ 3a 顶音连续(超 P4 重罚)
       if (prevVoicingMidi.length > 0) {
-        for (const m of sorted) {
-          let minDist = Infinity;
-          for (const p of prevVoicingMidi) { const d = Math.abs(m - p); if (d < minDist) minDist = d; }
-          cost += minDist * 1.2;
-        }
+        cost += minimumVoiceLeadingDistance(prevVoicingMidi, sorted) * 1.2;
         const currTop = sorted[sorted.length - 1];
         const prevTop = Math.max(...prevVoicingMidi);
         const topJump = Math.abs(currTop - prevTop);

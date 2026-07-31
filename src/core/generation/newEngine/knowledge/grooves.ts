@@ -76,6 +76,41 @@ export interface DrumPerformanceLike {
   snarePolicy?: string;
 }
 
+export type LofiDrumPhraseFamily =
+  | 'slow-boombap'
+  | 'dusty-dilla-boombap'
+  | 'slow-soul-halftime';
+export type LofiDrumBackbeatMode = 'two-four' | 'halftime-three';
+
+/**
+ * A LOFI Hip Hop groove is selected as one indivisible two-bar phrase.
+ * `turnaroundBar` is the only structural replacement permitted at an
+ * Arranger-declared 8-bar cadence; Performance may still shape timing and
+ * velocity, but it must not change these nominal onset masks.
+ */
+export interface LofiDrumPhrase {
+  id: string;
+  family: LofiDrumPhraseFamily;
+  backbeatMode: LofiDrumBackbeatMode;
+  bars: readonly [readonly DrumHit[], readonly DrumHit[]];
+  turnaroundBar: readonly DrumHit[];
+}
+
+/**
+ * A low-density four-bar percussion layer.  It is selected independently from
+ * the kick/backbeat phrase so the Arranger can add or remove the upper loop
+ * without changing the song's Boom-bap identity.
+ */
+export interface LofiAuxiliaryTopLoop {
+  id: string;
+  bars: readonly [
+    readonly DrumHit[],
+    readonly DrumHit[],
+    readonly DrumHit[],
+    readonly DrumHit[],
+  ];
+}
+
 const HAT8 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
 const HAT16 = Array.from({ length: 16 }, (_, i) => i * 0.25);
 
@@ -129,6 +164,8 @@ export function drumPattern(style: string): DrumHit[] {
 export type GrooveKind = 'sparse' | 'laidback' | 'straight' | 'driving';
 
 const hats8 = (vel: number): DrumHit[] => HAT8.map((b) => ({ drum: DRUM.CHAT, beat: b, vel }));
+const lofiHats8 = (downVel: number, offVel: number): DrumHit[] =>
+  HAT8.map((beat) => ({ drum: DRUM.CHAT, beat, vel: beat % 1 === 0 ? downVel : offVel }));
 const hats4 = (vel: number): DrumHit[] => [0, 1, 2, 3].map((b) => ({ drum: DRUM.CHAT, beat: b, vel }));
 const hats16BoomBap = (downVel: number, offVel: number, ghostVel: number, drum = DRUM.CHAT): DrumHit[] =>
   HAT16.map((b) => ({ drum, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
@@ -141,6 +178,8 @@ const OH = (beat: number, vel: number): DrumHit => ({ drum: DRUM.OHAT, beat, vel
 const CL = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CLAP, beat, vel });       // 拍手
 const SK = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SIDESTICK, beat, vel });   // 边击
 const RB = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE_BELL, beat, vel });   // ride 铃
+const CGH = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CONGA_HI, beat, vel });
+const CGL = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CONGA_LO, beat, vel });
 const shaker16 = (vel: number): DrumHit[] => HAT16.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel })); // 沙锤 16 分
 const hats16Accent = (downVel: number, offVel: number, ghostVel: number): DrumHit[] =>
   HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
@@ -150,27 +189,34 @@ const cityPopHat16 = (downVel = 58, offVel = 48, ghostVel = 32): DrumHit[] =>
   HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
 const cityPopTambOffbeats = (vel = 38): DrumHit[] => [0.5, 1.5, 2.5, 3.5].map((beat) => ({ drum: DRUM.TAMB, beat, vel }));
 const cityPopBackbeat = (snareVel = 96, clapVel = 70): DrumHit[] => [S(1, snareVel), CL(1, clapVel), S(3, snareVel + 4), CL(3, clapVel + 4)];
+const popBackbeat = (snareVel = 88, clapVel = 54): DrumHit[] => [S(1, snareVel), CL(1, clapVel), S(3, snareVel + 4), CL(3, clapVel + 4)];
+const popGhosts = (vel = 32): DrumHit[] => [S(0.75, vel), S(2.75, vel + 3)];
+const loungeCongas = (vel = 34): DrumHit[] => [CGL(1.5, vel), CGH(2.5, vel + 4), CGL(3.5, vel - 2)];
 const TRIPLET8 = [0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67];
 const tripletShaker = (vel: number): DrumHit[] => TRIPLET8.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel }));
 
 // 每 (style × groove) = 2-3 个变体(DrumHit[][])。
 const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
   pop: {
-    sparse: [[K(0, 100), S(2, 84), ...hats4(40)]],
+    sparse: [
+      [K(0, 92), SK(2, 66), ...hats4(34), { drum: DRUM.SHAKER, beat: 3.5, vel: 24 }],
+      [K(0, 90), K(2.5, 58), SK(2, 64), ...hats8(30), CGL(1.5, 28), CGH(2.5, 32)],
+    ],
     laidback: [
-      [K(0, 100), K(2.5, 82), S(1, 88), S(3, 92), ...hats8(48)],
-      [K(0, 100), K(2, 78), S(1, 86), S(3, 92), S(1.5, 40), ...hats8(46)],
+      [K(0, 96), K(2.5, 74), ...popBackbeat(82, 46), ...popGhosts(28), ...hats8(42), ...cityPopTambOffbeats(26)],
+      [K(0, 96), K(1.5, 62), K(2.75, 72), S(1, 82), S(3, 88), SK(2.75, 28), ...hats16Accent(38, 30, 20)],
+      [K(0, 94), K(0.75, 52), K(2.5, 72), SK(1, 70), S(3, 84), ...hats8(38), ...loungeCongas(30)],
     ],
     straight: [
-      [K(0, 112), K(2, 104), S(1, 96), S(3, 100), ...hats8(58)],
-      [K(0, 110), K(2, 100), K(2.5, 80), S(1, 96), S(3, 100), ...hats8(56), OH(1.5, 50)],
-      // ★ clap 叠 backbeat(加厚)
-      [K(0, 112), K(2, 104), S(1, 96), S(3, 100), CL(1, 78), CL(3, 82), ...hats8(56)],
+      [K(0, 98), K(2, 88), K(2.75, 64), ...popBackbeat(86, 52), ...popGhosts(30), ...hats8(44), ...cityPopTambOffbeats(28)],
+      [K(0, 98), K(1.5, 62), K(2, 86), S(1, 84), S(3, 90), SK(2.75, 30), ...hats16Accent(42, 34, 22), OH(3.5, 36)],
+      [K(0, 96), K(0.75, 54), K(2.25, 76), K(3.5, 60), ...popBackbeat(84, 50), ...hats16Accent(41, 33, 21)],
+      [K(0, 96), K(2, 84), S(1, 80), S(3, 88), ...hats8(40), ...shaker16(24), ...loungeCongas(30)],
     ],
     driving: [
-      [K(0, 112), K(1, 92), K(2, 104), K(3, 92), S(1, 100), S(3, 104), ...hats8(62), OH(1.5, 56), OH(3.5, 56)],
-      [K(0, 112), K(2, 104), K(2.5, 84), S(1, 100), S(3, 104), S(1.5, 42), S(3.5, 42), ...hats8(64)],
-      [K(0, 112), K(1, 92), K(2, 104), K(3, 92), S(1, 100), S(3, 104), CL(1, 84), CL(3, 88), ...hats8(60)],
+      [K(0, 102), K(1, 82), K(2, 94), K(3, 80), ...popBackbeat(90, 58), ...cityPopHat16(48, 39, 25), OH(1.5, 42), OH(3.5, 46)],
+      [K(0, 102), K(0.75, 58), K(2, 92), K(2.75, 70), S(1, 90), S(3, 96), S(3.5, 34), ...hats16Accent(48, 38, 24), ...cityPopTambOffbeats(32)],
+      [K(0, 100), K(1, 78), K(2, 92), K(3, 78), S(1, 90), S(3, 96), CL(1, 58), CL(3, 64), ...hats8(48), ...shaker16(26)],
     ],
   },
   rnb: {
@@ -251,15 +297,19 @@ const CITYPOP_SYNCOPATED_BOOGIE: DrumHit[][] = [
 ];
 
 const POP_MODERN_BACKBEAT: DrumHit[][] = [
-  [K(0, 108), K(2, 100), K(2.75, 76), S(1, 96), S(3, 100), CL(1, 64), CL(3, 68), ...cityPopHat16(54, 44, 30), OH(3.5, 48)],
-  [K(0, 108), K(1.5, 72), K(2, 100), S(1, 96), S(3, 100), CL(3, 68), ...hats16Accent(52, 42, 28), OH(1.5, 44), OH(3.5, 50)],
-  [K(0, 106), K(2, 98), K(3, 76), S(1, 94), S(3, 100), CL(1, 62), CL(3, 70), ...hats16Accent(52, 42, 28)],
+  // Live/bar pop:the backbeat is familiar, but kick answers, ghost notes and light percussion keep it breathing.
+  [K(0, 98), K(2, 88), K(2.75, 64), ...popBackbeat(84, 50), ...popGhosts(28), ...cityPopHat16(44, 35, 22), ...cityPopTambOffbeats(28)],
+  [K(0, 98), K(1.5, 62), K(2, 86), S(1, 84), S(3, 90), SK(2.75, 30), ...hats16Accent(44, 35, 22), OH(3.5, 36)],
+  [K(0, 96), K(0.75, 54), K(2.25, 76), K(3.5, 60), ...popBackbeat(84, 50), ...hats16Accent(42, 34, 21), { drum: DRUM.TAMB, beat: 3.5, vel: 30 }],
+  [K(0, 96), K(2, 84), S(1, 80), S(3, 88), S(0.75, 26), ...hats16Accent(40, 32, 20), ...shaker16(24), ...loungeCongas(30)],
+  [K(0, 98), K(1, 70), K(2, 86), K(2.5, 62), S(1, 84), S(3, 90), CL(3, 54), S(3.5, 30), ...hats16Accent(43, 34, 21)],
 ];
 
 const JPOP_DRIVING_8THS: DrumHit[][] = [
-  [K(0, 110), K(0.75, 72), K(2, 104), K(3, 86), S(1, 98), S(3, 104), CL(3, 76), ...cityPopHat16(56, 46, 30), OH(3.5, 54)],
-  [K(0, 110), K(1, 84), K(2, 104), K(2.5, 78), S(1, 98), S(3, 104), S(3.5, 42), ...cityPopHat16(56, 46, 30), OH(1.5, 48), OH(3.5, 54)],
-  [K(0, 108), K(1.5, 76), K(2, 104), K(3.5, 78), S(1, 98), S(3, 104), CL(1, 68), CL(3, 76), ...cityPopHat16(56, 46, 30), ...cityPopTambOffbeats(40), OH(3.5, 56)],
+  [K(0, 100), K(0.75, 58), K(2, 90), K(3, 66), S(1, 86), S(3, 92), CL(3, 54), S(2.75, 28), ...cityPopHat16(46, 37, 23), OH(3.5, 38)],
+  [K(0, 100), K(1, 68), K(2, 90), K(2.5, 62), S(1, 86), S(3, 92), S(3.5, 30), ...cityPopHat16(46, 37, 23), ...cityPopTambOffbeats(28)],
+  [K(0, 98), K(1.5, 62), K(2, 90), K(3.5, 62), S(1, 86), S(3, 92), CL(3, 54), ...cityPopHat16(46, 37, 23), ...loungeCongas(30)],
+  [K(0, 98), K(0.5, 50), K(2.25, 76), K(2.75, 64), S(1, 82), S(3, 90), S(2.75, 28), ...hats16Accent(45, 36, 22), OH(1.5, 34)],
 ];
 
 const tr808Hat16 = (downVel = 48, offVel = 38, ghostVel = 24): DrumHit[] =>
@@ -302,6 +352,265 @@ const TR808_LOFI_MINIMAL: DrumHit[][] = [
   [K(0, 96), S(2, 70), ...tr808Hat16(32, 25, 17)],
 ];
 
+const TR808_LOFI_SOUL_HALFTIME: DrumHit[][] = [
+  [K(0, 100), K(2.75, 72), SK(2, 78), ...lofiHats8(38, 28)],
+  [K(0, 98), K(1.75, 62), K(3.5, 68), SK(2, 76), ...lofiHats8(36, 27)],
+];
+
+const LOFI_DRUM_PHRASES: readonly LofiDrumPhrase[] = [
+  {
+    id: 'lofi-boombap-soul-01',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(2.5, 78), SK(1, 80), SK(3, 84), ...lofiHats8(42, 30)],
+      [K(0, 102), K(1.75, 66), K(2.75, 74), SK(1, 78), SK(3, 84), ...lofiHats8(41, 29)],
+    ],
+    turnaroundBar: [K(0, 102), K(2.5, 76), K(3.75, 68), SK(1, 78), SK(3, 84), ...lofiHats8(41, 29)],
+  },
+  {
+    id: 'lofi-boombap-soul-02',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(0.75, 58), K(2.25, 78), SK(1, 80), SK(3, 84), ...lofiHats8(41, 29)],
+      [K(0, 102), K(2, 82), K(3.5, 62), SK(1, 78), SK(3, 83), ...lofiHats8(40, 28)],
+    ],
+    turnaroundBar: [K(0, 102), K(2.25, 78), K(3.75, 66), SK(1, 78), SK(3, 84), ...lofiHats8(40, 28)],
+  },
+  {
+    id: 'lofi-boombap-soul-03',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 102), K(1.5, 62), K(2.75, 76), SK(1, 78), SK(3, 82), ...lofiHats8(40, 28)],
+      [K(0, 104), K(0.5, 56), K(2.5, 78), SK(1, 79), SK(3, 84), ...lofiHats8(41, 29)],
+    ],
+    turnaroundBar: [K(0, 102), K(1.5, 60), K(3.75, 68), SK(1, 78), SK(3, 84), ...lofiHats8(40, 28)],
+  },
+  {
+    id: 'lofi-boombap-soul-04',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(2, 80), SK(1, 80), SK(3, 84), ...lofiHats8(42, 30)],
+      [K(0, 102), K(3.5, 62), SK(1, 78), SK(3, 82), ...lofiHats8(40, 28)],
+    ],
+    turnaroundBar: [K(0, 102), K(2, 78), K(3.75, 66), SK(1, 78), SK(3, 84), ...lofiHats8(40, 28)],
+  },
+  {
+    id: 'lofi-boombap-soul-05',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(2.5, 76), SK(1, 80), SK(3, 84), ...lofiHats8(42, 29)],
+      [K(0, 102), K(2.5, 74), K(3.5, 58), SK(1, 78), SK(3, 83), ...lofiHats8(40, 27)],
+    ],
+    turnaroundBar: [K(0, 102), K(2.5, 74), K(3.75, 62), SK(1, 78), SK(3, 84), ...lofiHats8(40, 27)],
+  },
+  {
+    id: 'lofi-boombap-soul-06',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(2.75, 76), SK(1, 80), SK(3, 84), ...lofiHats8(41, 29)],
+      [K(0, 102), K(0.75, 56), K(2.75, 74), SK(1, 78), SK(3, 83), ...lofiHats8(40, 28)],
+    ],
+    turnaroundBar: [K(0, 102), K(2.75, 74), K(3.75, 62), SK(1, 78), SK(3, 84), ...lofiHats8(40, 28)],
+  },
+  {
+    id: 'lofi-boombap-soul-07',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(1.75, 64), SK(1, 80), SK(3, 84), ...lofiHats8(42, 29)],
+      [K(0, 102), K(2.25, 76), K(3.5, 58), SK(1, 78), SK(3, 83), ...lofiHats8(40, 27)],
+    ],
+    turnaroundBar: [K(0, 102), K(1.75, 62), K(3.75, 64), SK(1, 78), SK(3, 84), ...lofiHats8(40, 27)],
+  },
+  {
+    id: 'lofi-boombap-soul-08',
+    family: 'slow-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 104), K(0.5, 54), K(2.5, 76), SK(1, 80), SK(3, 84), ...lofiHats8(41, 28)],
+      [K(0, 102), K(2, 78), K(2.75, 62), SK(1, 78), SK(3, 83), ...lofiHats8(40, 27)],
+    ],
+    turnaroundBar: [K(0, 102), K(2.5, 74), K(3.75, 64), SK(1, 78), SK(3, 84), ...lofiHats8(40, 27)],
+  },
+  {
+    id: 'lofi-dilla-dust-01',
+    family: 'dusty-dilla-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 102), K(1.75, 66), K(2.5, 74), SK(1, 76), SK(3, 82), SK(2.75, 25), ...lofiHats8(38, 27)],
+      [K(0, 100), K(0.75, 56), K(2.25, 76), SK(1, 75), SK(3, 80), ...lofiHats8(37, 26), OH(3.5, 27)],
+    ],
+    turnaroundBar: [K(0, 100), K(2.25, 76), K(3.75, 65), SK(1, 75), SK(3, 81), SK(3.5, 28), ...lofiHats8(37, 26)],
+  },
+  {
+    id: 'lofi-dilla-dust-02',
+    family: 'dusty-dilla-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 100), K(0.5, 54), K(2.75, 74), SK(1, 75), SK(3, 81), ...lofiHats8(37, 26)],
+      [K(0, 102), K(1.5, 62), K(2.25, 76), SK(1, 76), SK(3, 82), SK(0.75, 24), ...lofiHats8(38, 27)],
+    ],
+    turnaroundBar: [K(0, 100), K(1.5, 60), K(3.75, 65), SK(1, 75), SK(3, 81), ...lofiHats8(37, 26)],
+  },
+  {
+    id: 'lofi-dilla-dust-03',
+    family: 'dusty-dilla-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 102), K(2.25, 76), SK(1, 76), SK(3, 82), SK(2.75, 24), ...lofiHats8(38, 27)],
+      [K(0, 100), K(0.75, 56), K(2.75, 72), SK(1, 75), SK(3, 80), ...lofiHats8(37, 26)],
+    ],
+    turnaroundBar: [K(0, 100), K(2.25, 74), K(3.75, 66), SK(1, 75), SK(3, 81), OH(3.5, 27), ...lofiHats8(37, 26)],
+  },
+  {
+    id: 'lofi-dilla-dust-04',
+    family: 'dusty-dilla-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 102), K(0.75, 54), K(2.5, 72), SK(1, 76), SK(3, 82), ...lofiHats8(38, 26)],
+      [K(0, 100), K(1.75, 62), K(2.75, 70), SK(1, 75), SK(3, 80), SK(3.5, 23), ...lofiHats8(37, 25)],
+    ],
+    turnaroundBar: [K(0, 100), K(1.75, 60), K(3.75, 64), SK(1, 75), SK(3, 81), ...lofiHats8(37, 25)],
+  },
+  {
+    id: 'lofi-dilla-dust-05',
+    family: 'dusty-dilla-boombap',
+    backbeatMode: 'two-four',
+    bars: [
+      [K(0, 102), K(1.5, 60), K(2.5, 72), SK(1, 76), SK(3, 82), SK(0.75, 23), ...lofiHats8(38, 26)],
+      [K(0, 100), K(0.5, 52), K(2.25, 74), SK(1, 75), SK(3, 80), ...lofiHats8(37, 25), OH(3.5, 26)],
+    ],
+    turnaroundBar: [K(0, 100), K(2.5, 72), K(3.75, 64), SK(1, 75), SK(3, 81), ...lofiHats8(37, 25)],
+  },
+  {
+    id: 'lofi-halftime-soul-01',
+    family: 'slow-soul-halftime',
+    backbeatMode: 'halftime-three',
+    bars: [
+      [K(0, 100), K(2.75, 72), SK(2, 78), ...lofiHats8(38, 27)],
+      [K(0, 98), K(1.75, 60), K(3.5, 66), SK(2, 76), ...lofiHats8(36, 26)],
+    ],
+    turnaroundBar: [K(0, 98), K(2.75, 70), K(3.75, 64), SK(2, 77), ...lofiHats8(36, 26)],
+  },
+  {
+    id: 'lofi-halftime-soul-02',
+    family: 'slow-soul-halftime',
+    backbeatMode: 'halftime-three',
+    bars: [
+      [K(0, 100), K(1.5, 60), SK(2, 78), ...lofiHats8(38, 27)],
+      [K(0, 98), K(2.5, 70), K(3.75, 62), SK(2, 76), ...lofiHats8(36, 26)],
+    ],
+    turnaroundBar: [K(0, 98), K(1.75, 58), K(3.75, 65), SK(2, 77), ...lofiHats8(36, 26)],
+  },
+  {
+    id: 'lofi-halftime-soul-03',
+    family: 'slow-soul-halftime',
+    backbeatMode: 'halftime-three',
+    bars: [
+      [K(0, 100), K(0.75, 54), K(2.75, 68), SK(2, 78), ...lofiHats8(38, 27)],
+      [K(0, 98), K(1.5, 58), K(3.5, 64), SK(2, 76), ...lofiHats8(36, 26)],
+    ],
+    turnaroundBar: [K(0, 98), K(2.5, 68), K(3.75, 63), SK(2, 77), ...lofiHats8(36, 26)],
+  },
+];
+
+const LOFI_AUXILIARY_TOP_LOOPS: readonly LofiAuxiliaryTopLoop[] = [
+  {
+    id: 'lofi-top-shaker-air-01',
+    bars: [
+      [{ drum: DRUM.SHAKER, beat: 1.5, vel: 28 }, { drum: DRUM.SHAKER, beat: 3.5, vel: 32 }],
+      [{ drum: DRUM.SHAKER, beat: 0.5, vel: 24 }, { drum: DRUM.SHAKER, beat: 2.5, vel: 30 }],
+      [{ drum: DRUM.SHAKER, beat: 1.5, vel: 27 }, { drum: DRUM.SHAKER, beat: 3.5, vel: 33 }],
+      [{ drum: DRUM.SHAKER, beat: 0.5, vel: 23 }, { drum: DRUM.SHAKER, beat: 2.5, vel: 29 }, { drum: DRUM.SHAKER, beat: 3.75, vel: 25 }],
+    ],
+  },
+  {
+    id: 'lofi-top-rim-answer-01',
+    bars: [
+      [{ drum: DRUM.SIDESTICK, beat: 2.5, vel: 28 }],
+      [{ drum: DRUM.SIDESTICK, beat: 0.5, vel: 24 }, { drum: DRUM.SIDESTICK, beat: 2.5, vel: 30 }],
+      [{ drum: DRUM.SIDESTICK, beat: 2.5, vel: 27 }],
+      [{ drum: DRUM.SIDESTICK, beat: 0.5, vel: 24 }, { drum: DRUM.SIDESTICK, beat: 3.5, vel: 31 }],
+    ],
+  },
+  {
+    id: 'lofi-top-conga-dust-01',
+    bars: [
+      [{ drum: DRUM.CONGA_LO, beat: 1.5, vel: 26 }],
+      [{ drum: DRUM.CONGA_HI, beat: 2.5, vel: 30 }],
+      [{ drum: DRUM.CONGA_LO, beat: 0.5, vel: 24 }, { drum: DRUM.CONGA_HI, beat: 3.5, vel: 29 }],
+      [{ drum: DRUM.CONGA_LO, beat: 1.5, vel: 25 }, { drum: DRUM.CONGA_HI, beat: 2.75, vel: 28 }],
+    ],
+  },
+  {
+    id: 'lofi-top-tamb-skip-01',
+    bars: [
+      [{ drum: DRUM.TAMB, beat: 1.5, vel: 25 }],
+      [{ drum: DRUM.TAMB, beat: 3.5, vel: 30 }],
+      [{ drum: DRUM.TAMB, beat: 1.5, vel: 24 }, { drum: DRUM.TAMB, beat: 2.5, vel: 27 }],
+      [{ drum: DRUM.TAMB, beat: 0.5, vel: 23 }, { drum: DRUM.TAMB, beat: 3.5, vel: 31 }],
+    ],
+  },
+];
+
+function familyForLofiPattern(patternFamily: string | undefined): LofiDrumPhraseFamily | undefined {
+  if (!patternFamily) return undefined;
+  if (patternFamily.includes('soul-halftime')) return 'slow-soul-halftime';
+  if (patternFamily.includes('dusty')) return 'dusty-dilla-boombap';
+  if (patternFamily.includes('lofi-boombap')) return 'slow-boombap';
+  return undefined;
+}
+
+export function lofiDrumPhrases(patternFamily?: string): LofiDrumPhrase[] {
+  const family = familyForLofiPattern(patternFamily);
+  if (!family) return [];
+  return lofiDrumPhrasesForFamily(family);
+}
+
+export function lofiDrumPhrasesForFamily(family: LofiDrumPhraseFamily): LofiDrumPhrase[] {
+  return LOFI_DRUM_PHRASES
+    .filter((phrase) => phrase.family === family)
+    .map((phrase) => ({
+      ...phrase,
+      bars: phrase.bars.map((bar) => bar.map((hit) => ({ ...hit }))) as unknown as LofiDrumPhrase['bars'],
+      turnaroundBar: phrase.turnaroundBar.map((hit) => ({ ...hit })),
+    }));
+}
+
+export function lofiDrumPhraseById(id: string | undefined): LofiDrumPhrase | undefined {
+  if (!id) return undefined;
+  const phrase = LOFI_DRUM_PHRASES.find((candidate) => candidate.id === id);
+  if (!phrase) return undefined;
+  return {
+    ...phrase,
+    bars: phrase.bars.map((bar) => bar.map((hit) => ({ ...hit }))) as unknown as LofiDrumPhrase['bars'],
+    turnaroundBar: phrase.turnaroundBar.map((hit) => ({ ...hit })),
+  };
+}
+
+export function lofiAuxiliaryTopLoops(): LofiAuxiliaryTopLoop[] {
+  return LOFI_AUXILIARY_TOP_LOOPS.map((loop) => ({
+    ...loop,
+    bars: loop.bars.map((bar) => bar.map((hit) => ({ ...hit }))) as unknown as LofiAuxiliaryTopLoop['bars'],
+  }));
+}
+
+export function lofiAuxiliaryTopLoopById(id: string | undefined): LofiAuxiliaryTopLoop | undefined {
+  if (!id) return undefined;
+  const loop = LOFI_AUXILIARY_TOP_LOOPS.find((candidate) => candidate.id === id);
+  if (!loop) return undefined;
+  return {
+    ...loop,
+    bars: loop.bars.map((bar) => bar.map((hit) => ({ ...hit }))) as unknown as LofiAuxiliaryTopLoop['bars'],
+  };
+}
+
 const RNB_NEO_SOUL_POCKET: DrumHit[][] = [
   [K(0, 96), K(1.75, 66), K(2.5, 78), S(1, 76), CL(1, 46), S(3, 82), CL(3, 54), SK(0.75, 26), SK(2.75, 30), ...shaker16(31), OH(3.5, 38)],
   [K(0, 94), K(0.75, 60), K(2.25, 74), K(2.75, 70), SK(1, 72), S(3, 82), CL(3, 52), SK(2.5, 28), ...shaker16(30)],
@@ -332,9 +641,9 @@ const DRUM_PERFORMANCE_FAMILIES: Record<string, DrumHit[][]> = {
   'pop-backbeat': POP_MODERN_BACKBEAT,
   'jpop-driving-8ths': JPOP_DRIVING_8THS,
   'ballad-halftime': [
-    [K(0, 98), S(2, 86), ...hats4(38)],
-    [K(0, 96), K(2.5, 70), S(2, 84), ...hats4(36)],
-    [K(0, 94), SK(2, 72), ...hats4(34)],
+    [K(0, 82), SK(2, 60), ...hats4(28), { drum: DRUM.SHAKER, beat: 3.5, vel: 22 }],
+    [K(0, 80), K(2.5, 54), SK(2, 58), ...hats4(26), { drum: DRUM.SHAKER, beat: 1.5, vel: 20 }],
+    [K(0, 78), SK(2, 56), SK(3.5, 22), ...hats4(24)],
   ],
   'tr808-rnb-pocket': TR808_RNB_POCKET,
   'tr808-dilla-pocket': TR808_DILLA_POCKET,
@@ -342,6 +651,7 @@ const DRUM_PERFORMANCE_FAMILIES: Record<string, DrumHit[][]> = {
   'tr808-lofi-boombap': TR808_LOFI_BOOMBAP,
   'tr808-lofi-dusty-break': TR808_LOFI_DUSTY_BREAK,
   'tr808-lofi-minimal': TR808_LOFI_MINIMAL,
+  'tr808-lofi-soul-halftime': TR808_LOFI_SOUL_HALFTIME,
   'rnb-neo-soul-pocket': RNB_NEO_SOUL_POCKET,
   'rnb-dilla-pocket': RNB_DILLA_POCKET,
   'rnb-gospel-triplet': RNB_GOSPEL_TRIPLET,

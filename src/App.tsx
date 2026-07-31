@@ -12,11 +12,15 @@ import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox'
 import { emitTakeoverPadInput } from './core/generation/leadTakeoverSandbox/takeoverInputBus';
 import { DevDock } from './components/DevDock';
 import { SoundFontSelector } from './components/SoundFontSelector';
-import { PopDrumMachineAuditionPanel } from './components/PopDrumMachineAuditionPanel';
+import { MidiAnalysisMonitorPanel } from './components/MidiAnalysisMonitorPanel';
+
+const EMPTY_ACTIVE_KEYS = new Set<string>();
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
   const [deviceState, setDeviceState] = useState<string>('SYSTEM_MENU');
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const appActiveKeys = takeoverOpen ? EMPTY_ACTIVE_KEYS : activeKeys;
 
   const handleKeyDown = useCallback((c: number, r: number) => {
     startAudioContext();
@@ -47,13 +51,13 @@ export default function App() {
       <PipelineMonitor />
       <MotifWeaverSandboxPanel />
       <MidiOutSandboxPanel />
-      <PopDrumMachineAuditionPanel />
+      <MidiAnalysisMonitorPanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"
         style={{ aspectRatio: '1537 / 1410' }}
       >
-        <LeadTakeoverSandboxPanel activeKeys={activeKeys} />
+        <LeadTakeoverSandboxPanel activeKeys={activeKeys} onOpenChange={setTakeoverOpen} />
         {/* Layer 1: Device Base (Z-index: 1) */}
         <div 
           className="absolute inset-0 z-10"
@@ -90,10 +94,10 @@ export default function App() {
           }}
         >
           {deviceState === 'SYSTEM_MENU' ? (
-            <AuraSystem activeKeys={activeKeys} onAppSelect={handleAppSelect} />
+            <AuraSystem activeKeys={appActiveKeys} onAppSelect={handleAppSelect} />
           ) : (
             <div className="w-full h-full animate-[fadeIn_0.5s_ease-out]">
-              {ActiveApp ? <ActiveApp activeKeys={activeKeys} onExit={() => setDeviceState('SYSTEM_MENU')} /> : null}
+              {ActiveApp ? <ActiveApp activeKeys={appActiveKeys} onExit={() => setDeviceState('SYSTEM_MENU')} /> : null}
             </div>
           )}
         </div>

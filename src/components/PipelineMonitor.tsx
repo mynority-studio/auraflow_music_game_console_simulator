@@ -18,6 +18,16 @@ import {
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, musicGenStyleLabel, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
 import type { MusicGenerationResult, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
+import {
+    applyCurrentSongVoiceOverride,
+    type CurrentSongVoiceSelection,
+} from '../core/generation/musicGeneration/currentSongVoiceOverride';
+import { prepareLeadTakeoverVoice } from '../core/generation/leadTakeoverSandbox/qhTakeoverConsumer';
+import {
+    getTakeoverLeadVoiceSelection,
+    setTakeoverLeadVoiceSelection,
+    type TakeoverLeadVoiceSelection,
+} from '../core/generation/leadTakeoverSandbox/takeoverVoiceSelection';
 import { QnBandSelectionStore, QN_PARTICIPANT_ORDER, QN_PARTICIPANT_LABEL } from '../state/QnBandSelectionStore';
 import { useDevPanelChannel } from './devPanels';
 import { traceGeneration, type TraceSection } from '../core/generation/newEngine/generation';
@@ -232,6 +242,14 @@ export const PipelineMonitor: React.FC = () => {
     const [monitorLogLines, setMonitorLogLines] = useState<string[]>([]);
     const [monitorSections, setMonitorSections] = useState<TraceSection[]>([]);
     const [monitorIr, setMonitorIr] = useState<MusicGenerationResult['ir']>(null);
+    // `frame.musicGen` is a display snapshot refreshed by RAF. Keep a real
+    // current-song source for the instrument editor/replay controls so they
+    // remain usable when the audio snapshot is briefly absent or playback has
+    // already been stopped while the generated score is still on screen.
+    const [currentSong, setCurrentSong] = useState<MusicGenerationResult | null>(null);
+    const [takeoverVoice, setTakeoverVoice] = useState<TakeoverLeadVoiceSelection | null>(
+        () => getTakeoverLeadVoiceSelection(),
+    );
     const [rollWinOpen, setRollWinOpen] = useState(false);
     // ★ Debug/Diagnostics 区:A/B seed diff · MIDI 导出 · 音轨视图。
     const [showDebug, setShowDebug] = useState(false);
@@ -241,6 +259,9 @@ export const PipelineMonitor: React.FC = () => {
     const playStateRef = useRef<PlayState>('IDLE');
     playStateRef.current = playState;
     const activeSeedRef = useRef<number | null>(null);
+    const currentSongResultRef = useRef<MusicGenerationResult | null>(null);
+    const currentSongHasVoiceOverrideRef = useRef(false);
+    const replayCustomMusicRef = useRef<() => Promise<void>>(async () => undefined);
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -311,8 +332,14 @@ export const PipelineMonitor: React.FC = () => {
         return req;
     }, []);
 
+    const rememberCurrentSong = useCallback((result: MusicGenerationResult | null) => {
+        currentSongResultRef.current = result;
+        setCurrentSong(result);
+    }, []);
+
     const refreshQnMonitor = useCallback((result: MusicGenerationResult, seed: number) => {
         if (!result.ir) return;
+        rememberCurrentSong(result);
         const fallbackStatus = result.status === 'failed' ? 'failed' : 'pass';
         const fallback = () => {
             setMonitorIr(result.ir);
@@ -346,11 +373,83 @@ export const PipelineMonitor: React.FC = () => {
             setMonitorLogLines([`■ MONITOR    traceGeneration failed: ${msg}`]);
             console.warn('[PipelineMonitor] Q+N trace monitor failed:', err);
         }
-    }, [buildTraceRequest]);
+    }, [buildTraceRequest, rememberCurrentSong]);
+
+    const overrideCurrentVoice = useCallback((selection: CurrentSongVoiceSelection) => {
+        const retained = currentSongResultRef.current;
+        const engineCurrent = AudioEngine.getCurrentMusicGeneration();
+        const source = retained ?? engineCurrent;
+        if (!source?.ir) return;
+        // Only touch the live scheduler if the editor still owns the same
+        // generated result. A stale monitor must never revoice a newer song
+        // that another surface has started in the meantime.
+        const updated = engineCurrent === source && globalMidiScheduler.isPlaying
+            ? AudioEngine.overrideCurrentGenerationVoice(selection)
+            : applyCurrentSongVoiceOverride(source, selection);
+        if (!updated?.ir) return;
+        currentSongHasVoiceOverrideRef.current = true;
+        rememberCurrentSong(updated);
+        setMonitorIr(updated.ir);
+        setMonitorReadout(deriveQnMonitorReadout({
+            ir: updated.ir,
+            status: 'pass',
+            attempts: updated.attempts,
+            bpm: updated.bpm,
+        }));
+        setMonitorStatus(`已切换 ${selection.role} 音色`);
+    }, [rememberCurrentSong]);
+
+    const overrideTakeoverVoice = useCallback((selection: TakeoverLeadVoiceSelection) => {
+        const selected = setTakeoverLeadVoiceSelection(selection);
+        setTakeoverVoice(selected);
+        prepareLeadTakeoverVoice(AudioEngine);
+        setMonitorStatus('已切换接管 Lead 音色');
+    }, []);
+
+    const replayCustomMusic = useCallback(async () => {
+        const result = currentSongResultRef.current;
+        if (!result?.ir) return;
+        await startAudioContext();
+        AudioEngine.stop();
+        activeSeedRef.current = result.seed;
+        setPlayState('GENERATING');
+        setMonitorStatus('按自定义乐器重播…');
+        setPlayError(null);
+
+        try {
+            const playId = await AudioEngine.playMusicGeneration(result);
+            if (playId === null) {
+                if (activeSeedRef.current === result.seed) {
+                    setPlayState('IDLE');
+                    setMonitorStatus('就绪');
+                }
+                return;
+            }
+            reapplyMutes();
+            setPlayState('PLAYING');
+            setMonitorStatus('▶ 自定义乐器播放中');
+            globalMidiScheduler.onTrackEnd(() => {
+                if (activeSeedRef.current === result.seed
+                    && playStateRef.current === 'PLAYING'
+                    && AudioEngine.currentPlaybackId() === playId) {
+                    void replayCustomMusicRef.current();
+                }
+            });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            setPlayError(msg);
+            setMonitorStatus(`音频启动失败:${msg}`);
+            setPlayState('IDLE');
+            activeSeedRef.current = null;
+        }
+    }, [reapplyMutes]);
+    replayCustomMusicRef.current = replayCustomMusic;
 
     const playSeed = useCallback(async (seed: number) => {
         await startAudioContext();
         AudioEngine.stop();
+        rememberCurrentSong(null);
+        currentSongHasVoiceOverrideRef.current = false;
         activeSeedRef.current = seed;
         setPlayState('GENERATING');
         setMonitorStatus('播放中…');
@@ -380,7 +479,11 @@ export const PipelineMonitor: React.FC = () => {
 
             globalMidiScheduler.onTrackEnd(() => {
                 if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING' && AudioEngine.currentPlaybackId() === playId) {
-                    playSeed(seed);
+                    if (currentSongHasVoiceOverrideRef.current) {
+                        void replayCustomMusicRef.current();
+                    } else {
+                        void playSeed(seed);
+                    }
                 }
             });
         } catch (e) {
@@ -391,7 +494,7 @@ export const PipelineMonitor: React.FC = () => {
             setPlayState('IDLE');
             activeSeedRef.current = null;
         }
-    }, [reapplyMutes, refreshQnMonitor]);
+    }, [reapplyMutes, refreshQnMonitor, rememberCurrentSong]);
 
     const handlePlay = useCallback(async () => {
         // ★ Q+N:把字符串 seed 写 MusicGenerationSeedStore → runPipeline 内部 getSeedNumber() 哈希成 number 喂 Q+N。
@@ -402,10 +505,17 @@ export const PipelineMonitor: React.FC = () => {
 
     const handleStop = useCallback(() => {
         activeSeedRef.current = null;
-        AudioEngine.stop();
+        const engineCurrent = AudioEngine.getCurrentMusicGeneration();
+        const current = currentSongResultRef.current ?? engineCurrent;
+        if (engineCurrent?.ir) {
+            AudioEngine.stopPlaybackPreservingCurrentGeneration();
+        } else {
+            AudioEngine.stop();
+        }
+        if (current?.ir) rememberCurrentSong(current);
         setPlayState('IDLE');
-        setMonitorStatus('已停止');
-    }, []);
+        setMonitorStatus(current?.ir ? '■ 已停止 · 当前歌曲与乐器已保留' : '已停止');
+    }, [rememberCurrentSong]);
 
     const handleRandom = useCallback(() => {
         // 对齐 mg App.tsx 的 randomTail(6 字符 base36 hex 串,如 `4f9a2b`)
@@ -478,7 +588,15 @@ export const PipelineMonitor: React.FC = () => {
     if (!isVisible) return null;
 
     const { beat, seed, musicGen } = frame;
-    const ui = musicGen?.uiSnapshot ?? null;
+    const displayedSong = currentSong ?? musicGen;
+    const ui = displayedSong?.uiSnapshot ?? null;
+    const hasEditableCurrentSong = !!displayedSong?.ir && playState !== 'GENERATING';
+    const generatedPlaybackActive = AudioEngine.getCurrentPlaybackKind() === 'generated';
+    const isDisplayedSongPlaying = generatedPlaybackActive && !!musicGen?.ir
+        && (!currentSong || musicGen === currentSong)
+        && globalMidiScheduler.isPlaying;
+    const canStopCurrentSong = generatedPlaybackActive && (isDisplayedSongPlaying
+        || (playState === 'PLAYING' && (!musicGen || musicGen === currentSong)));
 
     // ★ Q+N:展示数据来自 uiSnapshot(结构化投影),转成现有 Stage 组件期望的 GeneratedChord/SectionMetadata 形状。
     const bpb = ui?.timeSignature?.[0] ?? 4;
@@ -568,7 +686,7 @@ export const PipelineMonitor: React.FC = () => {
                     className="bg-black/40 border border-purple-500/20 rounded px-2 py-1 text-[10px] font-mono text-purple-300"
                     title="KEY/调式由 Q+N 在生成链路开头按 seed/style 抽取"
                 >
-                    {frame.musicGen?.uiSnapshot.key ?? 'auto'} {frame.musicGen ? frame.musicGen.uiSnapshot.tonality : ''}
+                    {ui?.key ?? 'auto'} {ui?.tonality ?? ''}
                 </span>
             </div>
 
@@ -672,6 +790,14 @@ export const PipelineMonitor: React.FC = () => {
                         readout={monitorReadout}
                         roll={monitorRoll}
                         logLines={monitorLogLines}
+                        onVoiceChange={overrideCurrentVoice}
+                        takeoverVoice={takeoverVoice}
+                        onTakeoverVoiceChange={overrideTakeoverVoice}
+                        voiceControlsEnabled={hasEditableCurrentSong}
+                        onReplayCustom={() => void replayCustomMusic()}
+                        canReplayCustom={hasEditableCurrentSong}
+                        onStopPlayback={handleStop}
+                        canStopPlayback={canStopCurrentSong}
                     />
                 </div>
 

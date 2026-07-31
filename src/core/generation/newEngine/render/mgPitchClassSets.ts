@@ -62,6 +62,8 @@ export interface ChordPitchSets {
    *  bias C/L token landings toward jazz-pianist preference order
    *  (typically 7 → 3 → 9 → 5 → root). */
   priorityPcs: number[];
+  /** False when the upstream HarmonicPlan is the complete local admission contract. */
+  allowChromaticRandom?: boolean;
 }
 
 /** ACG token-contract 的稳定声部候选。role 是和弦语义角色而非数组位置。 */
@@ -306,8 +308,12 @@ function buildOrthogonalPitchSets(chord: ChordBlock, nextChord: ChordBlock | nul
   // ACG PIANOSONG 已有 HarmonicPlan 下发的 stableToneMap/chordScaleMap。这里直接
   // 消费该权威合同，而非用通用 chord vocabulary 二次猜测；这样主链里的强拍/长音
   // 从一开始就在 plan 的稳定音与局部音阶交集中，不依赖后段 pitch snap 修复。
-  const acgPlanSemantics = ctx.style.toUpperCase() === 'ACG' && (chord.stableTonePcs?.length ?? 0) > 0;
+  const style = ctx.style.toUpperCase();
+  const acgPlanSemantics = style === 'ACG' && (chord.stableTonePcs?.length ?? 0) > 0;
+  const lofiPlanSemantics = style === 'LOFI' && (chord.stableTonePcs?.length ?? 0) > 0;
   const declaredStable = new Set([...(chord.stableTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+  const declaredColor = new Set([...(chord.colorTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
+  const declaredAvoid = new Set([...(chord.avoidTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
   const declaredScale = new Set([...(chord.chordScalePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
   const structural = acgPlanSemantics
     ? (() => {
@@ -317,16 +323,29 @@ function buildOrthogonalPitchSets(chord: ChordBlock, nextChord: ChordBlock | nul
       return new Set(admitted.length > 0 ? admitted : [...declaredStable]);
     })()
     : (admission.intersectionPcs.size > 0 ? admission.intersectionPcs : admission.contractPcs);
-  const chordTones = [...structural].sort((a, b) => a - b);
-  const colorTones = chordTones.filter((pc) => isDeclaredColorPc(chord.type, chord.rootPc, pc)).sort((a, b) => a - b);
-  const scalePcs = acgPlanSemantics && declaredScale.size > 0 ? declaredScale : admission.localScale.pcs;
-  const scaleTones = [...scalePcs].filter((pc) => !structural.has(pc)).sort((a, b) => a - b);
+  const scalePcs = (acgPlanSemantics || lofiPlanSemantics) && declaredScale.size > 0
+    ? declaredScale
+    : admission.localScale.pcs;
+  const chordTones = lofiPlanSemantics
+    ? [...declaredStable].filter((pc) =>
+      !declaredAvoid.has(pc) && (scalePcs.size === 0 || scalePcs.has(pc))).sort((a, b) => a - b)
+    : [...structural].sort((a, b) => a - b);
+  const colorTones = lofiPlanSemantics
+    ? [...declaredColor].filter((pc) =>
+      !declaredAvoid.has(pc)
+      && !chordTones.includes(pc)
+      && (scalePcs.size === 0 || scalePcs.has(pc))).sort((a, b) => a - b)
+    : chordTones.filter((pc) => isDeclaredColorPc(chord.type, chord.rootPc, pc)).sort((a, b) => a - b);
+  const admitted = new Set([...chordTones, ...colorTones]);
+  const scaleTones = [...scalePcs]
+    .filter((pc) => !admitted.has(pc) && !declaredAvoid.has(pc))
+    .sort((a, b) => a - b);
 
   let nextStructural: number[] | null = null;
   if (nextChord) {
     const nextDeclaredStable = new Set([...(nextChord.stableTonePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
     const nextDeclaredScale = new Set([...(nextChord.chordScalePcs ?? [])].map((pc) => ((pc % 12) + 12) % 12));
-    if (ctx.style.toUpperCase() === 'ACG' && nextDeclaredStable.size > 0) {
+    if ((style === 'ACG' || style === 'LOFI') && nextDeclaredStable.size > 0) {
       const admitted = nextDeclaredScale.size > 0
         ? [...nextDeclaredStable].filter((pc) => nextDeclaredScale.has(pc))
         : [...nextDeclaredStable];
@@ -348,6 +367,7 @@ function buildOrthogonalPitchSets(chord: ChordBlock, nextChord: ChordBlock | nul
     rootPc: chord.rootPc, bassPc: chord.bassPc, chordType: chord.type,
     chordTones, colorTones, scaleTones, approachTargets, outsideTones,
     priorityPcs: priorityPcsForOrthogonalContract(chord.type, chord.rootPc, chordTones),
+    allowChromaticRandom: !lofiPlanSemantics,
   };
 }
 

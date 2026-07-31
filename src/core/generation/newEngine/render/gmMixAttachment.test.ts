@@ -42,7 +42,7 @@ describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
     if (comp && pad) expect(pad.reverb).toBe(comp.reverb);
   });
 
-  it('原声钢琴 CC11 计划按 beat 投影到 TrackIR tick，并只进入该钢琴硬件通道', () => {
+  it('原声钢琴 CC11 计划保留在 TrackIR，但硬件播放保持 Firm5504 默认 expression', () => {
     const seed = 1662;
     const pianoBand = buildBandSpec({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90 });
     const pianoArrangement = buildArrangementPlan(pianoBand);
@@ -59,8 +59,7 @@ describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
     expect(cc11.map((event) => event.value)).toEqual(expect.arrayContaining([70, 90]));
 
     const outgoing = musicalIRToMidiEvents(rendered).filter((event) => event.type === 'cc' && event.data1 === 11);
-    expect(outgoing).toHaveLength(cc11.length);
-    expect(outgoing.every((event) => event.channel === ROLE_CHANNEL.comp)).toBe(true);
+    expect(outgoing).toEqual([]);
   });
 });
 

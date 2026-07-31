@@ -10,6 +10,9 @@ import { globalMidiScheduler } from '../../../audio/MidiScheduler';
 import { AudioEngine, startAudioContext } from '../../../audio/AudioEngine';
 import { Dream5504MidiOutput } from '../../../audio/Dream5504MidiOutput';
 import { applyPopFiveTrackMidiGuard } from '../../../audio/popFiveTrackMidiGuard';
+import { mapProgramToDream5504 } from '../../../sound/GMBK5X128Voices';
+import type { MusicGenerationResult } from '../../musicGeneration/types';
+import { getMidiInputExclusiveOwner } from '../../motifSandbox/midi/webMidi';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -51,18 +54,86 @@ export function getIsPlaying(): boolean {
 // —— 实时单音试听(Q+R 3×5 键盘点击用)——
 // 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
 const AUDITION_CHANNEL = 15;
-let auditionProgram = -1;
+const DEFAULT_AUDITION_BANK = 0;
+
+/** Dream 5504 melodic voices are addressed by the complete CC0 + Program pair. */
+export interface DreamAuditionVoice {
+  bank: number;
+  program: number;
+}
+
+type AuditionVoiceInput = number | DreamAuditionVoice;
+
+let auditionVoiceKey = '';
+
+function clamp7(value: number): number {
+  return Math.max(0, Math.min(127, Math.round(value)));
+}
+
+function normalizeAuditionVoice(input: AuditionVoiceInput): DreamAuditionVoice {
+  if (typeof input === 'number') {
+    return { bank: DEFAULT_AUDITION_BANK, program: clamp7(input) };
+  }
+  return { bank: clamp7(input.bank), program: clamp7(input.program) };
+}
+
+/**
+ * The external-MIDI audition must use exactly the voice currently selected for
+ * the generated song's lead. It deliberately reads the IR first: user voice
+ * overrides update that source before replay, while the UI projection is only
+ * a display snapshot. No active song falls back to the caller's lead preset.
+ */
+export function resolveCurrentLeadAuditionVoice(
+  result: MusicGenerationResult | null,
+  fallbackProgram = 0,
+): DreamAuditionVoice {
+  const style = result?.styleHint ?? result?.uiSnapshot.styleHint;
+  const irLead = result?.ir?.tracks.find((track) => track.role === 'lead');
+  const uiLead = result?.uiSnapshot.tracks.find((track) => track.role === 'lead');
+  const rawProgram = irLead?.program ?? uiLead?.program ?? fallbackProgram;
+  const bank = irLead?.bank ?? uiLead?.bank ?? DEFAULT_AUDITION_BANK;
+  return {
+    bank: clamp7(bank),
+    program: mapProgramToDream5504(rawProgram, 'lead', style),
+  };
+}
+
+/** Resolve the live song's selected lead address for raw external MIDI input. */
+export function currentLeadAuditionVoice(fallbackProgram = 0): DreamAuditionVoice {
+  return resolveCurrentLeadAuditionVoice(AudioEngine.getCurrentMusicGeneration(), fallbackProgram);
+}
+
+function isRawMidiAuditionBlocked(): boolean {
+  return getMidiInputExclusiveOwner() === 'takeover';
+}
+
+/**
+ * Q+T claims external MIDI as a position controller. Clear any note left by
+ * Q+R's raw-pitch audition before the takeover mapper is allowed to speak.
+ */
+export function silenceRawMidiAudition(): void {
+  AudioEngine.controllerChange(AUDITION_CHANNEL, 64, 0);
+  AudioEngine.controllerChange(AUDITION_CHANNEL, 123, 0);
+  AudioEngine.controllerChange(AUDITION_CHANNEL, 120, 0);
+  auditionVoiceKey = '';
+}
 
 /** 试听单音 on:【同步】发声(无 await → noteOn 直接在 MIDI 事件里送进 worklet,延迟最低)。
+ *  每次换音色都先在专用 MIDI ch16 写入 CC0 + PC，随后才送 noteOn。
  *  未就绪则后台启动音频(这一下可能没声,下一下就有);音只在按住时响,松手即停。 */
-export function auditionNoteOn(midiNote: number, program: number, velocity = 100): void {
-  if (program !== auditionProgram) {
-    AudioEngine.programChange(AUDITION_CHANNEL, program);
-    AudioEngine.controllerChange(AUDITION_CHANNEL, 7, 127);
-    AudioEngine.controllerChange(AUDITION_CHANNEL, 11, 127);
-    AudioEngine.controllerChange(AUDITION_CHANNEL, 91, 14);
-    AudioEngine.controllerChange(AUDITION_CHANNEL, 10, 64);
-    auditionProgram = program;
+export function auditionNoteOn(midiNote: number, voiceInput: AuditionVoiceInput, velocity = 100): void {
+  if (isRawMidiAuditionBlocked()) return;
+  const voice = normalizeAuditionVoice(voiceInput);
+  const nextVoiceKey = `${voice.bank}:${voice.program}`;
+  if (nextVoiceKey !== auditionVoiceKey) {
+    // A dedicated channel prevents this reset from touching the five song
+    // tracks. The order matches the Dream safe-switch sequence.
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 64, 0);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 123, 0);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 121, 0);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 0, voice.bank);
+    AudioEngine.programChange(AUDITION_CHANNEL, voice.program);
+    auditionVoiceKey = nextVoiceKey;
   }
   const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入真力度不变)
   AudioEngine.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v);
@@ -70,11 +141,13 @@ export function auditionNoteOn(midiNote: number, program: number, velocity = 100
 
 /** 试听单音 off(踏板抬起时即停;踩下时由合成器延音)。 */
 export function auditionNoteOff(midiNote: number): void {
+  if (isRawMidiAuditionBlocked()) return;
   AudioEngine.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
 }
 
-/** 试听通道收 CC(MIDI 输入的踏板 CC64 等)→ 大钢琴随【延音踏板】延音。同步、最低延迟。 */
+/** 试听通道透传来自控制器的 CC（例如钢琴专属的 CC64）。同步、最低延迟。 */
 export function auditionControlChange(controller: number, value: number): void {
+  if (isRawMidiAuditionBlocked()) return;
   AudioEngine.controllerChange(AUDITION_CHANNEL, Math.round(controller), Math.round(value));
 }
 

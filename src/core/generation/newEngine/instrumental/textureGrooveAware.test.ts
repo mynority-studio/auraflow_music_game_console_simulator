@@ -115,4 +115,35 @@ describe('instrumental/textureGrooveAware — Phase E §3.7', () => {
         .not.toContain(texture);
     }
   });
+
+  it('POP ballad uses the video-reference piano to pad/guitar to wide-chorus texture arc', () => {
+    const seed = 7;
+    const band = buildBandSpec({ seed, styleHint: 'pop', mood: '抒情慢pop', targetDuration: 96, key: pc(0) });
+    const arr = buildArrangementPlan(band, { rng: createRandomContext(seed), mood: '抒情慢pop', template: 'verse-chorus' });
+    const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
+    const instrumentation = buildInstrumentationPlan(band, arr, createRandomContext(seed).substream('timbre'), plan);
+    expect(arr.songGrooveContractId).toBe('pop_ballad_halftime');
+
+    const firstIntro = arr.sections.find((section) => section.role === 'intro')!;
+    const firstVerse = arr.sections.find((section) => section.role === 'verse')!;
+    const firstChorus = arr.sections.find((section) => section.role === 'chorus')!;
+    const outro = arr.sections.find((section) => section.role === 'outro')!;
+
+    expect(instrumentation.richTextureBySection[firstIntro.id]).toBe('Lyrical_Felt_Piano_Sparse');
+    expect(instrumentation.richTextureSwitchBySection[firstIntro.id]).toEqual({ atFraction: 0.5, toTexture: 'Ambient_Pad_Breath' });
+    expect(instrumentation.richTextureBySection[firstVerse.id]).toBe('Lyrical_Felt_Piano_Sparse');
+    expect(instrumentation.richTextureSwitchBySection[firstVerse.id]).toEqual({ atFraction: 0.5, toTexture: 'Soft_Guitar_Pluck_8ths' });
+    expect(instrumentation.richTextureBySection[firstChorus.id]).toBe('Piano_Wide_Color_Motion');
+    expect(instrumentation.richTextureSwitchBySection[firstChorus.id]).toEqual({ atFraction: 0.62, toTexture: 'Pop_Ballad_158_Sweep' });
+    expect(instrumentation.richTextureBySection[outro.id]).toBe('Low_Pedal_Color_Wash');
+
+    const allowed = new Set(arr.songGrooveContract.allowedTextureCases ?? []);
+    for (const texture of [
+      ...Object.values(instrumentation.richTextureBySection),
+      ...Object.values(instrumentation.richTextureSwitchBySection).map((entry) => entry.toTexture),
+    ]) {
+      expect(allowed.has(texture), texture).toBe(true);
+      expect(arr.songGrooveContract.forbiddenTextureCases ?? [], texture).not.toContain(texture);
+    }
+  });
 });

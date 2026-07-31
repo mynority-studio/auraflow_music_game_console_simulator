@@ -16,6 +16,7 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
 import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import { activeAcgPianoSectionIds, buildAcgPianoScorePlan, type AcgPianoScorePlan } from '../arranger/acgPianoScorePlan';
+import { buildLofiLeadScorePlan, type LofiLeadScorePlan } from '../arranger/lofiLeadScorePlan';
 import { buildJazzFiveFourScorePlan, type JazzFiveFourScorePlan } from '../arranger/jazzFiveFourScorePlan';
 import {
   JAZZ_5_4_ARCHETYPE_ID,
@@ -114,6 +115,8 @@ export interface SongBundle {
   instrumentation: InstrumentationPlan;
   /** ACG only: immutable post-harmony phrase score, built once before render/retry. */
   acgPianoScorePlan?: AcgPianoScorePlan;
+  /** LOFI only: immutable post-harmony lead score, built once before render/retry. */
+  lofiLeadScorePlan?: LofiLeadScorePlan;
   /** Jazz 5/4 reference quartet only: immutable post-harmony performed score. */
   jazzFiveFourScorePlan?: JazzFiveFourScorePlan;
   timebase: Timebase;
@@ -152,6 +155,43 @@ export function buildAcgPianoScoreForBundle(args: {
     grooveContract: args.arrangement.songGrooveContract,
     roadMap,
     leadPresencePlan,
+  });
+}
+
+/**
+ * LOFI shares ACG's post-harmony score ownership, but not its piano cycle
+ * scheduler.  Presence/phrase plans are pre-harmony intent; this builder
+ * resolves their actual harmonic slots and instrument-tail contract once.
+ */
+export function buildLofiLeadScoreForBundle(args: {
+  band: BandSpec;
+  arrangement: ArrangementPlan;
+  harmonic: HarmonicPlan;
+  instrumentation: InstrumentationPlan;
+}): LofiLeadScorePlan | undefined {
+  if (args.band.style.toLowerCase() !== 'lofi') return undefined;
+  const leadPresencePlan = args.arrangement.lofiLeadPresencePlan;
+  const phraseInteractionPlan = args.arrangement.lofiPhraseInteractionPlan;
+  if (!leadPresencePlan || !phraseInteractionPlan) return undefined;
+  const part = buildChordPart(
+    harmonicPlanToMgChordDefs(args.harmonic),
+    [args.arrangement.meter.numerator, args.arrangement.meter.denominator],
+  );
+  // This is harmonic compatibility evidence only. The creative Lead RoadMap
+  // was already written by Arranger in arrangement.lofiLeadRoadMapPlan.
+  const harmonicRoadMap = parseFunctionalRoadMap({
+    part,
+    songKeyPc: ((args.band.key as number) % 12 + 12) % 12,
+    style: 'LOFI',
+  });
+  return buildLofiLeadScorePlan({
+    arrangement: args.arrangement,
+    harmonic: args.harmonic,
+    leadPresencePlan,
+    phraseInteractionPlan,
+    roadMap: harmonicRoadMap,
+    leadTailPolicy: args.instrumentation.gestureExpressionByRole.lead?.tailPolicy,
+    leadRegister: args.instrumentation.registerByRole.lead,
   });
 }
 
@@ -219,6 +259,7 @@ export function buildSongBundle(request: GenerationRequest): SongBundle {
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const acgPianoScorePlan = buildAcgPianoScoreForBundle({ band, arrangement, harmonic, instrumentation, seed: seedRng.seed });
+  const lofiLeadScorePlan = buildLofiLeadScoreForBundle({ band, arrangement, harmonic, instrumentation });
   const jazzFiveFourScorePlan = buildJazzFiveFourScoreForBundle({
     band, arrangement, harmonic, instrumentation, seed: seedRng.seed,
   });
@@ -226,17 +267,17 @@ export function buildSongBundle(request: GenerationRequest): SongBundle {
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
-  return { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng };
+  return { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, lofiLeadScorePlan, jazzFiveFourScorePlan, timebase, seedRng };
 }
 
 /** bundle → FinalIR(render + 控制环)。与原 generateSong 渲染段 byte-identical。 */
 export function generateSongFromBundle(bundle: SongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
-  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = bundle;
+  const { band, arrangement, harmonic, instrumentation, acgPianoScorePlan, lofiLeadScorePlan, jazzFiveFourScorePlan, timebase, seedRng } = bundle;
   // ★ Phase 2:上游派生 musical intent(纯函数,不抽 RNG)传入 render —— intent 所有权在 arranger,render 只消费(bass enforce)。
   const intentPlan = deriveMusicIntentPlan(band.style, arrangement);
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan, undefined, acgPianoScorePlan, jazzFiveFourScorePlan);
+      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan, undefined, acgPianoScorePlan, jazzFiveFourScorePlan, undefined, lofiLeadScorePlan);
   const locator = buildRetryLocator(harmonic, timebase);
   return runGenerationControl(render, seedRng, budget, locator);
 }

@@ -8,6 +8,8 @@ import {
 import type { ArrangementPlan } from './ArrangementPlan';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { AcgLeadPresencePlan } from '../render/acgLeadPresencePlan';
+import { ACG_PIANO_CONTINUITY_RELEASE_GUARD_BEATS } from '../knowledge/acgPianoContinuityKnowledge';
+import { acgPianoOrchestrationSceneForId } from '../knowledge/acgPianoArrangementKnowledge';
 
 function activeAcgSections(bundle: ReturnType<typeof buildSongBundle>): Set<string> {
   const active = new Set<string>();
@@ -19,8 +21,8 @@ function activeAcgSections(bundle: ReturnType<typeof buildSongBundle>): Set<stri
   return active;
 }
 
-function scoreFor(seed: number) {
-  const bundle = buildSongBundle({ seed, styleHint: 'acg', mood: 'lyrical', targetDuration: 90 });
+function scoreFor(seed: number, targetDuration = 90) {
+  const bundle = buildSongBundle({ seed, styleHint: 'acg', mood: 'lyrical', targetDuration });
   return {
     bundle,
     // Production builds this post-harmony score exactly once before render. Keep
@@ -153,9 +155,93 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
             .not.toBe(previous.surfaceSignature);
         }
       }
+      for (const phrase of phrases) {
+        const scene = acgPianoOrchestrationSceneForId(phrase.orchestrationSceneId);
+        expect(scene.bass.lane, `${phrase.phraseId} bass lane`).toBe('low');
+        expect(scene.comp.lane, `${phrase.phraseId} COMP lane`).toBe('middle');
+        expect(scene.lead.lane, `${phrase.phraseId} lead lane`).toBe('top');
+        expect(scene.lead.allowedGrammarSubsets, `${phrase.phraseId} grammar contract`)
+          .toContain(phrase.lead.grammarSubset);
+      }
     }
     expect(variants.size, 'internal subset should vary without adding a UI style').toBeGreaterThanOrEqual(3);
     expect(signatures.size, 'arrangement texture/density should vary across seeds').toBeGreaterThanOrEqual(8);
+  });
+
+  it('compiles KB continuity into every phrase × harmony lead slot before scheduling', () => {
+    const { bundle, score } = scoreFor(17);
+    const phrases = Object.values(score.phraseById);
+    const timeline = bundle.harmonic.chordTimeline;
+    expect(score.leadContinuitySlots.length).toBeGreaterThan(0);
+
+    for (const phrase of phrases) {
+      expect(phrase.lead.continuityProfile).toMatchObject({
+        continuityClass: 'carrier',
+        minimumKeyDownBeats: 2,
+        allowedShortGestureClasses: ['ornament', 'pulse', 'suspension'],
+        lowerHandPolicy: 'does-not-shorten-key',
+        terminalTailPolicy: 'allow-song-end-carrier',
+      });
+      for (const span of timeline) {
+        const startBeat = span.startBeat as number;
+        const endBeat = startBeat + (span.durationBeats as number);
+        if (startBeat >= phrase.endBeat - 1e-4 || endBeat <= phrase.startBeat + 1e-4) continue;
+        expect(score.leadContinuitySlots.some((slot) =>
+          slot.phraseId === phrase.phraseId
+            && slot.sourceSpanId === span.id
+            && slot.startBeat < slot.endBeat), `${phrase.phraseId}/${span.id}`).toBe(true);
+      }
+    }
+
+    for (const slot of score.leadContinuitySlots) {
+      expect(slot).toMatchObject({
+        continuityClass: 'carrier',
+        minimumKeyDownBeats: 2,
+        harmonicScope: 'current-chord',
+        stableRoles: ['root', 'third', 'fifth', 'seventh'],
+        allowedShortGestureClasses: ['ornament', 'pulse', 'suspension'],
+        lowerHandPolicy: 'does-not-shorten-key',
+      });
+      expect(slot.boundaryBridges.at(-1)).toEqual({ kind: 'release-at-boundary' });
+      for (const bridge of slot.boundaryBridges) {
+        if (bridge.kind === 'release-at-boundary') continue;
+        const target = timeline.find((span) => span.id === bridge.targetSpanId);
+        const sourceStable = new Set((bundle.harmonic.stableToneMap[slot.sourceSpanId] ?? []).map(Number));
+        expect(target, `${slot.id} target`).toBeDefined();
+        expect(bridge.continuationPcs?.length, `${slot.id} bridge pcs`).toBeGreaterThan(0);
+        if (bridge.kind === 'common-tone') {
+          const targetStable = new Set((bundle.harmonic.stableToneMap[target!.id] ?? []).map(Number));
+          for (const pitchClass of bridge.continuationPcs ?? []) {
+            expect(sourceStable.has(pitchClass), `${slot.id} source common tone`).toBe(true);
+            expect(targetStable.has(pitchClass), `${slot.id} target common tone`).toBe(true);
+          }
+        } else {
+          const sourceIndex = timeline.findIndex((span) => span.id === slot.sourceSpanId);
+          const targetIndex = timeline.findIndex((span) => span.id === target!.id);
+          expect(bundle.harmonic.chordFunctionTimeline[sourceIndex]).toBe('S');
+          expect(bundle.harmonic.chordFunctionTimeline[targetIndex]).toBe('D');
+          for (const pitchClass of bridge.continuationPcs ?? []) {
+            expect(sourceStable.has(pitchClass), `${slot.id} source b9`).toBe(true);
+            expect(pitchClass).toBe(((Number(target!.rootPc) + 1) % 12 + 12) % 12);
+          }
+        }
+      }
+    }
+  });
+
+  it('writes per-hand rest semantics so isolated short COMP/BASS events cannot bypass the pedal contract', () => {
+    const { score } = scoreFor(17);
+    const events = Object.values(score.spanById).flatMap((span) => [
+      ...span.comp.events,
+      ...span.bass.events,
+    ]);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((event) => event.continuity !== undefined)).toBe(true);
+    expect(events.filter((event) => event.continuity?.continuityClass === 'exposed-carrier').length)
+      .toBeGreaterThan(0);
+    expect(events.every((event) => event.continuity?.continuityClass === 'fast-run'
+      ? event.continuity.damperPolicy === 'dry-allowed'
+      : event.continuity?.damperPolicy === 'pedal-default')).toBe(true);
   });
 
   it('keeps both middle development and coda hand-shapes variable across seeds', () => {
@@ -296,7 +382,7 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
     }
   });
 
-  it('writes one opening damper hold for a scored root-plus-air phrase, before any NoteIR exists', () => {
+  it('writes an audible low-root + middle-COMP opening before any NoteIR exists', () => {
     const arrangement = {
       meter: { numerator: 4, denominator: 4 },
       acgPianoArrangementProfileId: 'ripple-journey',
@@ -316,15 +402,25 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
 
     const score = fixtureScoreForArrangement({ seed: 0, arrangement, harmony });
     expect(score.phraseById['open-p']).toMatchObject({
-      phase: 'opening', gesture: 'pedal-breath', spanGestureCycle: ['pedal-hold', 'tacet', 'pedal-hold'],
+      phase: 'opening',
+      gesture: 'pedal-breath',
+      orchestrationSceneId: 'opening-seed',
+      spanGestureCycle: ['pedal-hold', 'arp-up', 'broken-wave', 'rolled-block'],
+      lead: {
+        interlock: {
+          whenLeadActive: 'underlay',
+          whenLeadRest: 'underlay',
+        },
+      },
     });
     for (const spanId of ['o0', 'o1'] as const) {
-      expect(score.spanById[spanId]!.comp).toMatchObject({ gesture: 'tacet', sentenceId: 'full-breath' });
+      expect(score.spanById[spanId]!.comp.gesture, `${spanId} middle hand`).not.toBe('tacet');
+      expect(score.spanById[spanId]!.comp.events.length, `${spanId} scored middle hand`).toBeGreaterThan(0);
       expect(score.spanById[spanId]!.bass.events[0]).toMatchObject({ atBeat: 0, voice: 'root' });
     }
-    expect(score.sharedPedalHolds).toEqual([
-      { startBeat: 0, endBeat: 8, reason: 'opening-afterglow' },
-    ]);
+    expect(score.spanById.o0!.bass.events[0]!.durationBeats,
+      'the pedal opening retains its left-hand carrier')
+      .toBeCloseTo(4 - ACG_PIANO_CONTINUITY_RELEASE_GUARD_BEATS, 8);
   });
 
   it('writes a D→T terminal into the next T score span, never onto the outgoing dominant', () => {
@@ -431,11 +527,11 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
     }
   });
 
-  it('makes lead/comp interlock executable: answer dyads stay inside scheduler silence and tacet phrases never underlay', () => {
-    let sawTacetPhrase = false;
+  it('makes lead/comp interlock executable: answers stay inside lead rests and body COMP keeps an underlay', () => {
+    let sawUnderlayPhrase = false;
     let sawAnswer = false;
     for (const seed of Array.from({ length: 48 }, (_, index) => index)) {
-      const { bundle, score } = scoreFor(seed);
+      const { bundle, score } = scoreFor(seed, 120);
       const harmonicById = new Map(bundle.harmonic.chordTimeline.map((span) => [span.id, span]));
       const silence = score.leadPresencePlan?.silenceWindows ?? [];
       for (const [spanId, directive] of Object.entries(score.spanById)) {
@@ -449,16 +545,24 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
         }
       }
       for (const phrase of Object.values(score.phraseById)) {
-        if (phrase.lead.interlock.whenLeadActive !== 'tacet') continue;
-        sawTacetPhrase = true;
-        for (const directive of Object.values(score.spanById)) {
-          for (const event of directive.comp.events.filter((candidate) => candidate.id.startsWith(`${phrase.phraseId}:`))) {
-            expect(event.gesture, `seed ${seed} ${event.id} must not underlay a tacet-policy lead`).toBe('answer-dyad');
-          }
-        }
+        expect(phrase.lead.interlock.whenLeadActive, `seed ${seed} ${phrase.phraseId}`)
+          .toBe('underlay');
+        sawUnderlayPhrase = true;
+      }
+      for (const directive of Object.values(score.spanById)) {
+        if (directive.phase === 'coda') continue;
+        expect(directive.comp.gesture, `seed ${seed} ${directive.spanId} body COMP`).not.toBe('tacet');
+        expect(directive.comp.events.length, `seed ${seed} ${directive.spanId} middle support`)
+          .toBeGreaterThan(0);
+      }
+      for (const phrase of Object.values(score.phraseById).filter((candidate) => candidate.phase === 'coda')) {
+        const codaTacet = Object.values(score.spanById).filter((directive) =>
+          directive.phraseId === phrase.phraseId && directive.comp.gesture === 'tacet');
+        expect(codaTacet.length, `seed ${seed} ${phrase.phraseId} coda air budget`)
+          .toBeLessThanOrEqual(2);
       }
     }
-    expect(sawTacetPhrase, 'fixture sweep needs an interlock=tacet phrase').toBe(true);
+    expect(sawUnderlayPhrase, 'fixture sweep needs an audible underlay phrase').toBe(true);
     expect(sawAnswer, 'fixture sweep needs at least one scheduled answer dyad').toBe(true);
 
     const tooShortForDyad = fixtureScore({
@@ -472,6 +576,8 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
     expect(Object.values(tooShortForDyad.spanById)
       .flatMap((span) => span.comp.events)
       .filter((event) => event.gesture === 'answer-dyad')).toHaveLength(0);
+    expect(Object.values(tooShortForDyad.spanById)
+      .every((span) => span.comp.gesture !== 'tacet' && span.comp.events.length > 0)).toBe(true);
   });
 
   it('authors each planned arp-down as one real roll-down, not an ascending rebound in a narrow voicing', () => {
@@ -491,8 +597,15 @@ describe('arranger/acgPianoScorePlan · internal ACG arrangement subsets', () =>
       expect(result.ir, `seed ${seed} IR`).toBeDefined();
       const comp = result.ir!.tracks.find((track) => track.role === 'comp')!;
       const bass = result.ir!.tracks.find((track) => track.role === 'bass')!;
+      const lead = result.ir!.tracks.find((track) => track.role === 'lead')!;
       expect(comp.notes.length, `seed ${seed} comp`).toBeGreaterThan(0);
+      expect(lead.notes.length, `seed ${seed} lead`).toBeGreaterThan(0);
       expect(comp.notes.every((note) => (note.pitch as number) >= 48 && (note.pitch as number) <= 60), `seed ${seed} planned middle hand`).toBe(true);
+      expect(bass.notes.every((note) => (note.pitch as number) >= 28 && (note.pitch as number) <= 55), `seed ${seed} planned low foundation`).toBe(true);
+      expect(lead.notes.every((note) => (note.pitch as number) > 60), `seed ${seed} planned top line`).toBe(true);
+      expect(Math.max(...comp.notes.map((note) => note.pitch as number)),
+        `seed ${seed} COMP must stay below the lead lane`)
+        .toBeLessThan(Math.min(...lead.notes.map((note) => note.pitch as number)));
 
       for (const [spanId, scoreSpan] of Object.entries(score.spanById)) {
         const harmonicSpan = bundle.harmonic.chordTimeline.find((span) => span.id === spanId)!;

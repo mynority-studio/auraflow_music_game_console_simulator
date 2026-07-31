@@ -17,7 +17,7 @@ const DREAM5504_MASTER_ROLE_WEIGHT: Record<InstrumentRole, number> = {
 export interface Dream5504MasterPlan {
   /** Official GM2 NRPN 3707h value, 1..127. */
   volume: number;
-  /** Applied linear gain. Generated playback never boosts the board. */
+  /** Applied linear gain. Generated playback keeps the board at unity. */
   gain: number;
   peakPreMasterLinear: number;
   averagePreMasterLinear: number;
@@ -41,9 +41,9 @@ function mixAtTick(track: MusicalIR['tracks'][number], tick: number) {
 }
 
 /**
- * Build the one hardware-facing master decision after the whole five-track
- * score is final. Sixteenth-note windows make sustained chords and drum
- * transients participate in the same peak estimate.
+ * Measure the final five-track score while preserving the Firm5504 power-up
+ * Master. Sixteenth-note windows keep the peak estimate useful to the audit,
+ * but playback no longer converts that estimate into an NRPN attenuation.
  */
 export function planDream5504Master(input: Dream5504MasterPlanInput): Dream5504MasterPlan {
   const ppq = Math.max(1, Math.round(input.ppq));
@@ -76,18 +76,12 @@ export function planDream5504Master(input: Dream5504MasterPlanInput): Dream5504M
 
   const peakPreMasterLinear = Math.sqrt(peakPower);
   const averagePreMasterLinear = Math.sqrt(totalPowerTicks / durationTicks);
-  const requestedGain = peakPreMasterLinear > DREAM5504_MASTER_PEAK_CEILING
-    ? DREAM5504_MASTER_PEAK_CEILING / peakPreMasterLinear
-    : 1;
-  // Floor the integer NRPN so quantisation cannot exceed the declared ceiling.
-  const volume = Math.max(1, Math.min(DREAM5504_DEFAULT_MASTER_VOLUME, Math.floor(DREAM5504_DEFAULT_MASTER_VOLUME * requestedGain)));
-
   return {
-    volume,
-    gain: volume / DREAM5504_DEFAULT_MASTER_VOLUME,
+    volume: DREAM5504_DEFAULT_MASTER_VOLUME,
+    gain: 1,
     peakPreMasterLinear,
     averagePreMasterLinear,
     peakCeilingLinear: DREAM5504_MASTER_PEAK_CEILING,
-    reason: volume === DREAM5504_DEFAULT_MASTER_VOLUME ? 'unity' : 'peak-protection',
+    reason: 'unity',
   };
 }
