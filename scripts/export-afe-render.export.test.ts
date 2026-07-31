@@ -1092,7 +1092,55 @@ function runCase(seed: number, styleHint: string): CaseRec {
     const a = projNotes(st33aLeadIn as readonly NoteIR[])[i];
     return !a || a.p !== o.p || a.s !== o.s || a.d !== o.d;
   }).length;
+  // ⑭ ★ ST33A 判别力补例（**构造输入**，期望值全部出自 pin 死 sim 的生产函数
+  //    `leadAvoidExposureResolver`——只换**入轨/comp**，plan/timebase/program/keyCtx 全同）。
+  //    每一型专打一个自然语料上零/低命中的臂（变异探针首轮的 15 条 MISS 即由此补齐）。
+  const st33aVariants: CaseRec[] = [];
+  {
+    const baseIn = st33aLeadIn as any[];
+    const avoidPcs = new Set<number>();
+    for (const sp of plan.chordTimeline as any[])
+      for (const pc of ((plan.avoidNoteMap as any)[sp.id] ?? [])) avoidPcs.add(Number(pc));
+    const anyAvoid = [...avoidPcs][0] ?? 1;
+    const spanStarts = (plan.chordTimeline as any[]).map(
+      (sp) => bundle.timebase.beatToTick(sp.startBeat) as number);
+    const mk = (notes: any[]) => notes.map((n) => ({ ...n }));
+    const addVariant = (name: string, notes: any[], compNotes: any[]) => {
+      if (notes.length === 0) return;
+      const out = leadAvoidExposureResolver(
+        notes as any, plan, bundle.timebase, leadProgramFor, compNotes as any, auditKeyCtx as any,
+      ) as readonly NoteIR[];
+      st33aVariants.push({ name, leadIn: projNotes(notes as any), comp: projNotes(compNotes as any),
+                           leadOut: projNotes(out) });
+    };
+    // (1) 八度大跳：交替 ±18 半音 ⇒ fold 的 >12 门与候选二次门都被踩
+    addVariant('oct_leap', mk(baseIn).map((n, i) => ({
+      ...n, pitch: Math.max(0, Math.min(127, (n.pitch as number) + (i % 2 ? 18 : -18))) })), st33aComp);
+    // (2) 长音跨界：时值拉到 3 个 span 宽 ⇒ 拆音扫描的两条臂
+    addVariant('long_cross', mk(baseIn).map((n) => ({
+      ...n, durationTicks: (n.durationTicks as number) + ppqNum * 6 })), st33aComp);
+    // (3) 全 avoid 音落 span 起点：hardAvoid 臂 + targetPcs 四过滤
+    addVariant('avoid_downbeat', mk(baseIn).map((n, i) => ({
+      ...n, pitch: 60 + anyAvoid, startTick: spanStarts[i % spanStarts.length] })), st33aComp);
+    // (4) 全部 ≥2 拍：评估器支（hint 采纳门 / hint 减 6 / 去重）
+    addVariant('two_beat_all', mk(baseIn).map((n) => ({
+      ...n, durationTicks: ppqNum * 2 })), st33aComp);
+    // (5) 邻音链：连续音全设成同一个 avoid pc ⇒ prev/next 参考点与排序稳定性
+    addVariant('neighbor_chain', mk(baseIn).map((n) => ({
+      ...n, pitch: 60 + anyAvoid })), st33aComp);
+    // (6) comp 半音墙：comp 全部压在 lead 候选附近 ⇒ clashesComp 的两条判据
+    addVariant('comp_wall', mk(baseIn), (st33aComp as any[]).map((n, i) => ({
+      ...n, pitch: 59 + (i % 3), durationTicks: ppqNum * 4 })));
+    // (7) 半拍错位：起音全 +1 tick ⇒ strongBeat / chordEntrance 的 tolerance 刀锋
+    addVariant('offgrid', mk(baseIn).map((n) => ({
+      ...n, startTick: (n.startTick as number) + 1 })), st33aComp);
+    // (8) 短音：全部 1 tick ⇒ structural 三析取只剩 strongBeat/chordEntrance
+    addVariant('tiny_dur', mk(baseIn).map((n) => ({ ...n, durationTicks: 1 })), st33aComp);
+  }
+  expect(st33aVariants.length, 'ST33A 补例须非空').toBeGreaterThan(0);
+
   const st33a = {
+    variants: st33aVariants,
     keyCtx: {
       keyRootPc: auditKeyCtx.keyRootPc,
       globalMode: auditKeyCtx.globalMode,
