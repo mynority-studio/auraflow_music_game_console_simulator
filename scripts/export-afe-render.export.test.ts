@@ -27,6 +27,17 @@
 //      leadIn 与基线逐位相同由断言背书（该字段只在 ST14/ST32/ST33A 被读，全在站13 之后）。
 //   ⑤ denseMelodySpanRanges(:1507) 入 = gatedTracks（站20 gate 之后, 与 ST16 的输入
 //      不同源）、出 = tick 区间表；两者均深拷贝。
+//
+// ★ P2-9 步10b 增补（G0 表 B3/B5）——ST17 / ST19 两件都是 export 函数, 直接 vi.mock 包装：
+//   ⑥ ST17 `fillLeadBarGaps`(:986) 入/出只取 **lead 轨**（其余轨同引用由 `sameRefs`
+//      机器断言背书）+ `planLeadGapFills` 记录面（chordClamped = v5 增量的观测量）；
+//      「记录重放 == 出轨」在 runCase 里逐音断言（两条独立路互证）。
+//   ⑦ ST19 `applyRepeatGroupReplay`(:995) 入/出取**全部轨**（含 drum —— sim 今天就渲染鼓,
+//      故 drum 保护窗在本语料有真实执行面, 不需合成输入）+ `planRepeatGroupReplays` 计划面
+//      + 逐计划的 `planDrumReplayProtection(...).target` 区间表。
+//      同模块的 `applyMotifBindingReplay`(ST18) 归步10c, 此处只透传不捕获。
+//   ⑧ 新增 case 字段：`sections[].id/.repeatGroup`（ST19 分组键）与 `boundaries`
+//      （grooveScorePlan 投影, 串 id 在导出侧一次性归约成段号；单曲内 id 互异有断言）。
 // 语料（设计 §4 冻结）：L1 8 seed × 非 ACG 5 style + 定向补例
 //   （pattern-schedule 命中 / pedal-anchor 两分支 / foundationOwner=comp），
 //   例数与覆盖桶【机器断言】在文末（不手写计数）。ACG 不入（acg_score=P2-11）。
@@ -69,6 +80,15 @@ const CAP = vi.hoisted(() => {
     postmix: [] as Array<{ inTracks: any[]; outTracks: any[]; identity: boolean; sameRefs: boolean }>,
     ranges: [] as Array<{ inTracks: any[]; out: Array<{ lo: number; hi: number }> }>,
     gap: [] as Array<1>,                       // fillLeadBarGaps 调用计数（ST14 出的另一路捕点）
+    // ---- P2-9 步10b ----
+    gapfill: [] as Array<{
+      inLead: any; outLead: any; sameRefs: boolean; leadSameRef: boolean;
+      beatsPerBar: number; fills: any[];
+    }>,
+    replay: [] as Array<{
+      inTracks: any[]; outTracks: any[]; sameRefs: boolean[]; plans: any[]; protect: any[][];
+    }>,
+    raw: {} as Record<string, any>,   // 未包装的真源模块引用（判别力补例直调生产函数用）
     cloneTrack,
     cloneTracks,
   };
@@ -184,13 +204,55 @@ vi.mock('../src/core/generation/newEngine/render/mgPostMixShaper', async (orig) 
 });
 vi.mock('../src/core/generation/newEngine/render/leadGapFill', async (orig) => {
   const m = (await orig()) as any;
+  CAP.raw.leadGapFill = m;    // 未包装真源（ST17 判别力补例直调，见 runCase）
   return {
     ...m,
-    // 仅作 ST14 出的观测点（非 lofi 路）；ST17 本体归步10b，此处不导出其 I/O。
+    // ① ST14 出的观测点（非 lofi 路）；② P2-9 步10b：ST17 本体 leaf I/O。
     fillLeadBarGaps: (...a: any[]) => {
       snapSt14('gapfill', a[0] as any[]);
       CAP.gap.push(1);
-      return m.fillLeadBarGaps(...a);
+      const inRefs = [...(a[0] as any[])];
+      const leadIn = inRefs.find((t) => t.role === 'lead');
+      const inSnap = leadIn ? CAP.cloneTrack(leadIn) : null;
+      // 记录面用**生产**的 planLeadGapFills（纯函数、深不可变）——它是 apply 内部同一次
+      // 计算的第二次求值；下面用「记录重放 == 出轨」的机器断言把两路对上（见 runCase）。
+      const fills = leadIn ? m.planLeadGapFills(leadIn.notes, a[1], a[2], a[3], a[4] ?? {}) : [];
+      const ret = m.fillLeadBarGaps(...a) as any[];
+      const leadOut = ret.find((t) => t.role === 'lead');
+      CAP.gapfill.push({
+        inLead: inSnap,
+        outLead: leadOut ? CAP.cloneTrack(leadOut) : null,
+        // 「只改 lead」不是注释而是机器事实：其余轨在返回数组里必须是**同一引用**
+        sameRefs: ret.every((t, i) => t.role === 'lead' || t === inRefs[i]),
+        leadSameRef: leadOut === leadIn,   // fills 为空 ⇒ TS 返回原轨引用（ts:76）
+        beatsPerBar: a[3] as number,
+        fills,
+      });
+      return ret;
+    },
+  };
+});
+// P2-9 步10b：ST19 applyRepeatGroupReplay（同模块的 applyMotifBindingReplay = ST18，归步10c，
+//   此处只经 `...m` 透传，不捕获）。
+vi.mock('../src/core/generation/newEngine/render/repeatGroupReplay', async (orig) => {
+  const m = (await orig()) as any;
+  return {
+    ...m,
+    applyRepeatGroupReplay: (...a: any[]) => {
+      const inRefs = [...(a[0] as any[])];
+      const inSnap = CAP.cloneTracks(inRefs);
+      const plans = m.planRepeatGroupReplays(a[1], a[2], a[3]);
+      const protect = plans.map((p: any) =>
+        m.planDrumReplayProtection(a[1], a[3], p).target.map((r: any) => ({ lo: r.lo, hi: r.hi })));
+      const ret = m.applyRepeatGroupReplay(...a) as any[];
+      CAP.replay.push({
+        inTracks: inSnap,
+        outTracks: CAP.cloneTracks(ret),
+        sameRefs: ret.map((t, i) => t === inRefs[i]),
+        plans,
+        protect,
+      });
+      return ret;
     },
   };
 });
@@ -259,6 +321,7 @@ function renderOnce(
   CAP.sched.splice(0); CAP.pad.splice(0); CAP.bass.splice(0); CAP.apply.splice(0); CAP.accomp.splice(0);
   CAP.fit.splice(0); CAP.lead.splice(0); CAP.st14.splice(0);
   CAP.postmix.splice(0); CAP.ranges.splice(0); CAP.gap.splice(0);
+  CAP.gapfill.splice(0); CAP.replay.splice(0);
   const req = { seed, styleHint, mood: 'build', targetDuration: 90 } satisfies GenerationRequest;
   const bundle = buildSongBundle(req);
   expect(bundle.band.style.toLowerCase(), `${seed}/${styleHint}: 语料排除 ACG`).not.toBe('acg');
@@ -321,6 +384,10 @@ function runCase(seed: number, styleHint: string): CaseRec {
   const plan: HarmonicPlan = bundle.harmonic;
   const sections = bundle.arrangement.sections as ReadonlyArray<{ id: string; role?: string; bars: number }>;
   const secIdxById = new Map<string, number>(sections.map((s, i) => [s.id, i]));
+  // ★ 值空间接缝（P2-9 步10b）：串 id ↔ 段号只有在单曲内 id 互异时才是双射；
+  //   ST19 的 drum 保护窗把 `fromSectionId` 串比较归约成 `from_section_index` 整数比较，
+  //   该归约的正确性以此断言为前提（不是注释，是机器事实）。
+  expect(secIdxById.size, `${seed}/${styleHint}: 单曲内段 id 须两两互异`).toBe(sections.length);
   const spanIdxById = new Map<string, number>(plan.chordTimeline.map((s, i) => [s.id, i]));
   const secIdx = (sid: string): number => {
     const i = secIdxById.get(sid);
@@ -524,6 +591,90 @@ function runCase(seed: number, styleHint: string): CaseRec {
     };
   }
 
+  // ---- P2-9 步10b ④ ST17 fillLeadBarGaps（叶 I/O + 记录面） ----
+  expect(CAP.gapfill.length, 'fillLeadBarGaps 恰 1 次（非 ACG 且 preserveArrangerLeadRests 恒 false）').toBe(1);
+  const gf = CAP.gapfill[0];
+  expect(gf.sameRefs, 'ST17 只改 lead：其余轨在返回数组里须同引用').toBe(true);
+  expect(gf.inLead, 'ST17 入须含 lead 轨').toBeTruthy();
+  expect(gf.outLead, 'ST17 出须含 lead 轨').toBeTruthy();
+  expect(gf.beatsPerBar, 'ST17 beatsPerBar == beatsPerBarOf(meter)').toBe(
+    (bundle.arrangement.meter.numerator * 4) / bundle.arrangement.meter.denominator,
+  );
+  {
+    // 两条独立路互证：把 fills 记录重放到入轨，须逐位重现出轨（onset/pitch/vel 不动）
+    const byStart = new Map<number, number>();
+    for (const f of gf.fills as any[]) byStart.set(f.startTick as number, f.newEnd as number);
+    expect(gf.outLead.notes.length, 'ST17 不增删音').toBe(gf.inLead.notes.length);
+    for (let i = 0; i < gf.inLead.notes.length; i++) {
+      const a0 = gf.inLead.notes[i], b0 = gf.outLead.notes[i];
+      const ne = byStart.get(a0.startTick as number);
+      const want = ne !== undefined ? ne - (a0.startTick as number) : (a0.durationTicks as number);
+      expect(b0.durationTicks as number, `ST17[${i}]: 记录重放 != 出轨时值`).toBe(want);
+      expect(b0.startTick as number, `ST17[${i}]: startTick 不变`).toBe(a0.startTick as number);
+      expect(b0.pitch as number, `ST17[${i}]: pitch 不变`).toBe(a0.pitch as number);
+      expect(b0.velocity as number, `ST17[${i}]: velocity 不变`).toBe(a0.velocity as number);
+    }
+    // 同 startTick 的 fill 记录须唯一（否则 TS 的 Map 覆写 与 固件的「首个匹配即 break」分叉）
+    expect(byStart.size, 'ST17 fills 的 startTick 须两两互异').toBe((gf.fills as any[]).length);
+  }
+  const projFills = (fs: any[]) => fs.map((f) => ({
+    startTick: f.startTick as number,
+    oldEnd: f.oldEnd as number,
+    newEnd: f.newEnd as number,
+    barEnd: f.barEnd as number,
+    chordClamped: !!f.chordClamped,
+  }));
+  // ★ ST17 判别力补例（v5 增量 `chordEnd` 钳位在自然语料**零命中**——机器实测
+  //   `st17ChordClamped = 0`：本 pin 的 chord span 时值只有 1bar(1495)/0.5bar(86) 两值且
+  //   bar 对齐，凡钳位点都被 `target <= end` 守卫滤掉 ⇒ 是**域的局限**不是构造局限）。
+  //   处置同 10a 的 ST14 补例：期望值仍出自 **pin 死 sim 的生产函数**，只把 chordTimeline
+  //   换成「每 span 时值减半」的构造域（半 bar 边界 ⇒ chordEnd < barEnd）。
+  //   ★ 减半在 binary64 上**精确**（指数减 1），C 侧用 `db * 0.5` 复现即逐位同值——
+  //     该精确性由下面的机器断言背书，不靠推理。
+  const gfm = CAP.raw.leadGapFill;
+  const probeTimeline = (plan.chordTimeline as any[]).map((c) => {
+    const half = (c.durationBeats as number) / 2;
+    expect(half * 2, 'chord 时值减半须在 binary64 上精确可逆').toBe(c.durationBeats as number);
+    return { ...c, durationBeats: half };
+  });
+  const probeFills = gfm.planLeadGapFills(
+    gf.inLead.notes, probeTimeline, bundle.timebase, gf.beatsPerBar, {});
+  const probeTracks = gfm.fillLeadBarGaps(
+    [{ role: 'lead', notes: gf.inLead.notes }], probeTimeline, bundle.timebase, gf.beatsPerBar, {});
+  expect(probeTracks.length, 'ST17 补例出轨数').toBe(1);
+  const gapFill = {
+    beatsPerBar: bits64(gf.beatsPerBar),
+    leadSameRef: gf.leadSameRef,
+    leadIn: projNotes(gf.inLead.notes as readonly NoteIR[]),
+    leadOut: projNotes(gf.outLead.notes as readonly NoteIR[]),
+    fills: projFills(gf.fills as any[]),
+    probeLeadOut: projNotes(probeTracks[0].notes as readonly NoteIR[]),
+    probeFills: projFills(probeFills as any[]),
+  };
+
+  // ---- P2-9 步10b ⑤ ST19 applyRepeatGroupReplay（全轨叶 I/O + 计划面 + drum 保护窗） ----
+  expect(CAP.replay.length, 'applyRepeatGroupReplay 恰 1 次（非 ACG）').toBe(1);
+  const rp = CAP.replay[0];
+  expect(rp.outTracks.map((t) => t.role).join(','), 'ST19 轨序/轨集不变').toBe(
+    rp.inTracks.map((t) => t.role).join(','),
+  );
+  const replay = {
+    roles: rp.inTracks.map((t) => t.role as string),
+    sameRefs: rp.sameRefs,
+    inTracks: rp.inTracks.map((t) => projNotes(t.notes as readonly NoteIR[])),
+    outTracks: rp.outTracks.map((t) => projNotes(t.notes as readonly NoteIR[])),
+    plans: (rp.plans as any[]).map((p) => ({
+      group: p.group as string,
+      sourceSec: secIdx(p.sourceId as string),
+      targetSec: secIdx(p.targetId as string),
+      sourceStartTick: p.sourceStartTick as number,
+      targetStartTick: p.targetStartTick as number,
+      prefixTicks: p.prefixTicks as number,
+    })),
+    protect: rp.protect as Array<Array<{ lo: number; hi: number }>>,
+  };
+  expect(replay.protect.length, 'ST19 保护窗数组与计划数一一对应').toBe(replay.plans.length);
+
   // ---- P2-9 步10a ④ ST14 判别力补例（第二次生产渲染, 覆盖 programByRoleSection.lead） ----
   const probePrograms = sections.map((_, i) => ST14_PROBE_PROGRAMS[i % ST14_PROBE_PROGRAMS.length]);
   renderOnce(seed, styleHint, (i2, secs) => ({
@@ -563,6 +714,18 @@ function runCase(seed: number, styleHint: string): CaseRec {
     sections: sections.map((s) => ({
       role: (sectionRoleById[s.id] ?? null) as string | null,
       bars: s.bars as number,
+      // ★ P2-9 步10b：ST19 的分组键。id 一并落盘 —— C 侧 `from_section_index`/段序
+      //   与 TS 串 id 的双射由 gen 的「单曲内 id 互异」校验背书（值空间接缝）。
+      id: s.id as string,
+      repeatGroup: ((s as any).repeatGroup ?? null) as string | null,
+    })),
+    // grooveScorePlan.boundaries（ST19 drum 保护窗的唯一输入；串 id → 段号在此处一次性归约）
+    boundaries: ((bundle.arrangement as any).grooveScorePlan?.boundaries ?? []).map((b: any) => ({
+      fromSec: b.fromSectionId === undefined ? null : secIdx(b.fromSectionId as string),
+      toSec: secIdx(b.toSectionId as string),
+      landingBar: b.landingBar as number,
+      durationBeats: bits64(b.durationBeats as number),
+      opening: !!b.opening,
     })),
     chords,
     schedule,
@@ -578,6 +741,8 @@ function runCase(seed: number, styleHint: string): CaseRec {
     st14,
     st16,
     denseRanges,
+    gapFill,
+    replay,
   };
 }
 
@@ -679,6 +844,120 @@ describe('export-afe-render（P2-8a 步③ G5-③）', () => {
       coverage.denseRangesTotal = rg.reduce((a, c) => a + (c.denseRanges as any).out.length, 0);
       expect(coverage.st16NonIdentityCases, 'ST16 至少一例非恒等（否则 golden 无判别力）').toBeGreaterThan(0);
       expect(coverage.denseRangesTotal, 'denseMelodySpanRanges 至少产出一个区间').toBeGreaterThan(0);
+    }
+
+    // ---- P2-9 步10b 覆盖面记账（全部机器计数；「零命中」一律报实测数，不写成「不可达」） ----
+    {
+      // ① ST17
+      let fills = 0, clamped = 0, idCases = 0, minGapObserved = Number.POSITIVE_INFINITY;
+      for (const c of cases) {
+        const g = c.gapFill as any;
+        fills += g.fills.length;
+        clamped += g.fills.filter((f: any) => f.chordClamped).length;
+        if (g.fills.length === 0) idCases++;
+        for (const f of g.fills) minGapObserved = Math.min(minGapObserved, f.newEnd - f.oldEnd);
+      }
+      coverage.st17Cases = cases.length;
+      coverage.st17IdentityCases = idCases;          // 无可补空拍的例数（ST17 恒等）
+      coverage.st17Fills = fills;                    // 补全记录总数
+      coverage.st17ChordClamped = clamped;           // ★ v5 增量（和弦钳位）实际命中数
+      coverage.st17BarClamped = fills - clamped;     // target == barEnd（v4.4 的唯一形态）
+      expect(fills, 'ST17 至少一条补全记录（否则 golden 无判别力）').toBeGreaterThan(0);
+      // ST17 判别力补例（构造 chordTimeline）：v5 增量的**唯一**观测面
+      let pf = 0, pClamped = 0, pDropped = 0;
+      for (const c of cases) {
+        const g = c.gapFill as any;
+        pf += g.probeFills.length;
+        pClamped += g.probeFills.filter((f: any) => f.chordClamped).length;
+        const base = new Set(g.fills.map((f: any) => f.startTick));
+        pDropped += [...base].filter((s) => !g.probeFills.some((f: any) => f.startTick === s)).length;
+      }
+      coverage.st17ProbeFills = pf;
+      coverage.st17ProbeChordClamped = pClamped;      // 钳位命中（v4.4 恒 target=barEnd ⇒ 会分叉）
+      coverage.st17ProbeDroppedFills = pDropped;      // 被 `target<=end` 守卫滤掉的记录（v4.4 会补）
+      expect(pClamped + pDropped,
+        'ST17 判别力补例必须让 v5 增量真分叉（钳位或守卫至少一处命中）').toBeGreaterThan(0);
+
+      // ② ST19：计划面 + 三条发散路径 + 两处 v5 裁剪 + drum 保护窗
+      let plans = 0, planCases = 0, protRanges = 0, protPlans = 0, drumCases = 0;
+      let trimEntering = 0, clampCopy = 0, deleted = 0, added = 0, changedTracks = 0;
+      for (const c of cases) {
+        const r = c.replay as any;
+        plans += r.plans.length;
+        if (r.plans.length > 0) planCases++;
+        for (const p of r.protect) { protRanges += p.length; if (p.length > 0) protPlans++; }
+        if (r.roles.includes('drum')) drumCases++;
+        for (let k = 0; k < r.roles.length; k++) {
+          const inN = r.inTracks[k].length, outN = r.outTracks[k].length;
+          if (JSON.stringify(r.inTracks[k]) !== JSON.stringify(r.outTracks[k])) changedTracks++;
+          if (outN > inN) added += outN - inN; else deleted += inN - outN;
+          // 跨界裁剪 / 拷贝时值钳位的命中数用**入轨几何**独立复算（不看被测输出）
+          for (const n of r.inTracks[k]) {
+            const st = n.s as number, en = st + (n.d as number);
+            const inPrefix = r.plans.find((p: any) => st >= p.targetStartTick && st < p.targetStartTick + p.prefixTicks);
+            if (!inPrefix) {
+              const first = r.plans.map((p: any) => p.targetStartTick)
+                .filter((ts: number) => st < ts && en > ts).sort((x: number, y: number) => x - y)[0];
+              if (first !== undefined) trimEntering++;
+            }
+            for (const p of r.plans) {
+              const srcEnd = p.sourceStartTick + p.prefixTicks;
+              if (st >= p.sourceStartTick && st < srcEnd && en > srcEnd) clampCopy++;
+            }
+          }
+        }
+      }
+      coverage.st19Cases = cases.length;
+      coverage.st19PlanCases = planCases;             // 有重放计划的例数
+      coverage.st19Plans = plans;                     // 计划总数
+      coverage.st19DrumCases = drumCases;             // 入轨含 drum 的例数（保护窗执行面）
+      coverage.st19ProtectedPlans = protPlans;        // 保护窗非空的计划数
+      coverage.st19ProtectRanges = protRanges;        // 保护窗区间总数
+      coverage.st19TrimEnteringNotes = trimEntering;  // ★ v5 增量：跨界裁剪命中数
+      coverage.st19ClampCopyNotes = clampCopy;        // ★ v5 增量：拷贝时值钳位命中数
+      coverage.st19ChangedTracks = changedTracks;     // 出轨与入轨逐音不同的轨数
+      coverage.st19DeletedNotes = deleted;
+      coverage.st19AddedNotes = added;
+      expect(plans, 'ST19 至少一条重放计划（否则 golden 无判别力）').toBeGreaterThan(0);
+      expect(changedTracks, 'ST19 至少一条轨真被改（否则 golden 退化为恒等）').toBeGreaterThan(0);
+
+      // ③ 值空间接缝的语料事实（G0 §5.4 / §5.6）
+      const rgVals = new Set<string>();
+      let rgSections = 0, numericLikeRg = 0, chordTypeNull = 0, chordSpans = 0, typeNeQuality = 0;
+      let boundaries = 0, boundariesWithFrom = 0, boundariesOpening = 0, minLandingSlack = Number.POSITIVE_INFINITY;
+      for (const c of cases) {
+        for (const s of c.sections as any[]) {
+          if (!s.repeatGroup) continue;
+          rgSections++; rgVals.add(s.repeatGroup);
+          if (String(Math.trunc(Number(s.repeatGroup))) === s.repeatGroup) numericLikeRg++;
+        }
+        for (const ch of c.chords as any[]) {
+          chordSpans++;
+          if (ch.chordType === null) chordTypeNull++;
+          else if (ch.chordType !== ch.quality) typeNeQuality++;
+        }
+        const bpb = (c.meter as number[])[0] * 4 / (c.meter as number[])[1];
+        for (const b of c.boundaries as any[]) {
+          boundaries++;
+          if (b.fromSec !== null) boundariesWithFrom++;
+          if (b.opening) boundariesOpening++;
+          const buf = Buffer.alloc(8);
+          buf.writeBigUInt64LE(BigInt(b.durationBeats));
+          minLandingSlack = Math.min(minLandingSlack, b.landingBar * bpb - buf.readDoubleLE(0));
+        }
+      }
+      coverage.st19RepeatGroupSections = rgSections;
+      coverage.st19RepeatGroupValues = [...rgVals].sort().join(',');
+      coverage.st19RepeatGroupNumericLike = numericLikeRg;   // ★ Object.keys 整数键序坑：须 0
+      coverage.chordSpans = chordSpans;
+      coverage.chordTypeNullSpans = chordTypeNull;           // ★ `?? quality` 回落臂命中数
+      coverage.chordTypeNeQualitySpans = typeNeQuality;      // 两字段实测有别的条数
+      coverage.st19Boundaries = boundaries;
+      coverage.st19BoundariesWithFrom = boundariesWithFrom;
+      coverage.st19BoundariesOpening = boundariesOpening;
+      coverage.st19MinLandingSlackBeats = minLandingSlack;   // beats(负数) 会 throw ⇒ 须 ≥0
+      expect(numericLikeRg, 'repeatGroup 出现可被 JS 当整数键的串 ⇒ Object.keys 序 ≠ 插入序').toBe(0);
+      expect(minLandingSlack, 'landingBeat - durationBeats 须非负（beats() 对负数抛）').toBeGreaterThanOrEqual(0);
     }
 
     // ---- grooveBassPatterns KB 快照（已解析值; C KB codegen 数据源） ----
