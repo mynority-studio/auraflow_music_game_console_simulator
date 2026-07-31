@@ -38,6 +38,24 @@
 //      同模块的 `applyMotifBindingReplay`(ST18) 归步10c, 此处只透传不捕获。
 //   ⑧ 新增 case 字段：`sections[].id/.repeatGroup`（ST19 分组键）与 `boundaries`
 //      （grooveScorePlan 投影, 串 id 在导出侧一次性归约成段号；单曲内 id 互异有断言）。
+//
+// ★ P2-9 步10c 增补（G0 表 B4 + 隐藏件 B10）——ST18 `applyMotifBindingReplay`：
+//   ⑨ 站位 gate（`resolvedArchetype?.motifPolicyId === 'motif.repeat-group.v1'`, :987）只命中
+//      **8/40 例**（jazz）。但 ST18 本体不判该 gate（判在 coordinator, 归步11）⇒ 本捕点对
+//      **全部 40 例做模块级驱动**：入轨 = 站17 出（gated 例取 vi.mock 实捕、非 gated 例取站19 入——
+//      两者在链上是同一组轨, 有逐音断言背书），出轨 = 直调 pin 死生产函数
+//      `applyMotifBindingReplay`；gated 例另断言「模块级驱动 == 生产调用逐位相同」。
+//   ⑩ `motifBindings` 投影层（B10）：逐 binding 断言 `motifId === 'm-'+ (repeatGroup ?? sectionId)
+//      + '-' + (skeletonRole==='hook' ? 'h' : phraseSlot)`（phrasePlanner.ts:88-92），并落盘
+//      (motifKey, motifSlot) 二元组 + permille 化的 requestedRestatementStrength ⇒ C 侧判等键
+//      的**值空间接缝**（仓规坑 4）有逐例机器证据；binding↔phrase 1:1 同序亦逐例断言。
+//   ⑪ **判别力补例 9 个**（`chordPrefixFingerprint` 是 TS 模块私有函数 ⇒ 串内容在 sim 外
+//      **不可观测**，可观测的只有它诱导的等价类）：对最后一条计划的目标窗做构造扰动，
+//      期望值仍出自 pin 死 sim 的生产函数 `planMotifBindingReplays`——
+//      break_{root,type,bass_role,bass_pedal,start,dur} + order_swap ⇒ 指纹**失配**（计划数减少）；
+//      clamp_lo / clamp_hi ⇒ 把窗首/末 span 跨出窗界，钳位正确则指纹**不变**（计划数保持）
+//      ⇒ 打 `Math.max(start,startBeat)` / `Math.min(end,endBeat)` 的**接受侧**判别力
+//      （自然语料里 span 与句窗恒 bar 对齐 ⇒ 两条钳位臂零命中, 是域的局限）。
 // 语料（设计 §4 冻结）：L1 8 seed × 非 ACG 5 style + 定向补例
 //   （pattern-schedule 命中 / pedal-anchor 两分支 / foundationOwner=comp），
 //   例数与覆盖桶【机器断言】在文末（不手写计数）。ACG 不入（acg_score=P2-11）。
@@ -88,6 +106,8 @@ const CAP = vi.hoisted(() => {
     replay: [] as Array<{
       inTracks: any[]; outTracks: any[]; sameRefs: boolean[]; plans: any[]; protect: any[][];
     }>,
+    // ---- P2-9 步10c ----
+    motif: [] as Array<{ inTracks: any[]; outTracks: any[]; sameRefs: boolean[]; plans: any[] }>,
     raw: {} as Record<string, any>,   // 未包装的真源模块引用（判别力补例直调生产函数用）
     cloneTrack,
     cloneTracks,
@@ -232,12 +252,26 @@ vi.mock('../src/core/generation/newEngine/render/leadGapFill', async (orig) => {
     },
   };
 });
-// P2-9 步10b：ST19 applyRepeatGroupReplay（同模块的 applyMotifBindingReplay = ST18，归步10c，
-//   此处只经 `...m` 透传，不捕获）。
+// P2-9 步10b：ST19 applyRepeatGroupReplay；步10c：同模块的 ST18 applyMotifBindingReplay。
 vi.mock('../src/core/generation/newEngine/render/repeatGroupReplay', async (orig) => {
   const m = (await orig()) as any;
+  CAP.raw.repeatGroupReplay = m;   // 未包装真源（步10c 模块级驱动 + 判别力补例直调）
   return {
     ...m,
+    // P2-9 步10c：ST18（站位 gate 在 coordinator :987，只有 motifPolicyId 命中时才进这里）
+    applyMotifBindingReplay: (...a: any[]) => {
+      const inRefs = [...(a[0] as any[])];
+      const inSnap = CAP.cloneTracks(inRefs);
+      const plans = m.planMotifBindingReplays(a[1], a[2], a[3]);
+      const ret = m.applyMotifBindingReplay(...a) as any[];
+      CAP.motif.push({
+        inTracks: inSnap,
+        outTracks: CAP.cloneTracks(ret),
+        sameRefs: ret.map((t, i) => t === inRefs[i]),
+        plans,
+      });
+      return ret;
+    },
     applyRepeatGroupReplay: (...a: any[]) => {
       const inRefs = [...(a[0] as any[])];
       const inSnap = CAP.cloneTracks(inRefs);
@@ -321,7 +355,7 @@ function renderOnce(
   CAP.sched.splice(0); CAP.pad.splice(0); CAP.bass.splice(0); CAP.apply.splice(0); CAP.accomp.splice(0);
   CAP.fit.splice(0); CAP.lead.splice(0); CAP.st14.splice(0);
   CAP.postmix.splice(0); CAP.ranges.splice(0); CAP.gap.splice(0);
-  CAP.gapfill.splice(0); CAP.replay.splice(0);
+  CAP.gapfill.splice(0); CAP.replay.splice(0); CAP.motif.splice(0);
   const req = { seed, styleHint, mood: 'build', targetDuration: 90 } satisfies GenerationRequest;
   const bundle = buildSongBundle(req);
   expect(bundle.band.style.toLowerCase(), `${seed}/${styleHint}: 语料排除 ACG`).not.toBe('acg');
@@ -675,6 +709,200 @@ function runCase(seed: number, styleHint: string): CaseRec {
   };
   expect(replay.protect.length, 'ST19 保护窗数组与计划数一一对应').toBe(replay.plans.length);
 
+  // ---- P2-9 步10c ⑨⑩⑪ ST18 applyMotifBindingReplay + motifBindings 投影层 ----
+  const arrAny = bundle.arrangement as any;
+  const rgm = CAP.raw.repeatGroupReplay;
+  const motifPolicyId = (arrAny.resolvedArchetype?.motifPolicyId ?? null) as string | null;
+  const st18Applied = CAP.motif.length;
+  expect(st18Applied, 'ST18 调用次数 ⟺ motifPolicyId 命中（coordinator :987）')
+    .toBe(motifPolicyId === 'motif.repeat-group.v1' ? 1 : 0);
+
+  // ⑩ motifBindings 投影层（B10）：1:1 同序 + motifId 的 (key, slot) 构成律逐条断言
+  const phrasesTs = arrAny.phrases as any[];
+  const bindingsTs = arrAny.motifBindings as any[];
+  expect(bindingsTs.length, 'binding 与 phrase 1:1（phrasePlanner 同一次迭代）').toBe(phrasesTs.length);
+  const sectionById = new Map<string, any>((bundle.arrangement.sections as any[]).map((s) => [s.id, s]));
+  const motifIdByPair = new Map<string, string>();
+  const pairByMotifId = new Map<string, string>();
+  const st18Phrases = phrasesTs.map((p, i) => {
+    const b = bindingsTs[i];
+    expect(b.phraseId, `binding[${i}] 与 phrase 同序`).toBe(p.id);
+    const s = sectionById.get(p.sectionId);
+    expect(s, `phrase ${p.id} 的 sectionId 须在 sections 内`).toBeTruthy();
+    const motifKey = (s.repeatGroup ?? s.id) as string;
+    const motifSlot = p.skeletonRole === 'hook' ? 'h' : String(p.phraseSlot);
+    // ★ 投影层构成律（phrasePlanner.ts:88-92）——C 侧判等键归约成 (key_off, slot) 的前提
+    expect(b.motifId, `binding[${i}] motifId 构成律`).toBe(`m-${motifKey}-${motifSlot}`);
+    expect((b.repeatGroup ?? null), `binding[${i}].repeatGroup ≡ section.repeatGroup`)
+      .toBe((s.repeatGroup ?? null));
+    const perm = Math.round((b.requestedRestatementStrength as number) * 1000);
+    expect(perm / 1000, `binding[${i}] 强度 permille 化须精确可逆`)
+      .toBe(b.requestedRestatementStrength as number);
+    const pair = `${motifKey} ${motifSlot}`;
+    // 双射：同 motifId ⇒ 同 (key,slot)；同 (key,slot) ⇒ 同 motifId
+    if (motifIdByPair.has(pair))
+      expect(motifIdByPair.get(pair), 'motifId ↔ (key,slot) 双射(→)').toBe(b.motifId);
+    if (pairByMotifId.has(b.motifId))
+      expect(pairByMotifId.get(b.motifId), 'motifId ↔ (key,slot) 双射(←)').toBe(pair);
+    motifIdByPair.set(pair, b.motifId);
+    pairByMotifId.set(b.motifId, pair);
+    return {
+      sec: secIdx(p.sectionId as string),
+      slot: p.phraseSlot as number,
+      bars: p.bars as number,
+      skeletonRole: p.skeletonRole as string,
+      motifSlot,
+      motifKey,
+      motifId: b.motifId as string,
+      repeatGroup: (b.repeatGroup ?? null) as string | null,
+      strengthPermille: perm,
+    };
+  });
+
+  // ⑨ 模块级驱动（站位 gate 归步11）：入轨 = 站17 出（= gated 例的 ST18 实捕入 / 非 gated 例的站19 入）
+  const st18InTracks = st18Applied === 1 ? CAP.motif[0].inTracks : rp.inTracks;
+  const st18LeadIn = st18InTracks.find((t: any) => t.role === 'lead');
+  expect(st18LeadIn, 'ST18 入须含 lead 轨').toBeTruthy();
+  expect(JSON.stringify(projNotes(st18LeadIn.notes)), 'ST18 入 lead ≡ ST17 出 lead（链完整性）')
+    .toBe(JSON.stringify(gapFill.leadOut));
+  const st18Plans = rgm.planMotifBindingReplays(
+    bundle.arrangement, plan.chordTimeline, bundle.timebase) as any[];
+  const st18Ret = rgm.applyMotifBindingReplay(
+    st18InTracks, bundle.arrangement, plan.chordTimeline, bundle.timebase) as any[];
+  const st18Out = st18Ret.map((t: any) => ({ role: t.role, notes: t.notes }));
+  const st18LeadOut = st18Out.find((t) => t.role === 'lead');
+  expect(st18LeadOut, 'ST18 出须含 lead 轨').toBeTruthy();
+  expect(st18Ret.every((t: any, i: number) => t.role === 'lead' || t === st18InTracks[i]),
+    'ST18 只改 lead：其余轨在返回数组里须同引用').toBe(true);
+  if (st18Applied === 1) {
+    // 模块级驱动与生产调用逐位相同（证明捕获路与直调路同源）
+    expect(JSON.stringify(st18Plans), 'ST18 模块级计划 == 生产调用计划')
+      .toBe(JSON.stringify(CAP.motif[0].plans));
+    const prodLeadOut = CAP.motif[0].outTracks.find((t: any) => t.role === 'lead');
+    expect(JSON.stringify(projNotes(st18LeadOut!.notes)), 'ST18 模块级出 == 生产调用出')
+      .toBe(JSON.stringify(projNotes(prodLeadOut.notes)));
+    // 链完整性：ST18 出 lead ≡ ST19 入 lead
+    const rpLeadIdx = rp.inTracks.findIndex((t: any) => t.role === 'lead');
+    expect(JSON.stringify(projNotes(rp.inTracks[rpLeadIdx].notes)),
+      'ST18 出 lead ≡ ST19 入 lead（链完整性）').toBe(JSON.stringify(projNotes(prodLeadOut.notes)));
+  }
+  const projMotifPlans = (ps: any[]) => ps.map((p) => ({
+    motifId: p.motifId as string,
+    sourcePhrase: phrasesTs.findIndex((x) => x.id === p.sourcePhraseId),
+    targetPhrase: phrasesTs.findIndex((x) => x.id === p.targetPhraseId),
+    sourceStartTick: p.sourceStartTick as number,
+    targetStartTick: p.targetStartTick as number,
+    prefixTicks: p.prefixTicks as number,
+  }));
+  for (const p of projMotifPlans(st18Plans))
+    expect(p.sourcePhrase >= 0 && p.targetPhrase >= 0, 'ST18 计划的句 id 须可解析成句号').toBe(true);
+
+  // ⑪ 判别力补例（构造 chordTimeline，期望值仍出自 pin 死 sim 的 planMotifBindingReplays）
+  const ppqNum = bundle.timebase.ppq as number;
+  const effType = (c: any) => (c.chordType ?? c.quality) as string;
+  const ovr = (tl: any[], i: number) => ({
+    i,
+    sb: bits64(tl[i].startBeat as number),
+    db: bits64(tl[i].durationBeats as number),
+    root: tl[i].rootPc as number,
+    chordType: effType(tl[i]),
+    bassRole: (tl[i].bassRole ?? null) as string | null,
+    bassPedalPc: (tl[i].bassPedalPc ?? null) as number | null,
+  });
+  const st18Variants: CaseRec[] = [];
+  if (st18Plans.length > 0) {
+    const base = (plan.chordTimeline as any[]).map((c) => ({ ...c }));
+    const last = st18Plans[st18Plans.length - 1];
+    const tgtLo = (last.targetStartTick as number) / ppqNum;
+    const tgtHi = tgtLo + (last.prefixTicks as number) / ppqNum;
+    const inWin: number[] = [];
+    base.forEach((c, i) => {
+      const sb = c.startBeat as number;
+      if (sb >= tgtLo && sb < tgtHi) inWin.push(i);
+    });
+    const baseJson = JSON.stringify(projMotifPlans(st18Plans));
+    const addVariant = (name: string, mutate: (tl: any[]) => number[] | null, swap: number[] | null) => {
+      const tl = base.map((c) => ({ ...c }));
+      const touched = mutate(tl);
+      if (touched === null) return;                       // 该例缺少该形态的观测位（记账见 coverage）
+      // ★ overrides 记在**换序之前**——C 侧的复现序是「先覆写再换序」，
+      //   若在换序后取值会把换序效果编进 overrides 而被 C 端二次施加（首轮实测踩到）。
+      const overrides = touched.map((i) => ovr(tl, i));
+      if (swap) { const t0 = tl[swap[0]]; tl[swap[0]] = tl[swap[1]]; tl[swap[1]] = t0; }
+      const ps = rgm.planMotifBindingReplays(bundle.arrangement, tl, bundle.timebase) as any[];
+      st18Variants.push({
+        name,
+        overrides,
+        swap: swap ? [swap[0], swap[1]] : null,
+        plans: projMotifPlans(ps),
+      });
+    };
+    if (inWin.length >= 2) {
+      addVariant('break_root', (tl) => {
+        for (const i of inWin) tl[i].rootPc = ((tl[i].rootPc as number) + 1) % 12;
+        return inWin;
+      }, null);
+      addVariant('break_type', (tl) => {
+        for (const i of inWin) tl[i].chordType = `${effType(tl[i])}X`;
+        return inWin;
+      }, null);
+      addVariant('break_bass_role', (tl) => {
+        for (const i of inWin) tl[i].bassRole = tl[i].bassRole === '7th' ? 'root' : '7th';
+        return inWin;
+      }, null);
+      addVariant('break_bass_pedal', (tl) => {
+        for (const i of inWin) tl[i].bassPedalPc = (((tl[i].bassPedalPc ?? 0) as number) + 1) % 12;
+        return inWin;
+      }, null);
+      addVariant('break_start', (tl) => {
+        tl[inWin[0]].startBeat = (tl[inWin[0]].startBeat as number) + 0.5;
+        return [inWin[0]];
+      }, null);
+      addVariant('break_dur', (tl) => {
+        tl[inWin[1]].durationBeats = (tl[inWin[1]].durationBeats as number) - 0.5;
+        return [inWin[1]];
+      }, null);
+      addVariant('order_swap', () => [], [inWin[0], inWin[1]]);   // 只换序、零字段覆写
+      // clamp_lo：窗首 span（起点恰在窗起）左移 0.5 拍并等量加长 ⇒ end 不变；
+      //           `lo = max(start, startBeat)` 正确则条目不变（接受侧判别力）。
+      const loIdx = inWin.find((i) => (base[i].startBeat as number) === tgtLo);
+      addVariant('clamp_lo', (tl) => {
+        if (loIdx === undefined) return null;
+        tl[loIdx].startBeat = (tl[loIdx].startBeat as number) - 0.5;
+        tl[loIdx].durationBeats = (tl[loIdx].durationBeats as number) + 0.5;
+        return [loIdx];
+      }, null);
+      // clamp_hi：窗末 span（终点恰在窗末）加长 0.5 拍 ⇒ `hi = min(end, endBeat)` 正确则条目不变。
+      const hiIdx = inWin.find(
+        (i) => (base[i].startBeat as number) + (base[i].durationBeats as number) === tgtHi);
+      addVariant('clamp_hi', (tl) => {
+        if (hiIdx === undefined) return null;
+        tl[hiIdx].durationBeats = (tl[hiIdx].durationBeats as number) + 0.5;
+        return [hiIdx];
+      }, null);
+    }
+    for (const v of st18Variants) {
+      const isClamp = (v.name as string).startsWith('clamp_');
+      if (isClamp) {
+        expect(JSON.stringify(v.plans), `ST18 补例 ${v.name}: 钳位正确 ⇒ 计划面不变`).toBe(baseJson);
+      } else {
+        expect((v.plans as any[]).length, `ST18 补例 ${v.name}: 指纹须失配 ⇒ 计划数减少`)
+          .toBeLessThan(st18Plans.length);
+      }
+    }
+  }
+
+  const st18 = {
+    motifPolicyId,
+    applied: st18Applied,
+    retainTailBars: 1,
+    phrases: st18Phrases,
+    roles: st18InTracks.map((t: any) => t.role as string),
+    leadOut: projNotes(st18LeadOut!.notes as readonly NoteIR[]),
+    plans: projMotifPlans(st18Plans),
+    variants: st18Variants,
+  };
+
   // ---- P2-9 步10a ④ ST14 判别力补例（第二次生产渲染, 覆盖 programByRoleSection.lead） ----
   const probePrograms = sections.map((_, i) => ST14_PROBE_PROGRAMS[i % ST14_PROBE_PROGRAMS.length]);
   renderOnce(seed, styleHint, (i2, secs) => ({
@@ -743,6 +971,7 @@ function runCase(seed: number, styleHint: string): CaseRec {
     denseRanges,
     gapFill,
     replay,
+    st18,
   };
 }
 
@@ -958,6 +1187,62 @@ describe('export-afe-render（P2-8a 步③ G5-③）', () => {
       coverage.st19MinLandingSlackBeats = minLandingSlack;   // beats(负数) 会 throw ⇒ 须 ≥0
       expect(numericLikeRg, 'repeatGroup 出现可被 JS 当整数键的串 ⇒ Object.keys 序 ≠ 插入序').toBe(0);
       expect(minLandingSlack, 'landingBeat - durationBeats 须非负（beats() 对负数抛）').toBeGreaterThanOrEqual(0);
+    }
+
+    // ---- P2-9 步10c 覆盖面记账（ST18 + motifBindings 投影层；「零命中」一律报实测数） ----
+    {
+      let gatedCases = 0, planCases = 0, plans = 0, changedLead = 0, bindings = 0;
+      let hookPhrases = 0, rgPhrases = 0, weakBindings = 0, hookNoRg = 0, hookWeak = 0;
+      let maxSlot = 0, phraseBarsSet = new Set<number>(), strengthSet = new Set<number>();
+      let variantsTotal = 0, breakDrops = 0, clampKeeps = 0;
+      const variantByName: Record<string, number> = {};
+      for (const c of cases) {
+        const s = c.st18 as any;
+        if (s.applied) gatedCases++;
+        if (s.plans.length > 0) planCases++;
+        plans += s.plans.length;
+        if (JSON.stringify(s.leadOut) !== JSON.stringify((c.gapFill as any).leadOut)) changedLead++;
+        bindings += s.phrases.length;
+        for (const p of s.phrases) {
+          if (p.skeletonRole === 'hook') hookPhrases++;
+          if (p.repeatGroup !== null) rgPhrases++;
+          if (p.strengthPermille < 500) weakBindings++;
+          if (p.skeletonRole === 'hook' && p.repeatGroup === null) hookNoRg++;
+          if (p.skeletonRole === 'hook' && p.repeatGroup !== null && p.strengthPermille < 500) hookWeak++;
+          maxSlot = Math.max(maxSlot, p.slot as number);
+          phraseBarsSet.add(p.bars as number);
+          strengthSet.add(p.strengthPermille as number);
+        }
+        for (const v of s.variants as any[]) {
+          variantsTotal++;
+          variantByName[v.name] = (variantByName[v.name] ?? 0) + 1;
+          if (String(v.name).startsWith('clamp_')) clampKeeps++;
+          else breakDrops++;
+        }
+      }
+      coverage.st18Cases = cases.length;
+      coverage.st18GatedCases = gatedCases;             // coordinator :987 命中的例数
+      coverage.st18PlanCases = planCases;               // 模块级驱动有计划的例数
+      coverage.st18Plans = plans;                       // 计划总数
+      coverage.st18ChangedLeadCases = changedLead;      // ST18 真改 lead 的例数
+      coverage.st18Bindings = bindings;                 // = phrase 总数（1:1）
+      coverage.st18HookPhrases = hookPhrases;
+      coverage.st18RepeatGroupPhrases = rgPhrases;
+      coverage.st18WeakBindings = weakBindings;         // strength < 500 的 binding 数（**门前**）
+      coverage.st18HookWithoutRepeatGroup = hookNoRg;   // ★ `!repeatGroup` 门的**决定性**命中数
+      coverage.st18HookWeakStrength = hookWeak;         // ★ `< 0.5` 门的**决定性**命中数
+      coverage.st18MaxPhraseSlot = maxSlot;             // 与 motifSlot 的 'h'(0xFF) 撞值面
+      coverage.st18PhraseBars = [...phraseBarsSet].sort((a, b) => a - b).join(',');
+      coverage.st18StrengthPermille = [...strengthSet].sort((a, b) => a - b).join(',');
+      coverage.st18Variants = variantsTotal;
+      coverage.st18VariantBreak = breakDrops;
+      coverage.st18VariantClamp = clampKeeps;
+      coverage.st18VariantByName = Object.entries(variantByName)
+        .sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, n]) => `${k}:${n}`).join(',');
+      expect(plans, 'ST18 至少一条重放计划（否则 golden 退化为恒等）').toBeGreaterThan(0);
+      expect(changedLead, 'ST18 至少一例真改 lead（否则 golden 无判别力）').toBeGreaterThan(0);
+      expect(breakDrops, 'ST18 指纹失配补例至少一条').toBeGreaterThan(0);
+      expect(clampKeeps, 'ST18 钳位补例至少一条').toBeGreaterThan(0);
     }
 
     // ---- grooveBassPatterns KB 快照（已解析值; C KB codegen 数据源） ----
