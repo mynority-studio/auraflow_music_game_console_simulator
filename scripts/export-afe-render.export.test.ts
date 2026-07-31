@@ -68,7 +68,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildSongBundle } from '../src/core/generation/newEngine/generation/GenerationController';
-import { renderSongFull } from '../src/core/generation/newEngine/render/renderCoordinator';
+import { renderSongFull, leadAvoidExposureResolver } from '../src/core/generation/newEngine/render/renderCoordinator';
+import { beats, ticks } from '../src/core/generation/newEngine/foundation';
 import { deriveMusicIntentPlan } from '../src/core/generation/newEngine/arranger/deriveMusicIntentPlan';
 import type { GenerationRequest } from '../src/core/generation/newEngine/band/bandEngine';
 import type { HarmonicPlan, ChordSpan } from '../src/core/generation/newEngine/harmony/HarmonicPlan';
@@ -108,6 +109,15 @@ const CAP = vi.hoisted(() => {
     }>,
     // ---- P2-9 步10c ----
     motif: [] as Array<{ inTracks: any[]; outTracks: any[]; sameRefs: boolean[]; plans: any[] }>,
+    // ---- P2-9 步10d：B7 lead_sanitizer 叶 I/O · B6 ST31 调用序 · B8 ST33A 入/出 ----
+    san: [] as Array<{ inNotes: any[]; outNotes: any[]; gap: number; minDur: number }>,
+    lega: [] as Array<{ inNotes: any[]; outNotes: any[]; opts: any }>,
+    legaOpts: [] as Array<{ style: string; ppq: number; ret: any }>,
+    // 站13（mgLeadRenderer 内部那次 connectFastLeadNoteIR）与 ST31 的分界：
+    //   renderMgMelody 返回时打点，之后的 lega/san 调用才属站31 及以后。
+    mark: { lega: -1, san: -1 },
+    gest: [] as Array<{ role: string; outNotes: any[] }>,   // ST33A 入 lead / comp 的最终 notes
+    follow: [] as Array<{ tracks: any[] }>,                 // applyFinalDrumFollow 入 = ST33A+sanitize 之后
     raw: {} as Record<string, any>,   // 未包装的真源模块引用（判别力补例直调生产函数用）
     cloneTrack,
     cloneTracks,
@@ -190,7 +200,80 @@ vi.mock('../src/core/generation/newEngine/render/mgLeadRenderer', async (orig) =
       const ret = m.renderMgMelody(...a);
       CAP.lead.push({ snap: CAP.cloneTrack(ret) });
       CAP.fit.splice(0); // ★ 站13 结束 ⇒ 窗口清零；ST14(:961) 是窗口内首个 fit 消费者
+      // ★ P2-9 步10d：站13 内部（mgLeadRenderer.ts:356）也调 connectFastLeadNoteIR ⇒
+      //   在此打点，之后的 lega/san 调用才归 ST31/ST33A 站位（分界靠机器打点，不靠计数推理）。
+      CAP.mark.lega = CAP.lega.length;
+      CAP.mark.san = CAP.san.length;
       return ret;
+    },
+  };
+});
+// ---- P2-9 步10d：B7 lead_sanitizer（叶 I/O）。ST31 三次 + ST33A 之后一次，共 4 次调用。 ----
+vi.mock('../src/core/generation/newEngine/render/leadSanitizer', async (orig) => {
+  const m = (await orig()) as any;
+  CAP.raw.leadSanitizer = m;
+  return {
+    ...m,
+    sanitizeLeadNoteIR: (notes: any, opts?: any) => {
+      const inSnap = (notes as any[]).map((n: any) => ({ ...n }));
+      const ret = m.sanitizeLeadNoteIR(notes, opts) as any[];
+      CAP.san.push({
+        inNotes: inSnap,
+        outNotes: ret.map((n: any) => ({ ...n })),
+        gap: (opts?.gapTicks ?? 1) as number,
+        minDur: (opts?.minDurTicks ?? 1) as number,
+      });
+      return ret;
+    },
+  };
+});
+// ---- P2-9 步10d：B6 ST31 的 legato 半（站13 亦调，靠 CAP.mark 分界）。 ----
+vi.mock('../src/core/generation/newEngine/render/leadArticulation', async (orig) => {
+  const m = (await orig()) as any;
+  CAP.raw.leadArticulation = m;
+  return {
+    ...m,
+    fastLeadLegatoOptionsForStyle: (style: any, ppq: any) => {
+      const ret = m.fastLeadLegatoOptionsForStyle(style, ppq);
+      CAP.legaOpts.push({ style: String(style), ppq: ppq as number, ret: { ...ret } });
+      return ret;
+    },
+    connectFastLeadNoteIR: (notes: any, options: any) => {
+      const inSnap = (notes as any[]).map((n: any) => ({ ...n }));
+      const ret = m.connectFastLeadNoteIR(notes, options) as any[];
+      CAP.lega.push({
+        inNotes: inSnap,
+        outNotes: ret.map((n: any) => ({ ...n })),
+        opts: { ...options },
+      });
+      return ret;
+    },
+  };
+});
+// ---- P2-9 步10d：B8 ST33A 的**入** lead notes（= gesture 塑形后的 mixAttachedTracks 那一份）。 ----
+vi.mock('../src/core/generation/newEngine/instrumental/gestureExpression', async (orig) => {
+  const m = (await orig()) as any;
+  return {
+    ...m,
+    applyGestureExpressionToTrack: (...a: any[]) => {
+      const ret = m.applyGestureExpressionToTrack(...a);
+      CAP.gest.push({
+        role: (a[0] as any).role as string,
+        outNotes: ((ret as any).notes as any[]).map((n: any) => ({ ...n })),
+      });
+      return ret;
+    },
+  };
+});
+// ---- P2-9 步10d：ST33A 的 compNotes 观测口（applyFinalDrumFollow 入 = contractResolvedTracks；
+//      ST33A 只改 lead ⇒ 其 comp 轨 notes 即 coordinator :1414 的 finalCompNotes）。 ----
+vi.mock('../src/core/generation/newEngine/render/drumRenderer', async (orig) => {
+  const m = (await orig()) as any;
+  return {
+    ...m,
+    applyFinalDrumFollow: (...a: any[]) => {
+      CAP.follow.push({ tracks: CAP.cloneTracks(a[0] as any[]) });
+      return m.applyFinalDrumFollow(...a);
     },
   };
 });
@@ -356,6 +439,8 @@ function renderOnce(
   CAP.fit.splice(0); CAP.lead.splice(0); CAP.st14.splice(0);
   CAP.postmix.splice(0); CAP.ranges.splice(0); CAP.gap.splice(0);
   CAP.gapfill.splice(0); CAP.replay.splice(0); CAP.motif.splice(0);
+  CAP.san.splice(0); CAP.lega.splice(0); CAP.legaOpts.splice(0);
+  CAP.gest.splice(0); CAP.follow.splice(0); CAP.mark.lega = -1; CAP.mark.san = -1;
   const req = { seed, styleHint, mood: 'build', targetDuration: 90 } satisfies GenerationRequest;
   const bundle = buildSongBundle(req);
   expect(bundle.band.style.toLowerCase(), `${seed}/${styleHint}: 语料排除 ACG`).not.toBe('acg');
@@ -903,6 +988,132 @@ function runCase(seed: number, styleHint: string): CaseRec {
     variants: st18Variants,
   };
 
+  // ============ P2-9 步10d ⑫⑬⑭：B6 ST31 · B7 lead_sanitizer · B8 ST33A ============
+  // ⑫ **调用序锁**（G0 §2 B6 冻结验收面：3 次 sanitize + 2 次 legato）。
+  //    站13（mgLeadRenderer.ts:356）内部也调 connectFastLeadNoteIR ⇒ 用 CAP.mark 机器分界。
+  expect(CAP.mark.san, 'CAP.mark 须在站13 打点（renderMgMelody 返回时）').toBeGreaterThanOrEqual(0);
+  expect(CAP.mark.san, '站13 及其之前不调 sanitizeLeadNoteIR').toBe(0);
+  expect(CAP.mark.lega, '站13 恰调 1 次 connectFastLeadNoteIR（mgLeadRenderer.ts:356）').toBe(1);
+  const sanCalls = CAP.san.slice(CAP.mark.san);
+  const legaCalls = CAP.lega.slice(CAP.mark.lega);
+  expect(sanCalls.length, 'ST31 三次 + ST33A 之后一次 = 4（lead 轨恰 1 条）').toBe(4);
+  expect(legaCalls.length, 'ST31 两次 legato').toBe(2);
+  for (const c of sanCalls) {
+    expect(c.gap, 'SANITIZE_OPTS.gapTicks 恒 1（ts:1238）').toBe(1);
+    expect(c.minDur, 'SANITIZE_OPTS.minDurTicks 恒 1（ts:1238）').toBe(1);
+  }
+  // legato 选项：两次都用 `fastLeadLegatoOptionsForStyle(band.style, ppq)`（ts:1241-1243 算一次共用）
+  const la = CAP.raw.leadArticulation;
+  const expectOpts = la.fastLeadLegatoOptionsForStyle(bundle.band.style, bundle.timebase.ppq as number);
+  const balladLike = String(bundle.band.style).toUpperCase() === 'ACG'
+    || String(bundle.band.style).toUpperCase() === 'MODAL';
+  for (const c of legaCalls)
+    expect(JSON.stringify(c.opts), 'ST31 两次 legato 的 opts ≡ f(band.style, ppq)')
+      .toBe(JSON.stringify(expectOpts));
+  // 链完整性：五步首尾相接（中间的 ACG 专属段 normalizeAcgDynamics 在非 ACG 是恒等透传 ts:1268）
+  const stepChain = [
+    { kind: 'sanitize', c: sanCalls[0] }, { kind: 'legato', c: legaCalls[0] },
+    { kind: 'sanitize', c: sanCalls[1] }, { kind: 'legato', c: legaCalls[1] },
+    { kind: 'sanitize', c: sanCalls[2] },
+  ];
+  for (let k = 1; k < stepChain.length; k++)
+    expect(JSON.stringify(stepChain[k].c.inNotes), `ST31 第 ${k + 1} 步入 ≡ 第 ${k} 步出`)
+      .toBe(JSON.stringify(stepChain[k - 1].c.outNotes));
+  const st31 = {
+    balladLike,
+    legatoOpts: {
+      enabled: !!expectOpts.enabled,
+      maxConnectIoiTicks: expectOpts.maxConnectIoiTicks as number,
+      samePitchGapTicks: expectOpts.samePitchGapTicks as number,
+      minDurationTicks: expectOpts.minDurationTicks as number,
+      hasMaxExtension: expectOpts.maxExtensionTicks != null,
+      maxExtensionTicks: (expectOpts.maxExtensionTicks ?? 0) as number,
+    },
+    leadIn: projNotes(sanCalls[0].inNotes as readonly NoteIR[]),
+    steps: stepChain.map((s) => ({ kind: s.kind, out: projNotes(s.c.outNotes as readonly NoteIR[]) })),
+  };
+
+  // ⑬ B8 ST33A：入 = gesture 塑形后的 lead（= mixAttachedTracks 那一份，ts:1421 的实参）
+  const leadGest = CAP.gest.filter((g) => g.role === 'lead');
+  expect(leadGest.length, 'lead 恒过 gesture 塑形（非 ACG、lead 不在 timedRoleNames）').toBe(1);
+  const st33aLeadIn = leadGest[0].outNotes;
+  expect(CAP.follow.length, 'applyFinalDrumFollow 恰 1 次').toBe(1);
+  const followTracks = CAP.follow[0].tracks as any[];
+  const compFollow = followTracks.find((t) => t.role === 'comp');
+  // ST33A 只改 lead ⇒ contractResolvedTracks 的 comp notes 即 ts:1414 的 finalCompNotes
+  const st33aComp = (compFollow?.notes ?? []) as any[];
+  const leadProgramFor = (sectionId: string): number | undefined =>
+    inst.programByRoleSection.lead?.[sectionId]
+    ?? inst.roleProgram.lead
+    ?? (bundle.band as any).roleProgram?.lead;
+  const auditKeyCtx = {
+    keyRootPc: bundle.band.key as number,
+    globalMode: (bundle.band as any).mode as string,
+    isModalContext: (bundle.band as any).tonalityKind === 'modal',
+    scaleName: (bundle.band as any).modalModeName as string | undefined,
+    tonalCharacter: ((bundle.band as any).tonalityKind === 'modal' ? 'modal' : 'tonal') as string,
+  };
+  // 模块级驱动（`leadAvoidExposureResolver` 是 renderCoordinator 的 export，同模块内调用
+  // 无法 vi.mock 拦截 ⇒ 直调 pin 死生产函数；随后与生产调用的实际产出逐位对撞）。
+  const st33aOut = leadAvoidExposureResolver(
+    st33aLeadIn as any, plan, bundle.timebase,
+    leadProgramFor, st33aComp as any, auditKeyCtx as any,
+  ) as readonly NoteIR[];
+  expect(JSON.stringify(projNotes(st33aOut)), 'ST33A 模块级驱动 == 生产调用（第4 次 sanitize 的入参）')
+    .toBe(JSON.stringify(projNotes(sanCalls[3].inNotes as readonly NoteIR[])));
+  // eval 支的**前置**命中数（不调评估器，只数前置：span 命中 ∧ !hardAvoid ∧ dur ≥ 2 拍）
+  const oneBeatTicks = bundle.timebase.beatToTick(beats(1)) as number;
+  const structuralTicks = Math.round((bundle.timebase.ppq as number) * 0.75);
+  const bpbSt33 = bundle.arrangement.meter.numerator * (4 / bundle.arrangement.meter.denominator);
+  const metricTol = (bundle.timebase.ppq as number) * 0.08;
+  const spanRanges = plan.chordTimeline.map((s: ChordSpan) => {
+    const st = bundle.timebase.beatToTick(s.startBeat) as number;
+    return { s, lo: st, hi: st + (bundle.timebase.beatToTick(s.durationBeats) as number) };
+  });
+  let st33aSpanHit = 0, st33aStructural = 0, st33aHardAvoid = 0, st33aEvalPre = 0;
+  for (const n of st33aLeadIn) {
+    const start = n.startTick as number;
+    const e = spanRanges.find((r) => start >= r.lo && start < r.hi);
+    if (!e) continue;
+    st33aSpanHit++;
+    const beat = bundle.timebase.tickToBeat(ticks(start)) as number;
+    const phase = ((beat % bpbSt33) + bpbSt33) % bpbSt33;
+    const strong = Math.min(Math.abs(phase), Math.abs(phase - bpbSt33), Math.abs(phase - bpbSt33 / 2))
+      * (bundle.timebase.ppq as number) <= metricTol;
+    const structural = strong || Math.abs(start - e.lo) <= metricTol
+      || (n.durationTicks as number) >= structuralTicks;
+    if (structural) st33aStructural++;
+    const notePc = (((n.pitch as number) % 12) + 12) % 12;
+    const hard = structural && ((plan.avoidNoteMap as any)[e.s.id] ?? []).includes(notePc);
+    if (hard) st33aHardAvoid++;
+    if (!hard && (n.durationTicks as number) >= oneBeatTicks * 2) st33aEvalPre++;
+  }
+  const st33aChanged = projNotes(st33aOut).filter((o, i) => {
+    const a = projNotes(st33aLeadIn as readonly NoteIR[])[i];
+    return !a || a.p !== o.p || a.s !== o.s || a.d !== o.d;
+  }).length;
+  const st33a = {
+    keyCtx: {
+      keyRootPc: auditKeyCtx.keyRootPc,
+      globalMode: auditKeyCtx.globalMode,
+      isModalContext: auditKeyCtx.isModalContext,
+      scaleName: (auditKeyCtx.scaleName ?? null) as string | null,
+      tonalCharacter: auditKeyCtx.tonalCharacter,
+    },
+    programBySec: sections.map((s) => (leadProgramFor(s.id) ?? null) as number | null),
+    modToKey: sections.map((s) => (((plan as any).modulationMap?.[s.id]?.toKey) ?? null) as number | null),
+    leadIn: projNotes(st33aLeadIn as readonly NoteIR[]),
+    comp: projNotes(st33aComp as readonly NoteIR[]),
+    leadOut: projNotes(st33aOut),
+    sanitizedOut: projNotes(sanCalls[3].outNotes as readonly NoteIR[]),
+    spanHit: st33aSpanHit,
+    structural: st33aStructural,
+    hardAvoid: st33aHardAvoid,
+    evalPre: st33aEvalPre,
+    changed: st33aChanged,
+    splitDelta: st33aOut.length - st33aLeadIn.length,
+  };
+
   // ---- P2-9 步10a ④ ST14 判别力补例（第二次生产渲染, 覆盖 programByRoleSection.lead） ----
   const probePrograms = sections.map((_, i) => ST14_PROBE_PROGRAMS[i % ST14_PROBE_PROGRAMS.length]);
   renderOnce(seed, styleHint, (i2, secs) => ({
@@ -972,6 +1183,8 @@ function runCase(seed: number, styleHint: string): CaseRec {
     gapFill,
     replay,
     st18,
+    st31,
+    st33a,
   };
 }
 
@@ -1262,6 +1475,150 @@ describe('export-afe-render（P2-8a 步③ G5-③）', () => {
       };
     });
 
+    // ---- P2-9 步10d 覆盖面记账（B6 ST31 / B7 lead_sanitizer / B8 ST33A；「零命中」一律报实测数） ----
+    {
+      let sanCalls = 0, sanNonIdentity = 0, sanCoalesced = 0, sanTrimmed = 0, sanMaxNotes = 0;
+      let legaCalls = 0, legaNonIdentity = 0, balladCases = 0;
+      let st33aCases = 0, st33aChangedCases = 0, st33aChangedNotes = 0, st33aSplitNotes = 0;
+      let st33aSpanHit = 0, st33aStructural = 0, st33aHardAvoid = 0, st33aEvalPre = 0;
+      let st33aCompNotes = 0, st33aProgramUndef = 0, st33aModToKey = 0;
+      let arSwapCases = 0, arSwapNotes = 0;
+      const legatoIoiSet = new Set<number>();
+      for (const c of cases) {
+        const s31 = c.st31 as any, s33 = c.st33a as any;
+        if (s31.balladLike) balladCases++;
+        legatoIoiSet.add(s31.legatoOpts.maxConnectIoiTicks as number);
+        let prev = s31.leadIn as any[];
+        for (const st of s31.steps as any[]) {
+          const out2 = st.out as any[];
+          if (st.kind === 'sanitize') {
+            sanCalls++;
+            if (JSON.stringify(prev) !== JSON.stringify(out2)) sanNonIdentity++;
+            if (out2.length < prev.length) sanCoalesced++;
+            // 「有音被裁短」= ④ 支命中（同 pitch overlap 裁剪）
+            const byKey = new Map<string, number>();
+            for (const n of prev) byKey.set(`${n.s}|${n.p}`, Math.max(byKey.get(`${n.s}|${n.p}`) ?? 0, n.d));
+            if (out2.some((n) => (byKey.get(`${n.s}|${n.p}`) ?? -1) > n.d)) sanTrimmed++;
+            sanMaxNotes = Math.max(sanMaxNotes, prev.length);
+          } else {
+            legaCalls++;
+            if (JSON.stringify(prev) !== JSON.stringify(out2)) legaNonIdentity++;
+          }
+          prev = out2;
+        }
+        // ★ 「sanitize→legato」与「legato→sanitize」不可交换的**自然语料**判别力（.h §3 ④）
+        const raw = CAP.raw.leadArticulation, rawSan = CAP.raw.leadSanitizer;
+        const OPT = { gapTicks: 1, minDurTicks: 1 };
+        const toIr = (ns: any[]) => ns.map((n) => ({ pitch: n.p, startTick: n.s, durationTicks: n.d, velocity: n.v }));
+        const lo = { enabled: true, maxConnectIoiTicks: s31.legatoOpts.maxConnectIoiTicks,
+                     samePitchGapTicks: s31.legatoOpts.samePitchGapTicks,
+                     minDurationTicks: s31.legatoOpts.minDurationTicks };
+        // 前两步换序：正确序 = legato(sanitize(x))（= steps[1].out）；换序 = sanitize(legato(x))
+        const ab = projNotes(rawSan.sanitizeLeadNoteIR(
+          raw.connectFastLeadNoteIR(toIr(s31.leadIn as any[]) as any, lo as any), OPT));
+        const ba = s31.steps[1].out as any[];
+        const diff = JSON.stringify(ab) !== JSON.stringify(ba) ? 1 : 0;
+        if (diff) {
+          arSwapCases++;
+          const m = Math.max(ab.length, ba.length);
+          for (let k = 0; k < m; k++)
+            if (JSON.stringify(ab[k] ?? null) !== JSON.stringify(ba[k] ?? null)) arSwapNotes++;
+        }
+        st33aCases++;
+        st33aSpanHit += s33.spanHit as number;
+        st33aStructural += s33.structural as number;
+        st33aHardAvoid += s33.hardAvoid as number;
+        st33aEvalPre += s33.evalPre as number;
+        st33aCompNotes += (s33.comp as any[]).length;
+        st33aSplitNotes += s33.splitDelta as number;
+        st33aChangedNotes += s33.changed as number;
+        if ((s33.changed as number) > 0 || (s33.splitDelta as number) !== 0) st33aChangedCases++;
+        st33aProgramUndef += (s33.programBySec as any[]).filter((x) => x === null).length;
+        st33aModToKey += (s33.modToKey as any[]).filter((x) => x !== null).length;
+      }
+      coverage.st31Cases = cases.length;
+      coverage.st31BalladLikeCases = balladCases;          // = style ∈ {ACG, MODAL} 的例数
+      coverage.st31LegatoIoiValues = [...legatoIoiSet].sort((a, b) => a - b).join(',');
+      coverage.st31SanitizeCalls = sanCalls;               // 3 次/例（ST33A 后那次不在 st31.steps 内）
+      coverage.st31SanitizeNonIdentity = sanNonIdentity;
+      coverage.st31SanitizeCoalesced = sanCoalesced;       // ② coalesce 支实际命中的步数
+      coverage.st31SanitizeTrimmed = sanTrimmed;           // ④ overlap 裁剪支实际命中的步数
+      coverage.st31SanitizeMaxNotes = sanMaxNotes;
+      coverage.st31LegatoCalls = legaCalls;
+      coverage.st31LegatoNonIdentity = legaNonIdentity;
+      coverage.st31OrderSwapCases = arSwapCases;           // ★ 调用序判别力（非「碰巧同值」）
+      coverage.st31OrderSwapNotes = arSwapNotes;
+      coverage.st33aCases = st33aCases;
+      coverage.st33aChangedCases = st33aChangedCases;
+      coverage.st33aChangedNotes = st33aChangedNotes;
+      coverage.st33aSplitNotes = st33aSplitNotes;
+      coverage.st33aSpanHitNotes = st33aSpanHit;
+      coverage.st33aStructuralNotes = st33aStructural;
+      coverage.st33aHardAvoidNotes = st33aHardAvoid;
+      coverage.st33aEvalPreconditionNotes = st33aEvalPre;  // eval 支（评估器）前置命中上界
+      coverage.st33aCompNotes = st33aCompNotes;
+      coverage.st33aProgramUndefSections = st33aProgramUndef;
+      coverage.st33aModulationSections = st33aModToKey;
+      expect(sanCalls, 'ST31 sanitize 步数 = 3×例数').toBe(cases.length * 3);
+      expect(legaCalls, 'ST31 legato 步数 = 2×例数').toBe(cases.length * 2);
+      expect(balladCases, 'balladLike 臂须有自然语料命中（modal 8 例）').toBeGreaterThan(0);
+      expect(legatoIoiSet.size, 'balladLike 两档 maxConnectIoi 须都出现（否则该谓词零判别力）')
+        .toBeGreaterThan(1);
+    }
+
+    // ---- P2-9 步10d：B7 lead_sanitizer 的**规则级**判别力补例（G0 §2 B7 冻结的四条规则）。
+    //      期望值全部出自 pin 死 sim 的生产函数 `sanitizeLeadNoteIR`，只换**输入**（构造域）。
+    const rawSan = CAP.raw.leadSanitizer;
+    const mkN = (p: number, s: number, d: number, v: number) => ({ pitch: p, startTick: s, durationTicks: d, velocity: v });
+    const sanitizerProbes: Array<{ name: string; gap: number; minDur: number; input: any[] }> = [
+      { name: 'empty', gap: 1, minDur: 1, input: [] },
+      { name: 'single', gap: 1, minDur: 1, input: [mkN(60, 0, 100, 80)] },
+      // ② coalesce：同 start+同 pitch 取**大 dur** 与**大 vel**（两项各自独立取大）
+      { name: 'coalesce_dur_vel_split', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 200, 40), mkN(60, 0, 50, 99)] },
+      { name: 'coalesce_three', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 10, 10), mkN(60, 0, 30, 5), mkN(60, 0, 20, 70)] },
+      // ① 稳定排序：同 startTick 不同 pitch —— 等键保插入序（尾部值才暴露错位，仓规坑 4）
+      { name: 'stable_equal_start', gap: 1, minDur: 1,
+        input: [mkN(72, 100, 40, 10), mkN(60, 100, 40, 20), mkN(65, 100, 40, 30)] },
+      { name: 'unsorted_input', gap: 1, minDur: 1,
+        input: [mkN(64, 900, 50, 60), mkN(60, 100, 50, 61), mkN(62, 500, 50, 62)] },
+      // ④ overlap：同 pitch 前音裁到 nextStart-iStart-gap
+      { name: 'overlap_same_pitch', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 500, 80), mkN(60, 200, 100, 80)] },
+      // ④ 下钳：nextStart-iStart-gap < minDur ⇒ 取 minDur
+      { name: 'overlap_clamp_min_dur', gap: 1, minDur: 30,
+        input: [mkN(60, 0, 500, 80), mkN(60, 5, 100, 80)] },
+      // ④ 不同 pitch 的 overlap 不裁（legato 连奏保留）
+      { name: 'overlap_diff_pitch', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 500, 80), mkN(62, 200, 100, 80)] },
+      // ④ 首匹配即 break：先遇不同 pitch 再遇同 pitch，仍按**同 pitch 的那个**裁
+      { name: 'overlap_first_match_break', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 500, 80), mkN(62, 100, 50, 80), mkN(60, 300, 50, 80), mkN(60, 400, 50, 80)] },
+      // ④ `js >= iEnd` 提前 break：同 pitch 但不重叠 ⇒ 不动
+      { name: 'no_overlap_same_pitch', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 100, 80), mkN(60, 100, 100, 80)] },
+      // 非缺省 gap/minDur（生产恒 (1,1)，此处打形参载荷）
+      { name: 'nondefault_gap', gap: 17, minDur: 3,
+        input: [mkN(60, 0, 500, 80), mkN(60, 200, 100, 80)] },
+      // 混合：coalesce 之后才出现的 overlap（③ 再排序的语义面）
+      { name: 'coalesce_then_overlap', gap: 1, minDur: 1,
+        input: [mkN(60, 0, 100, 80), mkN(60, 0, 400, 20), mkN(60, 250, 100, 80)] },
+    ];
+    const leadSanitizerProbes = sanitizerProbes.map((p) => ({
+      name: p.name, gap: p.gap, minDur: p.minDur,
+      input: projNotes(p.input as any),
+      output: projNotes(rawSan.sanitizeLeadNoteIR(p.input as any,
+        { gapTicks: p.gap, minDurTicks: p.minDur })),
+    }));
+    // fail-closed：至少一条补例真触发 coalesce（缩条数）、至少一条真触发裁剪（改 dur）
+    expect(leadSanitizerProbes.some((p) => p.output.length < p.input.length),
+      'B7 补例须有 coalesce 命中').toBe(true);
+    expect(leadSanitizerProbes.some((p) => p.input.some((a, i) =>
+      p.output[i] && p.output[i].s === a.s && p.output[i].p === a.p && p.output[i].d !== a.d)),
+      'B7 补例须有 overlap 裁剪命中').toBe(true);
+    coverage.leadSanitizerProbes = leadSanitizerProbes.length;
+
     const out = {
       schemaVersion: SCHEMA_VERSION,
       provenance: {
@@ -1271,6 +1628,7 @@ describe('export-afe-render（P2-8a 步③ G5-③）', () => {
       grooveBassPatterns: kb,
       coverage,
       supplements,
+      leadSanitizerProbes,
       caseCount: cases.length,
       cases,
     };
