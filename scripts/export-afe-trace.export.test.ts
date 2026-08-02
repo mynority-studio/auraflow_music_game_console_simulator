@@ -26,7 +26,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS = join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'corpus_set_v5.json');
 const OUT_DIR = join(HERE, '..', '..', 'core', 'tests', 'fixtures', 'trace_v5');
 
-interface CorpusCase { id: string; seed: number; styleHint: string; mood: string; targetDuration: number }
+interface CorpusCase { id: string; seed: number; styleHint: string; mood: string; targetDuration: number; jazzArchetypeId?: string }
 
 /** 复刻 MidiScheduler.midiEventOrder（源锚定 MidiScheduler.ts:33-47 @v5.0） */
 function midiEventOrder(ev: MidiEvent): number {
@@ -83,7 +83,7 @@ describe('export afe trace (v5.0 corpus set)', () => {
     const corpus = JSON.parse(readFileSync(CORPUS, 'utf8')) as { cases: CorpusCase[] };
     mkdirSync(OUT_DIR, { recursive: true });
     for (const c of corpus.cases) {
-      const req = { seed: c.seed, styleHint: c.styleHint, mood: c.mood, targetDuration: c.targetDuration };
+      const req = { seed: c.seed, styleHint: c.styleHint, mood: c.mood, targetDuration: c.targetDuration, jazzArchetypeId: c.jazzArchetypeId as never };
       const bundle = buildSongBundle(req);
       const result = generateSongFromBundle(bundle);
       expect(result.status, `${c.id}: 生成失败`).not.toBe('failed');
