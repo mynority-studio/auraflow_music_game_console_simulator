@@ -16,6 +16,9 @@ import { fileURLToPath } from 'node:url';
 
 import { buildSongBundle, generateSongFromBundle } from '../src/core/generation/newEngine/generation/GenerationController';
 import { musicalIRToMidiEvents, roomWetFor } from '../src/core/audio/musicalIrToMidi';
+import { decidePadComp, type PadCompDecision } from '../src/core/generation/newEngine/render/padCompPolicy';
+import { activeAcgPianoSectionIds } from '../src/core/generation/newEngine/arranger/acgPianoScorePlan';
+import { deriveMusicIntentPlan } from '../src/core/generation/newEngine/arranger/deriveMusicIntentPlan';
 import type { MidiEvent } from '../src/core/audio/MidiScheduler';
 
 const TRACE_SCHEMA_VERSION = 1;
@@ -87,6 +90,38 @@ describe('export afe trace (v5.0 corpus set)', () => {
       const ir = result.ir!;
       expect(ir, `${c.id}: 无 IR`).toBeTruthy();
       const midi = toScheduledOrder(musicalIRToMidiEvents(ir, roomWetFor(c.styleHint), c.styleHint));
+        // P2-13 步1 扩导（E18 oracle 两面; 既有键投影不变由重导 diff 机器校验）：
+        // padCompDecisionBySection —— decidePadComp 真源函数 + coordinator:848-863 同式 ctx
+        //（activeSectionIds 派生照抄 :736-738; hasResolvedRoleLayout ⇒ comp 活跃段集）。
+        const inst = bundle.instrumentation;
+        const inLineup = (role: string) => bundle.band.instrumentPool.includes(role as never);   /* :835 真源形态 */
+        const roleInArr = (sid: string, role: string) =>
+          ((inst.activeRolesBySection[sid] as readonly string[] | undefined)?.includes(role) ?? true);
+        const hasResolvedRoleLayout = bundle.arrangement.resolvedArchetype !== undefined;
+        const compActive = new Set(bundle.arrangement.sections
+          .filter((s2) => (inst.activeRolesBySection[s2.id] ?? []).includes('comp'))
+          .map((s2) => s2.id));
+        const activeSectionIds = hasResolvedRoleLayout
+          ? compActive
+          : activeAcgPianoSectionIds(inst);   /* 真源函数直取（:738 同名调用） */
+        const reservedReg = inst.melodyReservationPlan.reservedRegister;
+        const padCompDecisionBySection: Record<string, PadCompDecision> = {};
+        for (const s2 of bundle.arrangement.sections) {
+          padCompDecisionBySection[s2.id] = decidePadComp({
+            style: bundle.band.style,
+            sectionId: s2.id,
+            sectionRole: s2.role,
+            padDensity: bundle.band.styleProfile.padDensity,
+            padActive: inLineup('pad') && roleInArr(s2.id, 'pad'),
+            compActive: inLineup('comp') && activeSectionIds.has(s2.id) && roleInArr(s2.id, 'comp'),
+            bassActive: inLineup('bass') && roleInArr(s2.id, 'bass'),
+            leadReservedLow: reservedReg.lowMidi as number,
+            leadReservedHigh: reservedReg.highMidi,
+          });
+        }
+        const musicIntentPlan = deriveMusicIntentPlan(bundle.band.style, bundle.arrangement);
+        const trace_plans_extra = { padCompDecisionBySection, musicIntent: musicIntentPlan };
+        void trace_plans_extra;
       const trace = {
         traceSchemaVersion: TRACE_SCHEMA_VERSION,
         meta: {
@@ -101,7 +136,8 @@ describe('export afe trace (v5.0 corpus set)', () => {
           band: bundle.band,
           arrangement: bundle.arrangement,
           harmonic: bundle.harmonic,
-          instrumentation: bundle.instrumentation,
+          instrumentation: { ...inst, padCompDecisionBySection },
+          musicIntent: musicIntentPlan,
           acgPianoScorePlan: bundle.acgPianoScorePlan ?? null,
           jazzFiveFourScorePlan: bundle.jazzFiveFourScorePlan ?? null,
           timebase: projectTimebase(bundle.timebase),
