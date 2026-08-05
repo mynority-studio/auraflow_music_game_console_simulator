@@ -3,7 +3,7 @@
 // ------------------------------------------------------------
 // Builds the 15 safe lead pads from current Q+N harmony. The core idea:
 // keep chord tones as stable anchors, supplement with KB acceptable local-scale
-// tensions, remove avoid tones, then lay the notes from bottom-left to top-right
+// tensions, remove avoid tones, then lay the notes from top-left to bottom-right
 // inside one two-octave root window.
 // ============================================================
 

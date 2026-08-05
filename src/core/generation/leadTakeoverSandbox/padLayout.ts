@@ -11,9 +11,9 @@ export const TAKEOVER_PAD_ROWS = 3;
 export const TAKEOVER_PAD_COUNT = TAKEOVER_PAD_COLS * TAKEOVER_PAD_ROWS;
 export const TAKEOVER_CENTER_PAD_INDEX = 7;
 export const TAKEOVER_ASCENDING_PAD_INDICES = [
-  10, 11, 12, 13, 14,
-  5, 6, 7, 8, 9,
   0, 1, 2, 3, 4,
+  5, 6, 7, 8, 9,
+  10, 11, 12, 13, 14,
 ] as const;
 
 export function takeoverPadIndex(col: number, row: number): number {
