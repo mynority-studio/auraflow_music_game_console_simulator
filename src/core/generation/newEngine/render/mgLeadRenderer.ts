@@ -505,7 +505,10 @@ export function renderMgMelodyWithAcgPerformancePlan(
     chordPart: part,
     rng: mgRng,
     guideTonePlan,
-    preserveSlopeGrammar: style === 'LOFI' || style === 'ACG', // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)
+    // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)。
+    // ★ 四期:有用户 motif 时全风格保留 —— 否则 POP/RNB 的导音规划会把 motif 衍生
+    //   规则的音程轮廓改写掉,只剩节奏,用户听不出"基于动机的拓展变化"。
+    preserveSlopeGrammar: style === 'LOFI' || style === 'ACG' || !!authoredUserMotifPlan,
     registerCenter: style === 'ACG' ? 74 : authoredRegisterCenter, // ACG lead 是钢琴最高声部；locked ensemble 使用其作者音区中心
     lofiScoreRegisterRange,
     localScaleContext,

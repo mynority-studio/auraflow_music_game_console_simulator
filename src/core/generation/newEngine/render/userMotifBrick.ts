@@ -644,6 +644,7 @@ function sustainFillMotifNotes(
   endBeat: number,
   tempoBpm: number | undefined,
   ppq: number,
+  harmonicPlan: HarmonicPlan | undefined,
 ): UserMotifBrickNote[] {
   const release = releaseGapBeat(tempoBpm ?? 100, ppq);
   return notes.map((n, i) => {
@@ -656,9 +657,14 @@ function sustainFillMotifNotes(
       const gapToNext = next.onsetBeat - currentEnd;
       if (gapToNext > 1e-6 && gapToNext <= 1 + 1e-6) target = next.onsetBeat - release;
     }
-    return target > currentEnd + 1e-6
-      ? { ...n, durationBeat: Math.max(n.durationBeat, target - n.onsetBeat) }
-      : n;
+    if (target <= currentEnd + 1e-6) return n;
+    let extended: UserMotifBrickNote = { ...n, durationBeat: Math.max(n.durationBeat, target - n.onsetBeat) };
+    // 和声感知:延展把音推过 1 拍暴露线时,接不住的音把延展压回线下(不短于原时值)
+    if (harmonicPlan && extended.durationBeat >= 1 - 1e-6) {
+      const capped = capUnsupportedLongExposure([extended], harmonicPlan)[0];
+      extended = { ...extended, durationBeat: Math.max(n.durationBeat, capped.durationBeat) };
+    }
+    return extended;
   });
 }
 
@@ -690,19 +696,34 @@ export function motifHarmonicSupportRatio(notes: readonly UserMotifBrickNote[], 
   return harmonicSupportRatio(notes, plan);
 }
 
-/** 发展模块用:长时值(≥1 拍)音的暴露是否被覆盖和弦的 stable/color 音接住。
- *  镜像 avoid-long-exposure 审计:chord-scale 内也可能是回避音,长音必须按和弦音标准判。 */
+/** 单音判定:长时值暴露是否被覆盖和弦的 stable/color 音接住(镜像 avoid-long-exposure 审计)。 */
+function noteLongExposureSupported(note: UserMotifBrickNote, plan: HarmonicPlan): boolean {
+  if (note.durationBeat < 1 - 1e-6) return true;
+  const overlaps = harmonicSpansOverlapping(plan, note.onsetBeat, note.onsetBeat + note.durationBeat);
+  if (overlaps.length === 0) return false;
+  const pitchClass = mod12(note.pitch);
+  return overlaps.every((span) => [
+    ...(plan.stableToneMap[span.id] ?? []),
+    ...(plan.colorToneMap[span.id] ?? []),
+  ].some((p) => mod12(p as number) === pitchClass));
+}
+
+/** 发展模块用:全部长音的暴露是否被接住。 */
 export function motifLongExposureSupported(notes: readonly UserMotifBrickNote[], plan: HarmonicPlan): boolean {
-  return notes.every((note) => {
-    if (note.durationBeat < 1 - 1e-6) return true;
-    const overlaps = harmonicSpansOverlapping(plan, note.onsetBeat, note.onsetBeat + note.durationBeat);
-    if (overlaps.length === 0) return false;
-    const pitchClass = mod12(note.pitch);
-    return overlaps.every((span) => [
-      ...(plan.stableToneMap[span.id] ?? []),
-      ...(plan.colorToneMap[span.id] ?? []),
-    ].some((p) => mod12(p as number) === pitchClass));
-  });
+  return notes.every((note) => noteLongExposureSupported(note, plan));
+}
+
+/** 发展模块用:全部结构音是否被 stable/color 接住(镜像 structural-tone-outside-intersection 审计)。 */
+export function motifStructuralNotesSupported(notes: readonly UserMotifBrickNote[], plan: HarmonicPlan): boolean {
+  return notes.every((note) => !isStructuralMotifNote(note) || noteSupportedByHarmony(note, plan));
+}
+
+/** 接不住的长音把时值压到审计线下(0.9 拍),音高/落拍不动(用户裁决:时值不神圣)。
+ *  这是 authored 音"绝不静默丢弃 + 绝不改音高"前提下通过 avoid-long-exposure 的唯一自由度。 */
+export function capUnsupportedLongExposure(notes: readonly UserMotifBrickNote[], plan: HarmonicPlan): UserMotifBrickNote[] {
+  return notes.map((note) => noteLongExposureSupported(note, plan)
+    ? note
+    : { ...note, durationBeat: Math.min(note.durationBeat, 0.9) });
 }
 
 /** 发展模块用:某拍上被 chord-scale 准入的 pitch-class 集(经过音插入的合法池)。 */
@@ -727,6 +748,8 @@ export function materializeAuthoredUserMotifBrick(
     tempoBpm?: number;
     /** 四期:时值向后延展连贯(sustain/踏板感);同音断奏不连,只延不缩。 */
     sustainFill?: boolean;
+    /** sustain 的和声感知:延展越过 1 拍暴露线时按 stable/color 判定并压回。 */
+    harmonicPlan?: HarmonicPlan;
   } = {},
 ): NoteIR[] {
   if (!plan || plan.notes.length === 0) return [];
@@ -769,7 +792,7 @@ export function materializeAuthoredUserMotifBrick(
     };
   });
   const sustained = options.sustainFill
-    ? sustainFillMotifNotes(clamped, plan.endBeat, options.tempoBpm, timebase.ppq)
+    ? sustainFillMotifNotes(clamped, plan.endBeat, options.tempoBpm, timebase.ppq, options.harmonicPlan)
     : clamped;
   return sustained
     .map((note) => toExactNoteIR(note, timebase))

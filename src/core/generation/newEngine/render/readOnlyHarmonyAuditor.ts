@@ -65,8 +65,22 @@ function isDeclaredBassPedalExposure(
     && notePc === (span.bassPedalPc as number);
 }
 
-export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timebase, keyCtx?: AuditKeyContext): AuditReport {
+export function auditHarmony(
+  ir: MusicalIR,
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  keyCtx?: AuditKeyContext,
+  /** 用户 motif 的 authored lead 窗口:窗内 lead 音的 R1/R1b 降级为 warning(quote 保护 —
+   *  用户音高是既定事实,和声已按 motif 尽力选择;镜像沙盒 quoteStructuralUnsupported 哲学)。 */
+  authoredLeadWindows?: readonly { startBeat: number; endBeat: number }[],
+): AuditReport {
   const findings: AuditFinding[] = [];
+  const authoredTickWindows = (authoredLeadWindows ?? []).map((w) => ({
+    start: timebase.beatToTick(beats(w.startBeat)) as number,
+    end: timebase.beatToTick(beats(w.endBeat)) as number,
+  }));
+  const isAuthoredLeadNote = (trackRole: string, noteStart: number, noteEnd: number): boolean =>
+    trackRole === 'lead' && authoredTickWindows.some((w) => noteStart < w.end - 1 && noteEnd > w.start + 1);
   const oneBeatTicks = timebase.beatToTick(beats(1));
   const twoBeatTicks = oneBeatTicks * 2; // 离调/倾向"持续暴露"门槛:1 拍走音/经过音不算,≥2 拍才是真暴露
   const structuralTicks = Math.round(oneBeatTicks * 0.75);
@@ -97,14 +111,15 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
           && !isDeclaredBassPedalExposure(track.role, notePc, span);
       });
       if (avoidExposure) {
+        const authored = isAuthoredLeadNote(track.role, noteStart, noteEnd);
         findings.push({
-          severity: 'error',
+          severity: authored ? 'warning' : 'error',
           location: { trackRole: track.role, startTick: avoidExposure.startTick },
           ruleId: 'avoid-long-exposure',
-          reason: `pc ${notePc} 是 ${avoidExposure.span.id} 的 avoid note,在该和弦内长时值暴露(>=1 拍)`,
+          reason: `pc ${notePc} 是 ${avoidExposure.span.id} 的 avoid note,在该和弦内长时值暴露(>=1 拍)${authored ? '(authored user quote,不回卷)' : ''}`,
           suggestedReturnPoint: 'rewind-melody',
         });
-        continue; // 已是 error,不再叠加同音 warning
+        continue; // 已是最高级 finding,不再叠加同音 warning
       }
 
       // R1b 最终结构落点必须属于 chord contract ∩ local scale。结构 = 和弦入口/强拍/在某和弦内
@@ -123,11 +138,12 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
           return durationTicks >= structuralTicks || (isOnsetExposure && (strong || chordEntrance));
         });
         if (structuralExposure) {
+          const authored = isAuthoredLeadNote(track.role, noteStart, noteEnd);
           findings.push({
-            severity: 'error',
+            severity: authored ? 'warning' : 'error',
             location: { trackRole: track.role, startTick: structuralExposure.startTick },
             ruleId: 'structural-tone-outside-intersection',
-            reason: `pc ${notePc} 在 ${structuralExposure.span.id} 是结构落点,但不属于 chord contract ∩ local scale`,
+            reason: `pc ${notePc} 在 ${structuralExposure.span.id} 是结构落点,但不属于 chord contract ∩ local scale${authored ? '(authored user quote,不回卷)' : ''}`,
             suggestedReturnPoint: 'rewind-melody',
           });
           continue;

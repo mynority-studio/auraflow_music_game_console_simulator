@@ -48,7 +48,8 @@ export function motifNotesToTokens(notes: readonly RelNote[]): AbstractMelodyTok
     }
     const ioi = i < notes.length - 1 ? notes[i + 1].onset - n.onset : n.dur;
     const audible = Math.max(0.25, Math.min(n.dur, ioi)); // token 时间轴纯顺序:发声时值不吞下一音的 onset
-    out.push({ kind: i === 0 ? 'C' : 'S', duration: audible });
+    // ≥1 拍的长音用 C(和弦音锚,构造上免疫 avoid-long-exposure);短音 S 保留音阶级进感
+    out.push({ kind: i === 0 || audible >= 1 - 1e-6 ? 'C' : 'S', duration: audible });
     cursor += audible;
   });
   out.push({ kind: 'SlopeExit', duration: 0 });
@@ -70,6 +71,16 @@ export function userMotifGrammarRules(plan: AuthoredUserMotifBrickPlan): Grammar
       { id: 'head', notes: rel.slice(0, half), weight: USER_MOTIF_RULE_WEIGHT_FULL },
       { id: 'tail', notes: rezero(rel.slice(rel.length - half)), weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT },
     ] : []),
+    // head3/diminished 增加不同 RHS 签名数量:family-only 采样按签名 cap(≈2.5%/个),
+    // 签名越多 motif 词汇的总占比越高(K×cap),再经节奏重掷放大
+    ...(rel.length >= 4 ? [
+      { id: 'head3', notes: rel.slice(0, 3), weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT },
+    ] : []),
+    {
+      id: 'diminished',
+      notes: rel.map((x) => ({ pitch: x.pitch, onset: x.onset * 0.5, dur: Math.max(0.25, x.dur * 0.5) })),
+      weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT,
+    },
     {
       id: 'augmented',
       notes: rel.map((x) => ({ pitch: x.pitch, onset: x.onset * 2, dur: x.dur * 2 })),

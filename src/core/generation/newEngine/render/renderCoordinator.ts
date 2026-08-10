@@ -40,6 +40,7 @@ import {
 import { planAcgLeadPresence } from './acgLeadPresencePlan';
 import {
   assembleAuthoredUserMotifLead,
+  authoredLeadSpans,
   authoredMotifSectionInfos,
   planAuthoredUserMotifBrick,
   type AuthoredUserMotifBrickPlan,
@@ -832,6 +833,7 @@ export function renderSongFull(
     grooveContract: arrangement.songGrooveContract,
     tempoBpm: arrangement.tempoBpm,
     sustainFill: true, // 四期(用户裁决 §0.5):motif 时值允许合理 sustain/连贯
+    harmonicPlan: plan, // sustain 和声感知:延展不得制造 avoid-note 长时值暴露
   });
   const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
     track.role === 'lead'
@@ -1646,7 +1648,7 @@ export function renderSongFull(
   }
   // 最终和声审计必须覆盖所有 pitch/onset/duration 变换，以及最后恢复的 user motif quote。
   // Auditor 自己使用结构网格容差处理微时序；这里不再审一个随后会被改写的中间 IR。
-  const harmonyAudit = auditHarmony(ir, plan, timebase, auditKeyCtx);
+  const harmonyAudit = auditHarmony(ir, plan, timebase, auditKeyCtx, authoredLeadSpans(authoredUserMotifPlan));
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
   // dense 区间用【pre-shaper tracks】算(post-shaper comp 已删→comp-path 检不到);comp-continuity 审计据此排除。
   // ★ repeatGroup 重放后:dense-melody 排除区也要按【重放后】的 lead 位置算(重复段 lead=首段 → dense 区随之搬到首段位置;

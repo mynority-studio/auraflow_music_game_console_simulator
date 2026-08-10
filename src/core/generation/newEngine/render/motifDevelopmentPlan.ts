@@ -14,9 +14,11 @@ import type { Timebase } from '../foundation';
 import type { RoadMap } from './mgRoadMapParser';
 import {
   admittedPcsAtBeat,
+  capUnsupportedLongExposure,
   materializeAuthoredUserMotifBrick,
   motifHarmonicSupportRatio,
   motifLongExposureSupported,
+  motifStructuralNotesSupported,
   USER_MOTIF_RELAXED_DEVIATION_RATIO,
   type AuthoredMotifDevelopmentOccurrence,
   type AuthoredMotifSectionInfo,
@@ -204,6 +206,8 @@ export function planMotifDevelopment(args: {
       if (support < MOTIF_OCCURRENCE_MIN_SUPPORT) continue;
       // 长音硬门:任何 ≥1 拍的音必须被覆盖和弦接住,否则触发 avoid-long-exposure 审计
       if (!motifLongExposureSupported(placed, harmonicPlan)) continue;
+      // 结构音硬门:结构落点必须被 stable/color 接住,否则触发 structural-tone-outside-intersection
+      if (!motifStructuralNotesSupported(placed, harmonicPlan)) continue;
       const late = startBeat / Math.max(1, totalBeats);
       const isRecapLike = transform === 'exact-recap' || transform === 'terminal-hold';
       // 再现类靠后(回归感),片段类居中(发展感)
@@ -324,16 +328,17 @@ export function withMotifDevelopment(
   if (!plan) return undefined;
   const tier = args.confidenceTier ?? 'fidelity';
   const occurrences = planMotifDevelopment({ ...args, plan }).map((occ) => {
-    const refined = refineMotifNotes(occ.notes, args.harmonicPlan, occ.endBeat, tier);
+    const refined = capUnsupportedLongExposure(
+      refineMotifNotes(occ.notes, args.harmonicPlan, occ.endBeat, tier), args.harmonicPlan);
     return { ...occ, notes: refined, fidelityReferenceNotes: refined };
   });
-  const developed = tier === 'fidelity'
-    ? { ...plan, occurrences }
-    // 修饰/治愈档:陈述本身也做降级+经过音;fidelity 参考同步替换,保真钳制继续生效
-    : (() => {
-      const statement = refineMotifNotes(plan.notes, args.harmonicPlan, plan.endBeat, tier);
-      return { ...plan, notes: statement, fidelityReferenceNotes: statement, occurrences };
-    })();
+  // 陈述:接不住的长音压到暴露线下(所有档位;音高/落拍不动)。落位打分是加权比,
+  // 单颗未接住长音能混过 → 必须在此兜底,否则整曲被 avoid-long-exposure 审计打回。
+  const statementBase = tier === 'fidelity'
+    ? plan.notes
+    : refineMotifNotes(plan.notes, args.harmonicPlan, plan.endBeat, tier);
+  const statement = capUnsupportedLongExposure(statementBase, args.harmonicPlan);
+  const developed = { ...plan, notes: statement, fidelityReferenceNotes: statement, occurrences };
   return { ...developed, recognizability: auditMotifRecognizability(developed) };
 }
 

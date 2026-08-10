@@ -408,7 +408,14 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         mood: 'build',
         targetDuration: 96,
       }, override);
-      if (song.status === 'failed' || !song.ir) { setStatus('Q+N 生成失败(audit)'); return; }
+      if (song.status === 'failed' || !song.ir) {
+        // 失败原因直出面板(定位用):取前两条 error/fatal finding
+        const findings = (song as unknown as { report?: { findings?: Array<{ severity: string; ruleId?: string; reason?: string }> } })
+          .report?.findings?.filter((f) => f.severity === 'error' || f.severity === 'fatal') ?? [];
+        const detail = findings.slice(0, 2).map((f) => `${f.ruleId ?? '?'}:${(f.reason ?? '').slice(0, 60)}`).join(' | ');
+        setStatus(`Q+N 生成失败(audit)${detail ? ` · ${detail}` : ''}`);
+        return;
+      }
       setGeneratedSong(song);
       const roles = song.ir.tracks.map((t) => t.role).join('+');
       setStatus(`生成完成 · Q+N ${roles} · BPM ${song.bpm} · motif brick ${quoteBars} bar`);

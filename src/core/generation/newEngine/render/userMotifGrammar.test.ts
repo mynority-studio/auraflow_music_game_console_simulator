@@ -52,14 +52,14 @@ describe('userMotifGrammar · motif 语法化(四期)', () => {
   it('规则:四个变体、不同 RHS、lhs=Phrase、sourceName=user-motif', () => {
     const rules = userMotifGrammarRules(plan());
     expect(rules.map((r) => r.metadata?.sourceRuleId)).toEqual([
-      'usermotif_full', 'usermotif_head', 'usermotif_tail', 'usermotif_augmented',
+      'usermotif_full', 'usermotif_head', 'usermotif_tail', 'usermotif_head3', 'usermotif_diminished', 'usermotif_augmented',
     ]);
     for (const r of rules) {
       expect(r.lhs).toBe('Phrase');
       expect(r.metadata?.sourceName).toBe(USER_MOTIF_RULE_SOURCE);
       expect(r.conditions).toBeUndefined(); // legacy 风格下全 brick 可用
     }
-    expect(rules[3].metadata?.authoredDurationBeats).toBeCloseTo(8, 6); // augmented = ×2
+    expect(rules[5].metadata?.authoredDurationBeats).toBeCloseTo(8, 6); // augmented = ×2
   });
 
   it('注入:不改原 Grammar、保留 selectionPolicy、WeakMap 记忆化', () => {
@@ -67,7 +67,7 @@ describe('userMotifGrammar · motif 语法化(四期)', () => {
     const before = POP_ENRICHED_GRAMMAR.rulesByLhs.get('Phrase')!.length;
     const injected = inject(POP_ENRICHED_GRAMMAR);
     expect(POP_ENRICHED_GRAMMAR.rulesByLhs.get('Phrase')!.length).toBe(before); // 原对象未变
-    expect(injected.rulesByLhs.get('Phrase')!.length).toBe(before + 4);
+    expect(injected.rulesByLhs.get('Phrase')!.length).toBe(before + 6);
     expect(injected.selectionPolicy).toBe(POP_ENRICHED_GRAMMAR.selectionPolicy);
     expect(inject(POP_ENRICHED_GRAMMAR)).toBe(injected); // memo
     const noPlan = createUserMotifGrammarInjector(undefined);
