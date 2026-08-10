@@ -40,12 +40,12 @@ import {
 import { planAcgLeadPresence } from './acgLeadPresencePlan';
 import {
   assembleAuthoredUserMotifLead,
-  materializeAuthoredUserMotifBrick,
   authoredMotifSectionInfos,
   planAuthoredUserMotifBrick,
   type AuthoredUserMotifBrickPlan,
   type UserMotifBrick,
 } from './userMotifBrick';
+import { materializeAuthoredUserMotifDevelopment, withMotifDevelopment } from './motifDevelopmentPlan';
 import { buildOccupationMap, type OccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
@@ -803,17 +803,30 @@ export function renderSongFull(
   const motifRoadMap = userMotifBrick && !overrideLeadTrack
     ? buildMgLeadRoadMap(plan, band, timebase, acgPianoScorePlan, suppliedLofiLeadScorePlan)
     : undefined;
-  const authoredUserMotifPlan: AuthoredUserMotifBrickPlan | undefined = userMotifBrick && motifRoadMap
-    ? planAuthoredUserMotifBrick({
-      brick: userMotifBrick,
-      roadMap: motifRoadMap,
-      harmonicPlan: plan,
-      totalBeats: totalBeatsForLead,
-      // 段落角色进落位打分(redesign 一期):hook 型 motif 亲和副歌/hook 段,theme 型亲和段落头
-      sections: authoredMotifSectionInfos(arrangement.sections, beatsPerBarOf(arrangement.meter)),
-    })
+  const motifSectionInfos = userMotifBrick && motifRoadMap
+    ? authoredMotifSectionInfos(arrangement.sections, beatsPerBarOf(arrangement.meter))
     : undefined;
-  const authoredUserMotifNotes = materializeAuthoredUserMotifBrick(authoredUserMotifPlan, timebase, {
+  const authoredUserMotifPlan: AuthoredUserMotifBrickPlan | undefined = userMotifBrick && motifRoadMap
+    ? withMotifDevelopment(
+      planAuthoredUserMotifBrick({
+        brick: userMotifBrick,
+        roadMap: motifRoadMap,
+        harmonicPlan: plan,
+        totalBeats: totalBeatsForLead,
+        // 段落角色进落位打分(redesign 一期):hook 型 motif 亲和副歌/hook 段,theme 型亲和段落头
+        sections: motifSectionInfos,
+      }),
+      // 发展弧线(redesign 二期):陈述之外规划 develop/return occurrence;置信档决定修饰力度
+      {
+        roadMap: motifRoadMap,
+        harmonicPlan: plan,
+        totalBeats: totalBeatsForLead,
+        sections: motifSectionInfos,
+        confidenceTier: userMotifBrick.confidenceTier,
+      },
+    )
+    : undefined;
+  const authoredUserMotifNotes = materializeAuthoredUserMotifDevelopment(authoredUserMotifPlan, timebase, {
     swingRatio: arrangement.songGrooveContract.melodySwingRatio,
     beatsPerBar: beatsPerBarOf(arrangement.meter),
     grooveContract: arrangement.songGrooveContract,

@@ -36,6 +36,8 @@ export interface UserMotifBrickSongOverrideOptions {
   mode?: ScaleMode;
   targetBars?: number;
   inputTonality?: SandboxTonality;
+  /** 输入置信档(redesign 二期):面板分析所得;缺省 = fidelity(原样,不修饰)。 */
+  confidenceTier?: 'fidelity' | 'refine' | 'heal';
 }
 
 interface MotifOwnedPlan {
@@ -166,6 +168,7 @@ export function buildUserMotifBrickSongOverride(motif: UserMotif, optionsOrQuote
       sourceMotifId: motif.id,
       primaryFunction: motifOwned.primaryFunction,
       rolePotential: motifOwned.rolePotential,
+      confidenceTier: opts.confidenceTier,
     },
   };
 }

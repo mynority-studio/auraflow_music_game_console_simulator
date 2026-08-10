@@ -34,6 +34,20 @@ export interface UserMotifBrick {
     | 'answer' | 'passing' | 'neighbor' | 'arpeggio' | 'sequence' | 'ambiguous';
   /** 编曲角色潜质(redesign 一期):hook>theme → 落位偏向副歌/hook 段;反之偏段落头。 */
   rolePotential?: { hook: number; theme: number };
+  /** 输入置信档(redesign 二期):fidelity=原样;refine/heal=允许经过音插入+弱音降级。 */
+  confidenceTier?: 'fidelity' | 'refine' | 'heal';
+}
+
+/** 发展弧线中的一次 motif 再现(redesign 二期)。音高与顺序永不改;变奏只删音/改时值/整体平移。 */
+export interface AuthoredMotifDevelopmentOccurrence {
+  kind: 'develop' | 'return';
+  transform: string;
+  startBeat: number;
+  endBeat: number;
+  notes: readonly UserMotifBrickNote[];
+  fidelityReferenceNotes: readonly UserMotifBrickNote[];
+  harmonicSupportRatio: number;
+  note: string;
 }
 
 /** Arrangement section context for placement: role/functionTag drive hook/theme affinity. */
@@ -83,6 +97,8 @@ export interface AuthoredUserMotifBrickPlan {
   notes: readonly UserMotifBrickNote[];
   placementQuality?: AuthoredMotifPlacementQuality;
   placementNote?: string;
+  /** 发展弧线(redesign 二期):陈述之外的再现/片段化/回归段。缺省 = 只有一次陈述(一期行为)。 */
+  occurrences?: readonly AuthoredMotifDevelopmentOccurrence[];
 }
 
 export interface AuthoredLeadSpan {
@@ -618,7 +634,42 @@ function overlapsSpan(n: NoteIR, loBeat: number, hiBeat: number, timebase: Timeb
 }
 
 export function authoredLeadSpans(plan: AuthoredUserMotifBrickPlan | undefined): AuthoredLeadSpan[] {
-  return plan ? [{ startBeat: plan.startBeat, endBeat: plan.endBeat }] : [];
+  if (!plan) return [];
+  return [
+    { startBeat: plan.startBeat, endBeat: plan.endBeat },
+    ...(plan.occurrences ?? []).map((o) => ({ startBeat: o.startBeat, endBeat: o.endBeat })),
+  ];
+}
+
+/** 发展模块用:结构音加权和声支持度(与落位打分同一把尺)。 */
+export function motifHarmonicSupportRatio(notes: readonly UserMotifBrickNote[], plan: HarmonicPlan): number {
+  return harmonicSupportRatio(notes, plan);
+}
+
+/** 发展模块用:长时值(≥1 拍)音的暴露是否被覆盖和弦的 stable/color 音接住。
+ *  镜像 avoid-long-exposure 审计:chord-scale 内也可能是回避音,长音必须按和弦音标准判。 */
+export function motifLongExposureSupported(notes: readonly UserMotifBrickNote[], plan: HarmonicPlan): boolean {
+  return notes.every((note) => {
+    if (note.durationBeat < 1 - 1e-6) return true;
+    const overlaps = harmonicSpansOverlapping(plan, note.onsetBeat, note.onsetBeat + note.durationBeat);
+    if (overlaps.length === 0) return false;
+    const pitchClass = mod12(note.pitch);
+    return overlaps.every((span) => [
+      ...(plan.stableToneMap[span.id] ?? []),
+      ...(plan.colorToneMap[span.id] ?? []),
+    ].some((p) => mod12(p as number) === pitchClass));
+  });
+}
+
+/** 发展模块用:某拍上被 chord-scale 准入的 pitch-class 集(经过音插入的合法池)。 */
+export function admittedPcsAtBeat(plan: HarmonicPlan, beat: number): number[] {
+  const span = harmonicSpanAtBeat(plan, beat);
+  if (!span) return [];
+  const admitted = plan.chordScaleMap[span.id] ?? [
+    ...(plan.stableToneMap[span.id] ?? []),
+    ...(plan.colorToneMap[span.id] ?? []),
+  ];
+  return admitted.map((p) => mod12(p as number));
 }
 
 /** Materialize a planned brick without instrument-range or harmony pitch rewriting. */
@@ -688,7 +739,8 @@ export function assembleAuthoredUserMotifLead(
   timebase: Timebase,
 ): TrackIR {
   if (!plan || authoredNotes.length === 0) return lead;
-  const generated = lead.notes.filter((note) => !overlapsSpan(note, plan.startBeat, plan.endBeat, timebase));
+  const spans = authoredLeadSpans(plan);
+  const generated = lead.notes.filter((note) => !spans.some((s) => overlapsSpan(note, s.startBeat, s.endBeat, timebase)));
   return {
     ...lead,
     notes: sanitizeLeadNoteIR([...generated, ...authoredNotes]

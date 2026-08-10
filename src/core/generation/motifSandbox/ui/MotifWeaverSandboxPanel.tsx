@@ -395,7 +395,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       if (motifSeed == null) setMotifSeed(s);
       setAnalysis((prev) => prev ?? { motif, rawCount: captured.length, normalizedCount: motif.notes.length });
       const mode = tonalityParentMode(tonality);
-      const override = buildUserMotifBrickSongOverride(motif, { style, seed: s, keyPc, mode, inputTonality: tonality });
+      const override = buildUserMotifBrickSongOverride(motif, { style, seed: s, keyPc, mode, inputTonality: tonality, confidenceTier: confidence?.tier });
       const quoteBars = ((override.userBrick?.quoteBeats ?? motif.lengthBeats) / 4).toFixed(1).replace(/\.0$/, '');
       setStatus(`Q+N 生成中 · motif→brick quote ${quoteBars} bar…`);
       const song = await generateMotifMusic({
@@ -410,7 +410,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       setStatus(`生成完成 · Q+N ${roles} · BPM ${song.bpm} · motif brick ${quoteBars} bar`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : err instanceof Error ? `生成失败:${err.message}` : '生成失败'); }
     finally { setGenerating(false); }
-  }, [captureMode, hiddenMotif, analysis, captured.length, style, keyPc, tonality, motifSeed, stopPlayback]);
+  }, [captureMode, hiddenMotif, analysis, captured.length, style, keyPc, tonality, motifSeed, stopPlayback, confidence]);
 
   // ⬇ MIDI:下载 generate 阶段产出的这首（与播放同源 IR=同一首,不重生成）。
   const downloadMidi = useCallback(() => {

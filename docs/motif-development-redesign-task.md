@@ -72,13 +72,26 @@
 - **修静默消失**：±20% 无候选时降级安置（`placementQuality: 'exact'|'relaxed'|'forced'`）
   并写审计，绝不整段丢弃。
 
-### 二期 · 会发展了
-- 锚点 token 化（render 新模块 + realizer 支持定高锚点）。
-- LOFI 变奏算子抽成风格无关 `motifDevelopmentPlan`（statement/variation/return +
-  音高安全 transform）。
-- owned span 从 1 段放开为多段弧线：陈述(保真 quote) → 再现 → 片段化 → 回归；
-  `reserveScheduledTokensForAuthoredSpans` 本就支持 span 数组；启用
-  `occurrenceKind` / `origin:'motif'` 语义位。
+### 二期 · 会发展了（已实现，见实现说明）
+- 风格无关变奏词汇 `render/motifDevelopmentPlan.ts`：exact-recap / fragment-head /
+  fragment-tail / delay-tail / terminal-hold / omit-middle（全部保音高保序；
+  LOFI 变奏词汇思想的通用化）。
+- owned span 从 1 段放开为多段弧线：陈述(quote) → develop → return；
+  `authoredLeadSpans` 返回全部 span，`reserveScheduledTokensForAuthoredSpans`
+  原生吃数组，装配端按全部 span 过滤生成音。
+- 置信档管道：面板分析 → `override.confidenceTier` → render；保真档零修饰，
+  修饰/治愈档做经过音插入 + 弱音降级（陈述与 occurrence 同规则）。
+
+**二期实现说明（2026-08-10）**：
+- 结缔组织在【锚点音符层】实现（`refineMotifNotes`），不在 grammar token 层：
+  插入音音高严格限制在相邻锚点音高开区间内 + chord-scale 准入 → 构造上保序保
+  轮廓，且逐段复用一期 materialize 的 groove 对齐/保真钳制。token 层定高锚点
+  深改（realizer 原生长结缔组织）列为三期后备优化——行为等价、风险更低。
+- occurrence 选址两道门：加权和声支持度 ≥ 0.6 + **长音硬门**
+  （`motifLongExposureSupported`，镜像 avoid-long-exposure 审计：≥1 拍的音必须
+  被覆盖和弦 stable/color 接住）。找不到达标位置宁缺毋滥。
+- occurrence 数量 = min(3, floor(totalBeats/32))，彼此及与陈述间隔 ≥ 4 拍，
+  变奏手法不重复；再现类（recap/hold）偏后段（回归感），片段类偏中段（发展感）。
 
 ### 三期 · 会自省了
 - grammar 亲和度：motif 节奏 profile 对各风格语料反向匹配（复用

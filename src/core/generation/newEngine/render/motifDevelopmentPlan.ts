@@ -1,0 +1,276 @@
+// ============================================================
+// newEngine · render · motifDevelopmentPlan(redesign 二期)
+// ------------------------------------------------------------
+// 把"一次 owned span"扩成发展弧线:陈述(quote)→ 再现/片段化(develop)→ 回归(return)。
+// 硬不变量(docs/motif-development-redesign-task.md §1):用户音高与先后顺序永不改;
+// 变奏只允许 删音(片段化/省中段)/ 改时值(延尾/持音)/ 整体平移;
+// 经过音插入的音高严格限制在相邻锚点音高闭区间内 → 构造上保序保轮廓。
+// 全部纯函数、确定性(打分排序选址,无 RNG)。
+// ============================================================
+
+import type { HarmonicPlan } from '../harmony/HarmonicPlan';
+import type { NoteIR } from '../ir/MusicalIR';
+import type { Timebase } from '../foundation';
+import type { RoadMap } from './mgRoadMapParser';
+import {
+  admittedPcsAtBeat,
+  materializeAuthoredUserMotifBrick,
+  motifHarmonicSupportRatio,
+  motifLongExposureSupported,
+  USER_MOTIF_RELAXED_DEVIATION_RATIO,
+  type AuthoredMotifDevelopmentOccurrence,
+  type AuthoredMotifSectionInfo,
+  type AuthoredUserMotifBrickPlan,
+  type UserMotifBrickNote,
+} from './userMotifBrick';
+
+export type MotifConfidenceTier = 'fidelity' | 'refine' | 'heal';
+export type MotifDevelopmentTransform =
+  | 'exact-recap' | 'fragment-head' | 'fragment-tail'
+  | 'delay-tail' | 'terminal-hold' | 'omit-middle';
+
+/** occurrence 必须达到的和声支持度(低于此宁可不出现,不硬凹)。 */
+export const MOTIF_OCCURRENCE_MIN_SUPPORT = 0.6;
+const MIN_GAP_BEATS = 4;
+const MIN_DUR = 0.25;
+
+const TRANSFORM_LABEL: Record<MotifDevelopmentTransform, string> = {
+  'exact-recap': '完整再现', 'fragment-head': '头部片段', 'fragment-tail': '尾部片段',
+  'delay-tail': '延尾', 'terminal-hold': '持音收', 'omit-middle': '省中段',
+};
+
+/** 档位允许的变奏词汇:保真档只做最保守的再现/头部片段。 */
+const TIER_TRANSFORMS: Record<MotifConfidenceTier, readonly MotifDevelopmentTransform[]> = {
+  fidelity: ['exact-recap', 'fragment-head', 'terminal-hold'],
+  refine: ['exact-recap', 'fragment-head', 'fragment-tail', 'delay-tail', 'terminal-hold', 'omit-middle'],
+  heal: ['exact-recap', 'fragment-head', 'fragment-tail', 'delay-tail', 'terminal-hold', 'omit-middle'],
+};
+
+const mod12 = (v: number): number => ((v % 12) + 12) % 12;
+const clone = (notes: readonly UserMotifBrickNote[]): UserMotifBrickNote[] => notes.map((n) => ({ ...n }));
+const spanOf = (notes: readonly UserMotifBrickNote[]): number =>
+  Math.max(MIN_DUR, ...notes.map((n) => n.onsetBeat + n.durationBeat));
+
+/** 对 0 起点的相对音符序列施加变奏。返回 null = 该变奏对此素材不适用。
+ *  不变量:输出音高序列 = 输入音高序列的连续子序列或全序列(保音高保序);onset 单调。 */
+export function applyMotifTransform(
+  transform: MotifDevelopmentTransform,
+  relative: readonly UserMotifBrickNote[],
+  sourceSpanBeats: number,
+): UserMotifBrickNote[] | null {
+  const n = relative.length;
+  if (n < 2) return null;
+  switch (transform) {
+    case 'exact-recap':
+      return clone(relative);
+    case 'fragment-head': {
+      if (n < 3) return null;
+      const keep = Math.max(2, Math.ceil(n / 2));
+      return clone(relative.slice(0, keep));
+    }
+    case 'fragment-tail': {
+      if (n < 3) return null;
+      const keep = Math.max(2, Math.ceil(n / 2));
+      const tail = clone(relative.slice(n - keep));
+      const base = tail[0].onsetBeat;
+      return tail.map((x) => ({ ...x, onsetBeat: x.onsetBeat - base }));
+    }
+    case 'delay-tail': {
+      const out = clone(relative);
+      const last = out[n - 1];
+      if (last.onsetBeat + 0.5 + MIN_DUR > sourceSpanBeats) return null;
+      last.onsetBeat += 0.5;
+      last.durationBeat = Math.max(MIN_DUR, last.durationBeat - 0.5);
+      return out;
+    }
+    case 'terminal-hold': {
+      const out = clone(relative);
+      const last = out[n - 1];
+      last.durationBeat = Math.max(last.durationBeat, sourceSpanBeats - last.onsetBeat);
+      return out;
+    }
+    case 'omit-middle': {
+      if (n < 4) return null;
+      const interior = relative.slice(1, n - 1)
+        .map((x, i) => ({ index: i + 1, score: x.structuralToneScore ?? 0.5 }))
+        .sort((a, b) => a.score - b.score);
+      const drop = new Set(interior.slice(0, Math.max(1, Math.floor((n - 2) / 3))).map((x) => x.index));
+      return clone(relative.filter((_, i) => !drop.has(i)));
+    }
+    default:
+      return null;
+  }
+}
+
+/** 结缔组织 + 弱音降级(修饰/治愈档)。音高不变量:
+ *  - 降级只缩时值/降力度,音高不动;
+ *  - 插入音的音高严格落在相邻两锚点音高的【开区间】内 → 不可能破坏轮廓/顺序。 */
+export function refineMotifNotes(
+  source: readonly UserMotifBrickNote[],
+  harmonicPlan: HarmonicPlan,
+  windowEndBeat: number,
+  tier: MotifConfidenceTier,
+): UserMotifBrickNote[] {
+  if (tier === 'fidelity' || source.length < 2) return clone(source);
+  const notes = [...source].sort((a, b) => a.onsetBeat - b.onsetBeat).map((x) => ({ ...x }));
+  // —— 弱音降级:内部经过重音(低结构分)且不被 chord-scale 准入 → 缩短 + 压低,当装饰听 ——
+  for (let i = 1; i < notes.length - 1; i++) {
+    const x = notes[i];
+    if ((x.structuralToneScore ?? 0.5) >= 0.3) continue;
+    if (admittedPcsAtBeat(harmonicPlan, x.onsetBeat).includes(mod12(x.pitch))) continue;
+    x.durationBeat = Math.min(x.durationBeat, 1 / 3);
+    x.velocity = Math.max(1, Math.round(x.velocity * 0.8));
+  }
+  // —— 经过音插入:大跳被时间撑开 / 长间隙 → 弱分位补一颗区间内的 scale 音 ——
+  const inserts: UserMotifBrickNote[] = [];
+  const maxInserts = Math.max(1, Math.floor(notes.length / 3));
+  for (let i = 0; i < notes.length - 1 && inserts.length < maxInserts; i++) {
+    const a = notes[i], b = notes[i + 1];
+    const ioi = b.onsetBeat - a.onsetBeat;
+    const restGap = b.onsetBeat - (a.onsetBeat + a.durationBeat);
+    const leap = Math.abs(b.pitch - a.pitch);
+    if (!((leap > 4 && ioi >= 1.0) || restGap >= 1.0)) continue;
+    const insertBeat = b.onsetBeat - 0.5;
+    if (insertBeat <= a.onsetBeat + 0.1 || insertBeat >= windowEndBeat - MIN_DUR) continue;
+    const lo = Math.min(a.pitch, b.pitch), hi = Math.max(a.pitch, b.pitch);
+    if (hi - lo < 2) continue; // 无开区间可用
+    const admitted = admittedPcsAtBeat(harmonicPlan, insertBeat);
+    if (admitted.length === 0) continue;
+    const mid = (lo + hi) / 2;
+    let best: number | null = null;
+    for (let p = lo + 1; p <= hi - 1; p++) {
+      if (!admitted.includes(mod12(p))) continue;
+      if (best === null || Math.abs(p - mid) < Math.abs(best - mid) - 1e-9) best = p;
+    }
+    if (best === null) continue;
+    inserts.push({
+      pitch: best,
+      onsetBeat: insertBeat,
+      durationBeat: MIN_DUR,
+      velocity: Math.max(1, Math.round(Math.min(a.velocity, b.velocity) * 0.75)),
+      accent: 0.1,
+      structuralToneScore: 0.1,
+    });
+  }
+  return [...notes, ...inserts].sort((x, y) => x.onsetBeat - y.onsetBeat || x.pitch - y.pitch);
+}
+
+function sectionHeadBonus(sections: readonly AuthoredMotifSectionInfo[] | undefined, startBeat: number): number {
+  const section = sections?.find((s) => startBeat >= s.startBeat - 1e-6 && startBeat < s.endBeat - 1e-6);
+  if (!section) return 0.5;
+  return startBeat - section.startBeat < 4 - 1e-6 ? 1 : 0.5;
+}
+
+/** 规划陈述之外的发展 occurrence(确定性,打分排序)。找不到高支持度位置就宁缺毋滥。 */
+export function planMotifDevelopment(args: {
+  plan: AuthoredUserMotifBrickPlan;
+  roadMap: RoadMap;
+  harmonicPlan: HarmonicPlan;
+  totalBeats: number;
+  sections?: readonly AuthoredMotifSectionInfo[];
+  confidenceTier?: MotifConfidenceTier;
+}): AuthoredMotifDevelopmentOccurrence[] {
+  const { plan, roadMap, harmonicPlan, totalBeats, sections } = args;
+  const tier = args.confidenceTier ?? 'fidelity';
+  const maxExtra = Math.min(3, Math.floor(totalBeats / 32)); // 每 8 bar 才配得起一次再现,封顶 3
+  if (maxExtra <= 0 || plan.notes.length < 2) return [];
+  const relative = [...plan.notes]
+    .sort((a, b) => a.onsetBeat - b.onsetBeat)
+    .map((x) => ({ ...x, onsetBeat: x.onsetBeat - plan.startBeat }));
+  const sourceSpan = spanOf(relative);
+
+  interface Candidate { occ: AuthoredMotifDevelopmentOccurrence; score: number }
+  const candidates: Candidate[] = [];
+  const starts = roadMap.bricks
+    .filter((b) => b.durationBeats > 0 && b.startBeat >= plan.endBeat + MIN_GAP_BEATS - 1e-6)
+    .map((b) => b.startBeat);
+  for (const startBeat of [...new Set(starts)]) {
+    for (const transform of TIER_TRANSFORMS[tier]) {
+      const rel = applyMotifTransform(transform, relative, sourceSpan);
+      if (!rel) continue;
+      const span = spanOf(rel);
+      const endBeat = startBeat + span;
+      if (endBeat > totalBeats + 1e-6) continue;
+      const placed = rel.map((x) => ({ ...x, onsetBeat: x.onsetBeat + startBeat }));
+      const support = motifHarmonicSupportRatio(placed, harmonicPlan);
+      if (support < MOTIF_OCCURRENCE_MIN_SUPPORT) continue;
+      // 长音硬门:任何 ≥1 拍的音必须被覆盖和弦接住,否则触发 avoid-long-exposure 审计
+      if (!motifLongExposureSupported(placed, harmonicPlan)) continue;
+      const late = startBeat / Math.max(1, totalBeats);
+      const isRecapLike = transform === 'exact-recap' || transform === 'terminal-hold';
+      // 再现类靠后(回归感),片段类居中(发展感)
+      const positionFit = isRecapLike ? late * 10 : 10 - Math.abs(late - 0.5) * 20;
+      const kind: AuthoredMotifDevelopmentOccurrence['kind'] = isRecapLike && late > 0.6 ? 'return' : 'develop';
+      const score = support * 100 + sectionHeadBonus(sections, startBeat) * 12 + positionFit;
+      candidates.push({
+        score,
+        occ: {
+          kind, transform, startBeat, endBeat,
+          notes: placed,
+          fidelityReferenceNotes: placed,
+          harmonicSupportRatio: support,
+          note: `${kind === 'return' ? '回归' : '发展'} · ${TRANSFORM_LABEL[transform]} @bar${Math.floor(startBeat / 4) + 1} · 支持 ${(support * 100).toFixed(0)}%`,
+        },
+      });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || a.occ.startBeat - b.occ.startBeat);
+
+  const chosen: AuthoredMotifDevelopmentOccurrence[] = [];
+  const usedTransforms = new Set<string>();
+  for (const { occ } of candidates) {
+    if (chosen.length >= maxExtra) break;
+    if (usedTransforms.has(occ.transform)) continue; // 手法多样,不重复同一变奏
+    const collides = [{ startBeat: plan.startBeat, endBeat: plan.endBeat }, ...chosen]
+      .some((s) => occ.startBeat < s.endBeat + MIN_GAP_BEATS - 1e-6 && occ.endBeat > s.startBeat - MIN_GAP_BEATS + 1e-6);
+    if (collides) continue;
+    usedTransforms.add(occ.transform);
+    chosen.push(occ);
+  }
+  return chosen.sort((a, b) => a.startBeat - b.startBeat);
+}
+
+/** 一期 plan → 二期发展 plan:陈述按档位修饰,规划 develop/return occurrence 并同样修饰。 */
+export function withMotifDevelopment(
+  plan: AuthoredUserMotifBrickPlan | undefined,
+  args: {
+    roadMap: RoadMap;
+    harmonicPlan: HarmonicPlan;
+    totalBeats: number;
+    sections?: readonly AuthoredMotifSectionInfo[];
+    confidenceTier?: MotifConfidenceTier;
+  },
+): AuthoredUserMotifBrickPlan | undefined {
+  if (!plan) return undefined;
+  const tier = args.confidenceTier ?? 'fidelity';
+  const occurrences = planMotifDevelopment({ ...args, plan }).map((occ) => {
+    const refined = refineMotifNotes(occ.notes, args.harmonicPlan, occ.endBeat, tier);
+    return { ...occ, notes: refined, fidelityReferenceNotes: refined };
+  });
+  if (tier === 'fidelity') return { ...plan, occurrences };
+  // 修饰/治愈档:陈述本身也做降级+经过音;fidelity 参考同步替换,保真钳制继续生效
+  const statement = refineMotifNotes(plan.notes, args.harmonicPlan, plan.endBeat, tier);
+  return { ...plan, notes: statement, fidelityReferenceNotes: statement, occurrences };
+}
+
+/** 陈述 + 全部 occurrence 一起物化(逐段复用一期的 groove 对齐 + 保真钳制)。 */
+export function materializeAuthoredUserMotifDevelopment(
+  plan: AuthoredUserMotifBrickPlan | undefined,
+  timebase: Timebase,
+  options: Parameters<typeof materializeAuthoredUserMotifBrick>[2] = {},
+): NoteIR[] {
+  if (!plan) return [];
+  const statement = materializeAuthoredUserMotifBrick(plan, timebase, options);
+  const extras = (plan.occurrences ?? []).flatMap((occ) =>
+    materializeAuthoredUserMotifBrick({
+      ...plan,
+      startBeat: occ.startBeat,
+      endBeat: occ.endBeat,
+      notes: occ.notes,
+      fidelityReferenceNotes: occ.fidelityReferenceNotes,
+      timingDeviationRatioLimit: Math.max(plan.timingDeviationRatioLimit, USER_MOTIF_RELAXED_DEVIATION_RATIO),
+      occurrences: undefined,
+    }, timebase, options));
+  return [...statement, ...extras]
+    .sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
+}
