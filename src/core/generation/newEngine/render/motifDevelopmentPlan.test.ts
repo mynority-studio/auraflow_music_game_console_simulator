@@ -5,6 +5,7 @@ import type { RoadMap } from './mgRoadMapParser';
 import { buildMelodyRhythmShapeProfile } from './mgRhythmShapeMatcher';
 import {
   applyMotifTransform,
+  auditMotifRecognizability,
   materializeAuthoredUserMotifDevelopment,
   planMotifDevelopment,
   refineMotifNotes,
@@ -152,6 +153,40 @@ describe('motifDevelopmentPlan · 发展弧线规划', () => {
       const b = (n.startTick as number) / timebase.ppq;
       expect(spans.some((s) => b >= s.startBeat - 1e-6 && b < s.endBeat + 1e-6)).toBe(true);
     }
+  });
+});
+
+describe('motifDevelopmentPlan · 辨识度审计(三期,report-only)', () => {
+  const harmonic16 = assemble(Array.from({ length: 16 }, () => cmajBar('verse')), pc(0), 'major');
+
+  it('withMotifDevelopment 自动挂 recognizability:保序不变量全过,exact-recap 相似度≈1', () => {
+    const developed = withMotifDevelopment(statementPlan(), {
+      roadMap: flatRoadMap(16), harmonicPlan: harmonic16, totalBeats: 64, confidenceTier: 'fidelity',
+    })!;
+    const audit = developed.recognizability!;
+    expect(audit.occurrenceCount).toBe(developed.occurrences!.length);
+    expect(audit.allPitchOrderPreserved).toBe(true);
+    expect(audit.minRhythmSimilarity).toBeGreaterThan(0.4);
+    const recap = audit.occurrences.find((o) => o.transform === 'exact-recap');
+    if (recap) expect(recap.rhythmSimilarity).toBeGreaterThan(0.95);
+    for (const o of audit.occurrences) {
+      expect(o.noteCountRatio).toBeGreaterThan(0);
+      expect(o.noteCountRatio).toBeLessThanOrEqual(1 + 1e-9);
+    }
+  });
+
+  it('修饰档插入的经过音不计入保序校验(装饰音被剔除)', () => {
+    const developed = withMotifDevelopment(statementPlan(), {
+      roadMap: flatRoadMap(16), harmonicPlan: harmonic16, totalBeats: 64, confidenceTier: 'refine',
+    })!;
+    expect(developed.recognizability!.allPitchOrderPreserved).toBe(true);
+  });
+
+  it('无 occurrence 时 minRhythmSimilarity = 1、零警告', () => {
+    const audit = auditMotifRecognizability(statementPlan());
+    expect(audit.occurrenceCount).toBe(0);
+    expect(audit.minRhythmSimilarity).toBe(1);
+    expect(audit.warnings).toEqual([]);
   });
 });
 

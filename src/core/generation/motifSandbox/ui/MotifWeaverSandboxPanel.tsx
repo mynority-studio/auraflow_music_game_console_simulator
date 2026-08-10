@@ -23,6 +23,7 @@ import { MusicGenerationSeedStore } from '../../../../state/MusicGenerationSeedS
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, midiName, type SandboxTonality } from '../model/sandboxScales';
 import { mapPositionNoteToScale } from '../midi/positionInput';
 import { buildMotifConfidenceProfile, MOTIF_TIER_LABEL, type MotifConfidenceProfile } from '../model/motifConfidence';
+import { rankMotifGrammarAffinity, motifGrammarAffinityLine } from '../../newEngine/knowledge/motifGrammarAffinity';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
 import { auditionNoteOn, auditionNoteOff, auditionControlChange, currentLeadAuditionVoice, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
@@ -89,6 +90,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [timing, setTiming] = useState<MotifTimingAnalysis | null>(null);
   const [snapChanges, setSnapChanges] = useState(0);
   const [confidence, setConfidence] = useState<MotifConfidenceProfile | null>(null); // 输入置信度(redesign 一期)
+  const [affinityLine, setAffinityLine] = useState(''); // 语法亲和度(redesign 三期)
   const ctxRef = useRef<HiddenGridCaptureContext | null>(null);
   const gridRef = useRef<{ g: GridCapturedNote[]; ctx: HiddenGridCaptureContext } | null>(null); // 末次分析输入 → pickup 开关重分析
   const recTimers = useRef<number[]>([]);
@@ -162,6 +164,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         inputSource: liveCfg.current.midiMode === 'position' || !access.current ? 'position' : 'pitch',
         healingMode: liveCfg.current.healingMode,
       }));
+      setAffinityLine(motifGrammarAffinityLine(rankMotifGrammarAffinity(a.motif.notes, a.motif.lengthBeats)));
       setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· capture ${fit.adjustedBpm}BPM · raw ${a.rawCount}→norm ${a.normalizedCount}`);
     } catch (err) { setAnalysis(null); setConfidence(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
   }, []);
@@ -262,6 +265,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         snapChanges: sc,
         healingMode: liveCfg.current.healingMode,
       }));
+      setAffinityLine(motifGrammarAffinityLine(rankMotifGrammarAffinity(motif.notes, motif.lengthBeats)));
       setRecordPhase('ready');
       setStatus(`隐形时钟:${tm.captureBars}bar @ BPM ${tm.bpm} · ${motif.notes.length}音 · 量化误差 ${tm.quantizeErrorMean.toFixed(2)}拍 · 吸附改 ${sc}`);
     } catch (err) { setRecordPhase('idle'); setConfidence(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
@@ -564,6 +568,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <span className={confidence.tier === 'fidelity' ? 'text-emerald-300' : confidence.tier === 'refine' ? 'text-amber-300' : 'text-rose-300'}>
             输入置信 {(confidence.overall * 100).toFixed(0)} · {MOTIF_TIER_LABEL[confidence.tier]}档
           </span>
+          {affinityLine && <span className="text-sky-300/80" title="动机节奏形状对各风格语法语料的亲和度(前 3)">亲和 {affinityLine}</span>}
           <span className="text-zinc-500 truncate">{confidence.evidence[0]}</span>
         </div>
       )}

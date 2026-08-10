@@ -21,8 +21,10 @@ import {
   type AuthoredMotifDevelopmentOccurrence,
   type AuthoredMotifSectionInfo,
   type AuthoredUserMotifBrickPlan,
+  type MotifRecognizabilityAudit,
   type UserMotifBrickNote,
 } from './userMotifBrick';
+import { buildMelodyRhythmShapeProfile, melodyRhythmShapeSimilarity } from './mgRhythmShapeMatcher';
 
 export type MotifConfidenceTier = 'fidelity' | 'refine' | 'heal';
 export type MotifDevelopmentTransform =
@@ -230,6 +232,61 @@ export function planMotifDevelopment(args: {
   return chosen.sort((a, b) => a.startBeat - b.startBeat);
 }
 
+/** ≤此分视为"节奏形状已认不出",report-only 警告(阈值校准后可升硬门)。 */
+export const MOTIF_RECOGNIZABILITY_WARN_SIMILARITY = 0.5;
+const ORNAMENT_SCORE_MAX = 0.15; // refineMotifNotes 插入的经过音 structuralToneScore = 0.1
+
+function anchorPitches(notes: readonly UserMotifBrickNote[]): number[] {
+  return [...notes]
+    .sort((a, b) => a.onsetBeat - b.onsetBeat)
+    .filter((n) => (n.structuralToneScore ?? 0.5) > ORNAMENT_SCORE_MAX)
+    .map((n) => n.pitch);
+}
+
+function isOrderedSubsequence(sub: readonly number[], full: readonly number[]): boolean {
+  let j = 0;
+  for (const x of full) if (j < sub.length && sub[j] === x) j++;
+  return j === sub.length;
+}
+
+/** 辨识度审计(redesign 三期,report-only):每次再现 vs 陈述的节奏相似度 + 保序不变量校验。 */
+export function auditMotifRecognizability(
+  plan: AuthoredUserMotifBrickPlan,
+): MotifRecognizabilityAudit {
+  const statementRel = plan.notes.map((n) => ({ ...n, onsetBeat: n.onsetBeat - plan.startBeat }));
+  const statementProfile = buildMelodyRhythmShapeProfile(
+    statementRel, 0, Math.max(1, plan.endBeat - plan.startBeat));
+  const statementAnchors = anchorPitches(plan.notes);
+  const warnings: string[] = [];
+  const occurrences = (plan.occurrences ?? []).map((occ) => {
+    const rel = occ.notes.map((n) => ({ ...n, onsetBeat: n.onsetBeat - occ.startBeat }));
+    const rhythmSimilarity = melodyRhythmShapeSimilarity(
+      statementProfile,
+      buildMelodyRhythmShapeProfile(rel, 0, Math.max(1, occ.endBeat - occ.startBeat)),
+    );
+    const pitchOrderPreserved = isOrderedSubsequence(anchorPitches(occ.notes), statementAnchors);
+    if (rhythmSimilarity < MOTIF_RECOGNIZABILITY_WARN_SIMILARITY) {
+      warnings.push(`${occ.note}:节奏形状相似度 ${rhythmSimilarity.toFixed(2)} 低于 ${MOTIF_RECOGNIZABILITY_WARN_SIMILARITY}`);
+    }
+    if (!pitchOrderPreserved) warnings.push(`${occ.note}:非装饰音不再是陈述音高的保序子序列(不变量疑似被破坏)`);
+    return {
+      kind: occ.kind,
+      transform: occ.transform,
+      startBeat: occ.startBeat,
+      rhythmSimilarity,
+      pitchOrderPreserved,
+      noteCountRatio: occ.notes.length / Math.max(1, plan.notes.length),
+    };
+  });
+  return {
+    occurrenceCount: occurrences.length,
+    minRhythmSimilarity: occurrences.length ? Math.min(...occurrences.map((o) => o.rhythmSimilarity)) : 1,
+    allPitchOrderPreserved: occurrences.every((o) => o.pitchOrderPreserved),
+    occurrences,
+    warnings,
+  };
+}
+
 /** 一期 plan → 二期发展 plan:陈述按档位修饰,规划 develop/return occurrence 并同样修饰。 */
 export function withMotifDevelopment(
   plan: AuthoredUserMotifBrickPlan | undefined,
@@ -247,10 +304,14 @@ export function withMotifDevelopment(
     const refined = refineMotifNotes(occ.notes, args.harmonicPlan, occ.endBeat, tier);
     return { ...occ, notes: refined, fidelityReferenceNotes: refined };
   });
-  if (tier === 'fidelity') return { ...plan, occurrences };
-  // 修饰/治愈档:陈述本身也做降级+经过音;fidelity 参考同步替换,保真钳制继续生效
-  const statement = refineMotifNotes(plan.notes, args.harmonicPlan, plan.endBeat, tier);
-  return { ...plan, notes: statement, fidelityReferenceNotes: statement, occurrences };
+  const developed = tier === 'fidelity'
+    ? { ...plan, occurrences }
+    // 修饰/治愈档:陈述本身也做降级+经过音;fidelity 参考同步替换,保真钳制继续生效
+    : (() => {
+      const statement = refineMotifNotes(plan.notes, args.harmonicPlan, plan.endBeat, tier);
+      return { ...plan, notes: statement, fidelityReferenceNotes: statement, occurrences };
+    })();
+  return { ...developed, recognizability: auditMotifRecognizability(developed) };
 }
 
 /** 陈述 + 全部 occurrence 一起物化(逐段复用一期的 groove 对齐 + 保真钳制)。 */

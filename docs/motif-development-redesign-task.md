@@ -93,12 +93,26 @@
 - occurrence 数量 = min(3, floor(totalBeats/32))，彼此及与陈述间隔 ≥ 4 拍，
   变奏手法不重复；再现类（recap/hold）偏后段（回归感），片段类偏中段（发展感）。
 
-### 三期 · 会自省了
+### 三期 · 会自省了（已实现，见实现说明）
 - grammar 亲和度：motif 节奏 profile 对各风格语料反向匹配（复用
   `mgRhythmShapeMatcher`），结论进 UI（"这个动机在 RNB 语法里最自在"）。
 - 辨识度审计 `motifRecognizabilityAudit`：每次出现算节奏形状相似度 + 锚点轮廓
   符号匹配率 + 全曲覆盖保证（≥1 次保真陈述）。**先 report-only** 挂生成审计,
   阈值校准后升级为测试硬门。
+
+**三期实现说明（2026-08-10）**：
+- 亲和度：`knowledge/motifGrammarAffinity.ts` —— 动机节奏形状 vs 各风格 slope
+  语料重建的规则节奏形状（复用 `buildGrammarRhythmShapeProfile` +
+  `melodyRhythmShapeSimilarity`，与生产链节奏匹配同一把尺）；每风格取权重前
+  200 条规则，得分 = top-8 邻域平均相似度；语料 profile 模块级懒缓存。
+  面板在分析行显示"亲和 RNB .82 · LOFI .76 · POP .71"。
+- 辨识度审计：`auditMotifRecognizability`（motifDevelopmentPlan.ts），
+  `withMotifDevelopment` 自动挂到 `plan.recognizability`。每 occurrence 记
+  节奏相似度（警告线 0.5）、保序不变量校验（非装饰音须为陈述音高的保序
+  子序列，装饰音以 structuralToneScore ≤ 0.15 识别剔除）、音数比。
+  **report-only**：warnings 只记录不拦截，阈值实听校准后再升硬门。
+- 后备优化（未做，有意留）：token 层定高锚点深改；辨识度审计接入
+  GenerationController 的 AuditReport findings 通道。
 
 ## 5. 验证纪律
 

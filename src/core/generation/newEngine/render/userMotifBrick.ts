@@ -38,6 +38,23 @@ export interface UserMotifBrick {
   confidenceTier?: 'fidelity' | 'refine' | 'heal';
 }
 
+/** 辨识度审计(redesign 三期,report-only):每次再现与动机陈述的相似度证据。 */
+export interface MotifOccurrenceRecognizability {
+  kind: string;
+  transform: string;
+  startBeat: number;
+  rhythmSimilarity: number;    // 与陈述节奏形状的相似度 0..1
+  pitchOrderPreserved: boolean; // 非装饰音是否为陈述音高的保序子序列(不变量校验)
+  noteCountRatio: number;      // 再现音数 / 陈述音数
+}
+export interface MotifRecognizabilityAudit {
+  occurrenceCount: number;
+  minRhythmSimilarity: number; // 无 occurrence 时 = 1
+  allPitchOrderPreserved: boolean;
+  occurrences: MotifOccurrenceRecognizability[];
+  warnings: string[];          // report-only;阈值校准后可升级为硬门
+}
+
 /** 发展弧线中的一次 motif 再现(redesign 二期)。音高与顺序永不改;变奏只删音/改时值/整体平移。 */
 export interface AuthoredMotifDevelopmentOccurrence {
   kind: 'develop' | 'return';
@@ -99,6 +116,8 @@ export interface AuthoredUserMotifBrickPlan {
   placementNote?: string;
   /** 发展弧线(redesign 二期):陈述之外的再现/片段化/回归段。缺省 = 只有一次陈述(一期行为)。 */
   occurrences?: readonly AuthoredMotifDevelopmentOccurrence[];
+  /** 辨识度审计(redesign 三期,report-only)。 */
+  recognizability?: MotifRecognizabilityAudit;
 }
 
 export interface AuthoredLeadSpan {
