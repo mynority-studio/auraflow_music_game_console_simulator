@@ -69,9 +69,16 @@
   "为了播放而播放"):POP/RNB 每段在场;JAZZ 松散片段化;LOFI/ACG 收敛到
   陈述+1 次(它们的 lead 架构是 score-owned/通篇作曲,硬塞引用必然外来)。
   规则权重/片段偏好逐风格定,全部可听感调参。
-- **后备(下一步候选)**:LOFI 深度融入 —— 把用户 motif 喂进 lofiLeadScorePlan
-  自己的 statement/variation/return 机制做种子素材(架构正解);ACG 把 motif
-  编进 cantabile-theme bank 并带 acg 稳定落点语义。
+- **LOFI 深度融入(已实现,2026-08-10)**:`render/userMotifLofiCell.ts` 把用户
+  motif 头部(≤4 音)派生成 `LofiLeadMotifCell`(节奏量化 1/4 拍 + 相对轮廓
+  diatonicStep + anchor/passing/terminal 角色),在 buildMotifSongBundle 替换
+  blueprint 种子 → score plan 的 statement/variation/return **全曲以用户动机为
+  种子**(探针:5 seed 全部 events 溯源 user cell)。三态展开/和声许可/时值
+  裁剪/comp call-response 沿用构建端原生逻辑;音高按许可集重定(衍生材料),
+  逐音原样出现仍由 authored span 负责,span 内 reserve 去重。派生失败(过密
+  撞位)保底回内置 cell,不静默破坏。
+- **后备(下一步候选)**:ACG 把 motif 编进 cantabile-theme bank 并带 acg
+  稳定落点语义。
 
 ## 1. 不变量（所有出现位置一律适用）
 

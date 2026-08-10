@@ -28,6 +28,7 @@ import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
 import { buildAcgPianoScoreForBundle, buildJazzFiveFourScoreForBundle, buildLofiLeadScoreForBundle, runGenerationControl, type GenerationResult, type RenderFn, type SongBundle } from './GenerationController';
 import { sanitizeLeadNoteIR } from '../render/leadSanitizer';
+import { deriveLofiMotifCellFromUserBrick } from '../render/userMotifLofiCell';
 import { swingFrac } from '../render/swing';
 import { isInProtectedFastRun } from '../render/leadGridTiming';
 
@@ -197,7 +198,17 @@ export function buildMotifSongBundle(request: GenerationRequest, override: Motif
     : (override.harmony ?? buildHarmonicPlanFromArrangement(band, arrangement, seedRng));
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const acgPianoScorePlan = buildAcgPianoScoreForBundle({ band, arrangement, harmonic, instrumentation, seed: seedRng.seed });
-  const lofiLeadScorePlan = buildLofiLeadScoreForBundle({ band, arrangement, harmonic, instrumentation });
+  // ★ LOFI 深度融入:用户 motif 头部派生 cell 替换 blueprint 种子 → score plan 的
+  //   statement/variation/return 全曲说用户动机的节奏+轮廓(音高由和声许可重定 = 衍生材料;
+  //   逐音原样的出现仍由 userBrick authored span 负责,span 内 reserve 机制自动去重)。
+  const lofiSeededArrangement = (() => {
+    if (!override.userBrick || band.style.toLowerCase() !== 'lofi' || !arrangement.lofiLeadBlueprintPlan) return arrangement;
+    const cell = deriveLofiMotifCellFromUserBrick(override.userBrick);
+    return cell
+      ? { ...arrangement, lofiLeadBlueprintPlan: { ...arrangement.lofiLeadBlueprintPlan, motifCell: cell } }
+      : arrangement;
+  })();
+  const lofiLeadScorePlan = buildLofiLeadScoreForBundle({ band, arrangement: lofiSeededArrangement, harmonic, instrumentation });
   const jazzFiveFourScorePlan = buildJazzFiveFourScoreForBundle({
     band, arrangement, harmonic, instrumentation, seed: seedRng.seed,
   });
