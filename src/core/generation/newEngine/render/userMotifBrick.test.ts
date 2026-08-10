@@ -43,6 +43,94 @@ const authoredPlan = (
   notes,
 });
 
+describe('render/userMotifBrick · 降级安置 + 段落亲和(redesign 一期)', () => {
+  const cmaj = (durationBeats: number, sectionId: string) => ({
+    roman: { degree: 1 as const, accidental: 'natural' as const, quality: 'maj' as const },
+    rootPc: pc(0), quality: 'maj' as const, durationBeats, sectionId, func: 'T' as const,
+  });
+  const flatRoadMap = (brickCount: number, span: number): RoadMap => ({
+    totalCost: 0,
+    segments: [],
+    bricks: Array.from({ length: brickCount }, (_, i) => ({
+      name: `on-${i}`, family: 'Major-On', startBeat: i * span, durationBeats: span, chordIndices: [i], cost: 0,
+    })),
+  });
+  const chordToneNotes: UserMotifBrickNote[] = [
+    { pitch: 60, onsetBeat: 0, durationBeat: 1, velocity: 100, structuralToneScore: 1 },
+    { pitch: 64, onsetBeat: 2, durationBeat: 1, velocity: 96, structuralToneScore: 1 },
+  ];
+
+  it('±20% 放不下不再静默消失:降级安置并标记档位', () => {
+    // 12 拍 motif vs 4 拍歌:scale 0.33,exact/relaxed 均不可达 → forced
+    const harmonic = assemble([cmaj(4, 'verse')], pc(0), 'major');
+    const plan = planAuthoredUserMotifBrick({
+      brick: {
+        quoteBeats: 12,
+        notes: [
+          { pitch: 60, onsetBeat: 0, durationBeat: 2, velocity: 100, structuralToneScore: 1 },
+          { pitch: 64, onsetBeat: 6, durationBeat: 2, velocity: 96, structuralToneScore: 1 },
+          { pitch: 60, onsetBeat: 10, durationBeat: 2, velocity: 92, structuralToneScore: 1 },
+        ],
+      },
+      roadMap: flatRoadMap(1, 4),
+      harmonicPlan: harmonic,
+      totalBeats: 4,
+    });
+    expect(plan).toBeDefined();
+    expect(plan!.placementQuality).toBe('forced');
+    expect(plan!.placementNote).toContain('强制安置');
+    expect(plan!.notes.length).toBe(3); // 音符一个不丢
+    expect(plan!.timingDeviationRatioLimit).toBeGreaterThanOrEqual(Math.abs(1 - plan!.scaleFactor) - 1e-9);
+  });
+
+  it('轻微超窗走 relaxed 档(±35%),正常输入仍是 exact 档', () => {
+    const harmonic = assemble([cmaj(4, 'verse')], pc(0), 'major');
+    const relaxed = planAuthoredUserMotifBrick({
+      brick: { quoteBeats: 5.5, notes: [
+        { pitch: 60, onsetBeat: 0, durationBeat: 1, velocity: 100, structuralToneScore: 1 },
+        { pitch: 64, onsetBeat: 4, durationBeat: 1.5, velocity: 96, structuralToneScore: 1 },
+      ] },
+      roadMap: flatRoadMap(1, 4),
+      harmonicPlan: harmonic,
+      totalBeats: 4,
+    });
+    expect(relaxed!.placementQuality).toBe('relaxed'); // 4/5.5 ≈ 0.73 → ±35% 内
+    const exact = planAuthoredUserMotifBrick({
+      brick: { quoteBeats: 4, notes: chordToneNotes },
+      roadMap: flatRoadMap(1, 4),
+      harmonicPlan: harmonic,
+      totalBeats: 4,
+    });
+    expect(exact!.placementQuality).toBe('exact');
+    expect(exact!.placementNote).toBeUndefined();
+  });
+
+  it('hook 型 motif 亲和副歌段位而非"越早越好";theme 型仍取段落头', () => {
+    const harmonic = assemble(
+      [cmaj(4, 'verse'), cmaj(4, 'verse'), cmaj(4, 'chorus'), cmaj(4, 'chorus')], pc(0), 'major');
+    const sections = [
+      { id: 'v1', role: 'verse', startBeat: 0, endBeat: 8 },
+      { id: 'c1', role: 'chorus', startBeat: 8, endBeat: 16 },
+    ];
+    const base = {
+      roadMap: flatRoadMap(4, 4),
+      harmonicPlan: harmonic,
+      totalBeats: 16,
+      sections,
+    };
+    const hooky = planAuthoredUserMotifBrick({
+      ...base,
+      brick: { quoteBeats: 4, notes: chordToneNotes, rolePotential: { hook: 0.8, theme: 0.3 } },
+    });
+    expect(hooky!.startBeat).toBe(8); // 副歌头,不是 beat 0
+    const themey = planAuthoredUserMotifBrick({
+      ...base,
+      brick: { quoteBeats: 4, notes: chordToneNotes, rolePotential: { hook: 0.2, theme: 0.8 } },
+    });
+    expect(themey!.startBeat).toBe(0); // theme 陈述保持段落头 + 早出现
+  });
+});
+
 describe('render/userMotifBrick', () => {
   it('生产 RoadMap 可在和声 brick 内自然结束,不为填满区间把用户 motif 拉成双倍速度', () => {
     const harmonic = assemble([

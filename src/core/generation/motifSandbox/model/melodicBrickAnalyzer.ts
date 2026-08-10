@@ -10,7 +10,7 @@ import { metricalWeight } from '../capture/hiddenGridClock';
 import {
   STRUCTURAL_TONE_MIN,
   type UserMelodicBrick, type StructuralMelodyTone, type CadenceMotion, type CadencePattern,
-  type UserMelodicBrickFunction, type UserMelodicBrickFunctionScore,
+  type UserMelodicBrickFunction, type UserMelodicBrickFunctionScore, type MotifRolePotential,
 } from './melodicBrickTypes';
 
 const STABLE = new Set([1, 3, 5]);
@@ -114,6 +114,51 @@ function scoreFunctions(tones: StructuralMelodyTone[], head: StructuralMelodyTon
   return entries;
 }
 
+/** 编曲角色潜质(redesign 一期):hook=短小/紧凑/节奏可反复/带切分;theme=够长/拱形/收得住/可唱。
+ *  两个分独立(不是排他),落位用相对强弱定段落亲和。 */
+function scoreRolePotential(notes: readonly UserMotif['notes'][number][], qBeats: number, cad: CadenceMotion | null, contour: number[]): MotifRolePotential {
+  const n = notes.length;
+  const ev: string[] = [];
+  // —— hook 信号 ——
+  const shortSpan = clamp01((16 - qBeats) / 8);                       // ≤2 bar 满分,4 bar 归零
+  const pcs = new Set(notes.map((x) => ((x.midi % 12) + 12) % 12)).size;
+  const compactPc = 1 - clamp01((pcs - 3) / 4);                       // ≤3 个音级 = 紧凑
+  let rhythmRep = 0;                                                  // 前后半时值型重复(可反复性)
+  if (n >= 4) {
+    const durs = notes.map((x) => x.durationBeat);
+    const h = Math.floor(n / 2);
+    let hit = 0;
+    for (let i = 0; i < h; i++) if (Math.abs(durs[i] - durs[i + h]) < 0.13) hit++;
+    rhythmRep = hit / h;
+  }
+  const offbeatAccented = notes.filter((x) => Math.abs(x.onsetBeat - Math.round(x.onsetBeat)) > 1e-6 && x.velocity >= 0.55).length;
+  const sync = clamp01(offbeatAccented / Math.max(1, n) / 0.3);       // 三成带重音切分 = 满分
+  const range = Math.max(...notes.map((x) => x.midi)) - Math.min(...notes.map((x) => x.midi));
+  const rangeCompact = 1 - clamp01((range - 7) / 12);
+  const hook = clamp01(0.25 * shortSpan + 0.20 * compactPc + 0.25 * rhythmRep + 0.15 * sync + 0.15 * rangeCompact);
+  if (shortSpan > 0.6 && rhythmRep > 0.5) ev.push(`短小(${qBeats} 拍)+ 节奏型重复 → 宜反复做 hook`);
+  else if (compactPc > 0.6) ev.push(`音级紧凑(${pcs} 个)`);
+  // —— theme 信号 ——
+  const lengthFit = clamp01((qBeats - 4) / 8);                        // ≥3 bar 趋满
+  const midis = notes.map((x) => x.midi);
+  const peakIdx = midis.indexOf(Math.max(...midis));
+  const dirs = contour.filter((c) => c !== 0);
+  let turns = 0;
+  for (let i = 1; i < dirs.length; i++) if (dirs[i] !== dirs[i - 1]) turns++;
+  const singlePeak = n >= 4 && peakIdx / (n - 1) > 0.2 && peakIdx / (n - 1) < 0.85 && turns <= Math.max(1, Math.floor(dirs.length / 3));
+  const arch = singlePeak ? 1 : 1 - clamp01(turns / Math.max(1, dirs.length));
+  const cadClose = cad ? cad.strength : 0.2;
+  const stepwise = contour.length > 0
+    ? notes.slice(1).filter((x, i) => Math.abs(x.midi - notes[i].midi) <= 2).length / contour.length
+    : 0;
+  const hasLong = notes.some((x) => x.durationBeat >= 1) ? 1 : 0;
+  const theme = clamp01(0.20 * lengthFit + 0.20 * arch + 0.25 * cadClose + 0.20 * stepwise + 0.15 * hasLong);
+  if (singlePeak) ev.push('单峰拱形线条 → 宜做主题陈述');
+  if (cad && cad.strength >= 0.55) ev.push(`收尾终止感强(${cad.pattern})`);
+  if (ev.length === 0) ev.push(`hook ${hook.toFixed(2)} vs theme ${theme.toFixed(2)}`);
+  return { hook, theme, primaryRole: hook >= theme ? 'hook' : 'theme', evidence: ev };
+}
+
 /** UserMotif → UserMelodicBrick(纯函数,确定性)。quoteBeats 可选(长 motif 的子动机长度)。
  *  ★ 头/尾/cadence/轮廓按【quote 单元】(实际复现的子动机)算,而非完整 motif —— 否则长 motif
  *  的功能判断错位(用 4 小节末尾,但循环出现的是前 2 小节)。lengthBeats 仍记完整 motif 长度。 */
@@ -162,5 +207,6 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
     cadenceMotion,
     functions, primaryFunction: functions[0].function,
     evidence: functions[0].evidence,
+    rolePotential: scoreRolePotential(notes, qBeats, cadenceMotion, contour),
   };
 }

@@ -142,6 +142,8 @@ export interface GrammarRule {
   weight: number;
   metadata?: {
     sourceRuleId?: string;
+    /** Corpus/performer identity used by family-pool balancing. */
+    sourceName?: string;
     sourceBrickType?: string;
     authoredDurationBeats?: number; // ★ MG full-parity G7:slope rule 作者标注时长(SlopeAdapter 用)
     lofiTags?: string[];
@@ -150,25 +152,49 @@ export interface GrammarRule {
   conditions?: {
     brickFamily?: string[];   // 仅当前 brick 族 ∈ 此列表才展开
     brickName?: string[];     // 精确 brick 名匹配
-    minDuration?: number;     // brick 时长 ≥
-    maxDuration?: number;     // brick 时长 ≤
+    minDuration?: number;     // legacy hard gate; family-only policy treats it as fit metadata
+    maxDuration?: number;     // legacy hard gate; family-only policy treats it as fit metadata
   };
   rhs: Array<string | AbstractMelodyToken>;
+}
+
+/**
+ * Optional top-level sampling policy.  The default remains the strict MG
+ * condition/weight behaviour; style grammars opt into the Impro-Visor-style
+ * family pool explicitly.
+ */
+export interface GrammarSelectionPolicy {
+  matchMode: 'legacy-conditions' | 'family-only';
+  /** Collapse duplicate top-level RHS shapes before choosing a source variant. */
+  collapseRhsSignatures?: boolean;
+  /** Maximum marginal source share inside one family pool (0..1). */
+  sourceWeightCap?: number;
+  /** Maximum marginal exact-RHS share inside one family pool (0..1). */
+  rhsWeightCap?: number;
+  /** Lowest multiplier applied when authored and brick durations differ greatly. */
+  durationFitFloor?: number;
+  /** 0..1 softens steep authored-weight differences without making rules uniform. */
+  authoredWeightExponent?: number;
 }
 
 /** grammar = 规则按 lhs 索引。 */
 export interface Grammar {
   rulesByLhs: Map<string, GrammarRule[]>;
   start: string; // 顶层入口符号(常 "Phrase" 或 "Brick")
+  selectionPolicy?: GrammarSelectionPolicy;
 }
 
 /** 从规则列表构建 grammar(纯)。 */
-export function makeGrammar(rules: GrammarRule[], start: string): Grammar {
+export function makeGrammar(
+  rules: GrammarRule[],
+  start: string,
+  selectionPolicy?: GrammarSelectionPolicy,
+): Grammar {
   const map = new Map<string, GrammarRule[]>();
   for (const r of rules) {
     const arr = map.get(r.lhs) ?? [];
     arr.push(r);
     map.set(r.lhs, arr);
   }
-  return { rulesByLhs: map, start };
+  return { rulesByLhs: map, start, selectionPolicy };
 }

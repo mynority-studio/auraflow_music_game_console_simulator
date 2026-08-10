@@ -32,6 +32,33 @@ export interface UserMotifBrick {
   sourceMotifId?: string;
   primaryFunction?: 'opening' | 'approach' | 'cadence' | 'resolution' | 'launcher'
     | 'answer' | 'passing' | 'neighbor' | 'arpeggio' | 'sequence' | 'ambiguous';
+  /** 编曲角色潜质(redesign 一期):hook>theme → 落位偏向副歌/hook 段;反之偏段落头。 */
+  rolePotential?: { hook: number; theme: number };
+}
+
+/** Arrangement section context for placement: role/functionTag drive hook/theme affinity. */
+export interface AuthoredMotifSectionInfo {
+  id: string;
+  role?: string;
+  functionTag?: string;
+  startBeat: number;
+  endBeat: number;
+}
+
+/** exact=±20% 内正常落位;relaxed=放宽到 ±35%;forced=保底强制安置(绝不静默丢弃)。 */
+export type AuthoredMotifPlacementQuality = 'exact' | 'relaxed' | 'forced';
+
+/** Arrangement sections → 落位段落上下文。生产(renderCoordinator)与镜像测试共用,保证推导一致。 */
+export function authoredMotifSectionInfos(
+  sections: readonly { id: string; role?: string; functionTag?: string; bars: number }[],
+  beatsPerBar: number,
+): AuthoredMotifSectionInfo[] {
+  let cursor = 0;
+  return sections.map((section) => {
+    const startBeat = cursor;
+    cursor += section.bars * beatsPerBar;
+    return { id: section.id, role: section.role, functionTag: section.functionTag, startBeat, endBeat: cursor };
+  });
 }
 
 /** Production ownership contract for one exact user-authored melodic brick. */
@@ -54,6 +81,8 @@ export interface AuthoredUserMotifBrickPlan {
   rhythmShapeProfile: MelodyRhythmShapeProfile;
   /** Absolute-beat notes after one uniform scale. Groove micro-alignment happens at materialization. */
   notes: readonly UserMotifBrickNote[];
+  placementQuality?: AuthoredMotifPlacementQuality;
+  placementNote?: string;
 }
 
 export interface AuthoredLeadSpan {
@@ -63,6 +92,7 @@ export interface AuthoredLeadSpan {
 
 type PocketMs = readonly number[];
 export const USER_MOTIF_MAX_TIMING_DEVIATION_RATIO = 0.2;
+export const USER_MOTIF_RELAXED_DEVIATION_RATIO = 0.35;
 export interface UserMotifGrooveContract {
   grid?: string;
   melodySwingRatio?: number;
@@ -137,6 +167,27 @@ function functionAffinity(
   return 0;
 }
 
+/** 段落亲和(redesign 一期):hook 型 → 副歌/hook 段;theme 型 → 段落头陈述。无段落数据 → 0.5 中性。 */
+function sectionAffinityScore(
+  sections: readonly AuthoredMotifSectionInfo[] | undefined,
+  rolePotential: UserMotifBrick['rolePotential'],
+  startBeat: number,
+): number {
+  if (!sections || sections.length === 0) return 0.5;
+  const section = sections.find((s) => startBeat >= s.startBeat - 1e-6 && startBeat < s.endBeat - 1e-6);
+  if (!section) return 0.5;
+  const role = section.role ?? '';
+  const isHookSection = role === 'chorus' || section.functionTag === 'hook';
+  const atSectionHead = startBeat - section.startBeat < 4 - 1e-6;
+  if (!rolePotential) return atSectionHead ? 0.75 : 0.5;
+  if (rolePotential.hook > rolePotential.theme) {
+    if (isHookSection) return 1;
+    return role === 'verse' ? 0.45 : 0.3;
+  }
+  if (atSectionHead) return role === 'intro' ? 0.8 : 1; // theme 完整陈述通常留给 verse/chorus 头
+  return isHookSection ? 0.55 : 0.4;
+}
+
 interface PlacementCandidate {
   brickIndices: number[];
   startBeat: number;
@@ -155,6 +206,8 @@ function placementCandidates(
   totalBeats: number,
   sourceStartBeat: number,
   sourceSpanBeats: number,
+  sections: readonly AuthoredMotifSectionInfo[] | undefined,
+  deviationLimit: number,
 ): PlacementCandidate[] {
   const candidates: PlacementCandidate[] = [];
   const ordered = roadMap.bricks
@@ -173,8 +226,8 @@ function placementCandidates(
   ): void => {
     const targetSpanBeats = endBeat - startBeat;
     const scaleFactor = targetSpanBeats / sourceSpanBeats;
-    if (scaleFactor < 1 - USER_MOTIF_MAX_TIMING_DEVIATION_RATIO - 1e-6
-      || scaleFactor > 1 + USER_MOTIF_MAX_TIMING_DEVIATION_RATIO + 1e-6) return;
+    if (scaleFactor < 1 - deviationLimit - 1e-6
+      || scaleFactor > 1 + deviationLimit + 1e-6) return;
     const notes = sourceNotes.map((note) => ({
       ...note,
       onsetBeat: startBeat + (note.onsetBeat - sourceStartBeat) * scaleFactor,
@@ -188,9 +241,14 @@ function placementCandidates(
     const earlyPreference = Math.max(0, 1 - startBeat / Math.max(1, totalBeats * 0.5));
     const first = roadMap.bricks[brickIndices[0]];
     const affinity = functionAffinity(brick.primaryFunction, first?.family ?? 'Unknown');
+    const sectionFit = sectionAffinityScore(sections, brick.rolePotential, startBeat);
+    // hook 型不追求"越早越好",追求 hook 段位(仅在有段落数据时改变权重,保持旧行为可回归)
+    const hookish = (brick.rolePotential?.hook ?? 0) > (brick.rolePotential?.theme ?? 0);
+    const earlyWeight = sections?.length && hookish ? 2 : 8;
     const score = supportRatio * 100
       + affinity * 12
-      + earlyPreference * 8
+      + sectionFit * 12
+      + earlyPreference * earlyWeight
       + (boundaryAligned ? 3 : 0)
       - timingDeviation * 30;
     candidates.push({
@@ -226,7 +284,7 @@ function placementCandidates(
         addCandidate(brickIndices, startBeat, startBeat + sourceSpanBeats, false);
         exactSpanAdded = true;
       }
-      if (targetSpanBeats > sourceSpanBeats * (1 + USER_MOTIF_MAX_TIMING_DEVIATION_RATIO) + 1e-6
+      if (targetSpanBeats > sourceSpanBeats * (1 + deviationLimit) + 1e-6
         && exactSpanAdded) break;
     }
   }
@@ -242,8 +300,9 @@ export function planAuthoredUserMotifBrick(args: {
   roadMap: RoadMap;
   harmonicPlan: HarmonicPlan;
   totalBeats: number;
+  sections?: readonly AuthoredMotifSectionInfo[];
 }): AuthoredUserMotifBrickPlan | undefined {
-  const { brick, roadMap, harmonicPlan, totalBeats } = args;
+  const { brick, roadMap, harmonicPlan, totalBeats, sections } = args;
   if (brick.notes.length === 0 || roadMap.bricks.length === 0 || totalBeats <= 0) return undefined;
   const sourceStartBeat = Math.min(0, ...brick.notes.map((note) => note.onsetBeat));
   const sourceEndBeat = Math.max(
@@ -251,11 +310,24 @@ export function planAuthoredUserMotifBrick(args: {
     ...brick.notes.map((note) => note.onsetBeat + note.durationBeat),
   );
   const sourceSpanBeats = Math.max(0.25, sourceEndBeat - sourceStartBeat);
-  const candidates = placementCandidates(brick, roadMap, harmonicPlan, totalBeats, sourceStartBeat, sourceSpanBeats);
-  const selected = candidates.sort((a, b) => b.score - a.score
-    || a.startBeat - b.startBeat
-    || Math.abs(1 - a.scaleFactor) - Math.abs(1 - b.scaleFactor))[0];
-  if (!selected) return undefined;
+  // 降级安置阶梯(redesign 一期,修静默消失):exact ±20% → relaxed ±35% → forced 不限。
+  // 用户 motif 绝不因找不到完美时值窗而整段丢弃;降级档位写进 plan 供审计/UI。
+  const ladder: Array<{ quality: AuthoredMotifPlacementQuality; limit: number; note?: string }> = [
+    { quality: 'exact', limit: USER_MOTIF_MAX_TIMING_DEVIATION_RATIO },
+    { quality: 'relaxed', limit: USER_MOTIF_RELAXED_DEVIATION_RATIO, note: '±20% 内无候选 → 放宽至 ±35%' },
+    { quality: 'forced', limit: Number.POSITIVE_INFINITY, note: '放宽仍无候选 → 强制安置' },
+  ];
+  let selected: PlacementCandidate | undefined;
+  let quality: AuthoredMotifPlacementQuality = 'exact';
+  let placementNote: string | undefined;
+  for (const step of ladder) {
+    const candidates = placementCandidates(brick, roadMap, harmonicPlan, totalBeats, sourceStartBeat, sourceSpanBeats, sections, step.limit);
+    const best = candidates.sort((a, b) => b.score - a.score
+      || a.startBeat - b.startBeat
+      || Math.abs(1 - a.scaleFactor) - Math.abs(1 - b.scaleFactor))[0];
+    if (best) { selected = best; quality = step.quality; placementNote = step.note; break; }
+  }
+  if (!selected) return undefined; // 仅剩退化输入(空 roadmap/零音符,上方已 guard)
   const sourceNotes = brick.notes
     .filter((note) => note.durationBeat > 0)
     .sort((a, b) => a.onsetBeat - b.onsetBeat);
@@ -274,10 +346,15 @@ export function planAuthoredUserMotifBrick(args: {
     scaleFactor: selected.scaleFactor,
     harmonicSupportRatio: selected.supportRatio,
     placementScore: selected.score,
-    timingDeviationRatioLimit: USER_MOTIF_MAX_TIMING_DEVIATION_RATIO,
+    // 降级档位下 fidelity 预算随实际缩放放宽,否则 materialize 会跟选定 scale 打架
+    timingDeviationRatioLimit: quality === 'exact'
+      ? USER_MOTIF_MAX_TIMING_DEVIATION_RATIO
+      : Math.max(USER_MOTIF_RELAXED_DEVIATION_RATIO, Math.abs(1 - selected.scaleFactor)),
     fidelityReferenceNotes,
     rhythmShapeProfile: buildMelodyRhythmShapeProfile(sourceNotes, sourceStartBeat, sourceSpanBeats),
     notes: selected.notes,
+    placementQuality: quality,
+    ...(placementNote ? { placementNote: `${placementNote}(scale ${selected.scaleFactor.toFixed(2)})` } : {}),
   };
 }
 

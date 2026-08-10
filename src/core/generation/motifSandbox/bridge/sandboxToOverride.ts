@@ -41,6 +41,7 @@ export interface UserMotifBrickSongOverrideOptions {
 interface MotifOwnedPlan {
   harmony?: MotifSongOverride['harmony'];
   primaryFunction: ReturnType<typeof analyzeUserMelodicBrick>['primaryFunction'];
+  rolePotential: ReturnType<typeof analyzeUserMelodicBrick>['rolePotential'];
 }
 
 function clampVelocity(v: number, hi = 127): number {
@@ -97,7 +98,7 @@ function buildMotifOwnedPlan(motif: UserMotif, opts: UserMotifBrickSongOverrideO
   const keyPc = m12(opts.keyPc ?? motif.keyPc);
   const mode = opts.mode ?? motif.mode;
   const brick = analyzeUserMelodicBrick({ ...motif, keyPc, mode }, quoteBeats);
-  if (!opts.style) return { primaryFunction: brick.primaryFunction };
+  if (!opts.style) return { primaryFunction: brick.primaryFunction, rolePotential: brick.rolePotential };
   const inputTonality = opts.inputTonality ?? motif.inputTonality;
   const seed = opts.seed ?? 0;
   const targetBars = opts.targetBars ?? DEFAULT_TARGET_BARS;
@@ -106,6 +107,7 @@ function buildMotifOwnedPlan(motif: UserMotif, opts: UserMotifBrickSongOverrideO
     quoteBeats,
     sourceMotifId: motif.id,
     primaryFunction: brick.primaryFunction,
+    rolePotential: brick.rolePotential,
   };
   const evaluateProductionPlacement = (candidate: ProgressionCandidate) => {
     const realizedCandidate = realizeToSandboxChords(candidate.fittedSlots, keyPc, mode, { inputTonality, userBrick: brick, seed });
@@ -140,6 +142,7 @@ function buildMotifOwnedPlan(motif: UserMotif, opts: UserMotifBrickSongOverrideO
   return {
     harmony: sandboxProgressionToHarmonicPlan(realized, keyPc, mode),
     primaryFunction: brick.primaryFunction,
+    rolePotential: brick.rolePotential,
   };
 }
 
@@ -162,6 +165,7 @@ export function buildUserMotifBrickSongOverride(motif: UserMotif, optionsOrQuote
       quoteBeats,
       sourceMotifId: motif.id,
       primaryFunction: motifOwned.primaryFunction,
+      rolePotential: motifOwned.rolePotential,
     },
   };
 }

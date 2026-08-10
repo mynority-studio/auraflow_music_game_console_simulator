@@ -49,6 +49,7 @@ function eligiblePhraseRules(grammar: typeof ENRICHED_GRAMMAR, brick: BrickMatch
     const conditions = rule.conditions;
     if (!conditions) return true;
     if (conditions.brickFamily && !conditions.brickFamily.includes(brick.family)) return false;
+    if (grammar.selectionPolicy?.matchMode === 'family-only') return true;
     if (conditions.brickName && !conditions.brickName.includes(brick.name)) return false;
     if (conditions.minDuration !== undefined && brick.durationBeats < conditions.minDuration) return false;
     if (conditions.maxDuration !== undefined && brick.durationBeats > conditions.maxDuration) return false;
@@ -57,6 +58,23 @@ function eligiblePhraseRules(grammar: typeof ENRICHED_GRAMMAR, brick: BrickMatch
 }
 
 describe('knowledge/melodyStyleGrammarProfiles · opening diversity', () => {
+  it.each([
+    ['POP', POP_ENRICHED_GRAMMAR],
+    ['RNB', RNB_ENRICHED_GRAMMAR],
+  ] as const)('%s uses family as the only hard admission gate for a 32-beat Turnaround', (_style, grammar) => {
+    const longTurnaround: BrickMatch = {
+      ...PERFECT_CADENCE,
+      name: 'Pop-Canon-Loop-8',
+      family: 'Turnaround',
+      durationBeats: 32,
+    };
+    const familyRules = eligiblePhraseRules(grammar, longTurnaround);
+    const allTurnaroundRules = (grammar.rulesByLhs.get('Phrase') ?? []).filter(rule =>
+      rule.conditions?.brickFamily?.includes('Turnaround'));
+    expect(familyRules).toHaveLength(allTurnaroundRules.length);
+    expect(familyRules.length).toBeGreaterThan(30);
+  });
+
   it.each(STYLE_GRAMMARS)('%s cadence opening is not dominated by one soft-parallel favorite phrase', (_style, grammar) => {
     const signatures = new Map<string, number>();
 

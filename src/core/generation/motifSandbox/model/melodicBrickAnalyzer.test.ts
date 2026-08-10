@@ -138,3 +138,30 @@ describe('motifSandbox/melodicBrickAnalyzer(brick 功能分类)', () => {
     expect(a.evidence.length).toBeGreaterThan(0);
   });
 });
+
+describe('motifSandbox/melodicBrickAnalyzer · rolePotential(编曲角色潜质)', () => {
+  it('短小 + 节奏型重复 + 音级紧凑 → hook 潜质占优', () => {
+    // 1 bar riff:[1,1,3 | 1,1,3],两个音级,前后半时值型一致
+    const b = analyzeUserMelodicBrick(motif([1, 1, 3, 1, 1, 3], [0.5, 0.5, 1, 0.5, 0.5, 1]));
+    expect(b.rolePotential.primaryRole).toBe('hook');
+    expect(b.rolePotential.hook).toBeGreaterThan(b.rolePotential.theme);
+  });
+
+  it('长线条 + 单峰拱形 + 级进 + 2→1 收尾 → theme 潜质占优', () => {
+    const b = analyzeUserMelodicBrick(motif([1, 2, 3, 4, 5, 4, 3, 2, 1], [1, 1, 1, 1, 2, 1, 1, 1, 3]));
+    expect(b.rolePotential.primaryRole).toBe('theme');
+    expect(b.rolePotential.theme).toBeGreaterThan(b.rolePotential.hook);
+    expect(b.rolePotential.theme).toBeGreaterThan(0.7);
+  });
+
+  it('分值在 0..1 且确定性、带 evidence', () => {
+    const a = analyzeUserMelodicBrick(motif([1, 1, 3, 1, 1, 3], [0.5, 0.5, 1, 0.5, 0.5, 1]));
+    const b = analyzeUserMelodicBrick(motif([1, 1, 3, 1, 1, 3], [0.5, 0.5, 1, 0.5, 0.5, 1]));
+    for (const v of [a.rolePotential.hook, a.rolePotential.theme]) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+    expect(a.rolePotential.hook).toBe(b.rolePotential.hook);
+    expect(a.rolePotential.evidence.length).toBeGreaterThan(0);
+  });
+});

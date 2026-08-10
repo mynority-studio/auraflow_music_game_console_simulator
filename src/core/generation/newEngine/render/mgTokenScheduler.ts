@@ -343,16 +343,132 @@ export interface BrickExpansionInput {
   tokens: AbstractMelodyToken[];
 }
 
-/** Schedule per-brick expansions onto absolute beats. When a brick
- *  carries `durationBeats`, its tokens are clipped to fit within that
- *  duration. This prevents IV slope rules from bleeding into the next
- *  brick. */
+export interface ScheduleBrickExpansionOptions {
+  /** POP/RNB family pool: adapt any same-family phrase to the brick span. */
+  fitMode?: 'legacy-clip' | 'family-phrase';
+  /** Smallest onset grid used when a clipped phrase receives a landing. */
+  fitGridBeats?: number;
+  /** Arranger section starts that family-fitted phrases may not cross. */
+  phraseBoundaries?: readonly number[];
+}
+
+function tokenDuration(tokens: readonly AbstractMelodyToken[]): number {
+  return tokens.reduce((sum, token) => sum + Math.max(0, token.duration), 0);
+}
+
+function scheduledEnd(entries: readonly ScheduledToken[], fallback: number): number {
+  return entries.reduce(
+    (end, entry) => Math.max(end, entry.startBeat + Math.max(0, entry.token.duration)),
+    fallback,
+  );
+}
+
+function phraseSafeLandingIndex(tokens: readonly AbstractMelodyToken[]): number {
+  for (let index = tokens.length - 1; index >= 0; index--) {
+    const token = tokens[index];
+    if (token.duration > 0 && (token.kind === 'G' || token.kind === 'C')) return index;
+  }
+  for (let index = tokens.length - 1; index >= 0; index--) {
+    const token = tokens[index];
+    if (token.duration > 0 && token.kind !== 'R') return index;
+  }
+  return -1;
+}
+
+/**
+ * Fit a family-compatible phrase after selection. Short phrases repeat as a
+ * motif/answer across the brick; a too-small final fragment becomes rest.
+ * Long phrases retain a stable final landing and close any clipped slope.
+ */
+export function scheduleFamilyPhraseToBrick(
+  tokens: AbstractMelodyToken[],
+  startBeat: number,
+  durationBeats: number,
+  gridBeats = 0.25,
+): ScheduledToken[] {
+  const duration = Math.max(0, durationBeats);
+  const authoredDuration = tokenDuration(tokens);
+  if (duration <= 0.001 || authoredDuration <= 0.001) return [];
+
+  if (authoredDuration <= duration + 0.001) {
+    const out: ScheduledToken[] = [];
+    let cursor = startBeat;
+    let remaining = duration;
+    while (remaining + 0.001 >= authoredDuration) {
+      const repetition = scheduleTokens(tokens, cursor, authoredDuration);
+      out.push(...repetition);
+      cursor += authoredDuration;
+      remaining = startBeat + duration - cursor;
+    }
+
+    if (remaining > 0.001) {
+      // Avoid ending on a tiny, unresolved phrase head. A substantial tail is
+      // allowed to use the normal slope-safe clip; otherwise leave a breath.
+      const minimumUsefulFragment = Math.min(1, authoredDuration * 0.35);
+      if (remaining + 0.001 >= minimumUsefulFragment) {
+        out.push(...scheduleTokens(tokens, cursor, remaining));
+      } else {
+        out.push({ token: { kind: 'R', duration: remaining }, startBeat: cursor });
+      }
+    }
+    return out;
+  }
+
+  const landingIndex = phraseSafeLandingIndex(tokens);
+  if (landingIndex < 0) return scheduleTokens(tokens, startBeat, duration);
+  const landing = tokens[landingIndex];
+  const prefix = tokens.slice(0, landingIndex);
+  const hasAudiblePrefix = prefix.some(token => token.duration > 0 && token.kind !== 'R');
+  if (!hasAudiblePrefix) return scheduleTokens([landing], startBeat, duration);
+
+  const maxLandingDuration = Math.min(landing.duration, duration);
+  const grid = Math.max(0.001, gridBeats);
+  const desiredLandingDuration = Math.max(grid, Math.min(0.75, duration * 0.25));
+  const quantizedLandingDuration = Math.max(
+    grid,
+    Math.floor((desiredLandingDuration + 1e-6) / grid) * grid,
+  );
+  const landingDuration = Math.min(maxLandingDuration, quantizedLandingDuration);
+  const landingStart = startBeat + duration - landingDuration;
+  const prefixSchedule = scheduleTokens(prefix, startBeat, landingStart - startBeat);
+  const prefixEnd = scheduledEnd(prefixSchedule, startBeat);
+  const out = [...prefixSchedule];
+  if (prefixEnd < landingStart - 0.001) {
+    out.push({ token: { kind: 'R', duration: landingStart - prefixEnd }, startBeat: prefixEnd });
+  }
+  out.push({ token: { ...landing, duration: landingDuration } as AbstractMelodyToken, startBeat: landingStart });
+  return out;
+}
+
+/** Schedule per-brick expansions onto absolute beats. The legacy mode clips
+ *  at the brick boundary; family-phrase mode additionally repeats short
+ *  phrases or preserves a stable landing when clipping a long phrase. */
 export function scheduleBrickExpansions(
   expansions: BrickExpansionInput[],
+  options: ScheduleBrickExpansionOptions = {},
 ): ScheduledToken[] {
   const all: ScheduledToken[] = [];
   for (const ex of expansions) {
-    const scheduled = scheduleTokens(ex.tokens, ex.brick.startBeat, ex.brick.durationBeats);
+    const familyFit = options.fitMode === 'family-phrase' && ex.brick.durationBeats !== undefined;
+    const brickEnd = ex.brick.startBeat + (ex.brick.durationBeats ?? 0);
+    const segmentStarts = familyFit
+      ? [
+        ex.brick.startBeat,
+        ...(options.phraseBoundaries ?? []).filter(boundary =>
+          boundary > ex.brick.startBeat + 0.001 && boundary < brickEnd - 0.001),
+      ].sort((left, right) => left - right)
+      : [ex.brick.startBeat];
+    const scheduled = familyFit
+      ? segmentStarts.flatMap((segmentStart, index) => {
+        const segmentEnd = segmentStarts[index + 1] ?? brickEnd;
+        return scheduleFamilyPhraseToBrick(
+          ex.tokens,
+          segmentStart,
+          segmentEnd - segmentStart,
+          options.fitGridBeats,
+        );
+      })
+      : scheduleTokens(ex.tokens, ex.brick.startBeat, ex.brick.durationBeats);
     const brickEndBeat = ex.brick.durationBeats !== undefined
       ? ex.brick.startBeat + ex.brick.durationBeats
       : undefined;

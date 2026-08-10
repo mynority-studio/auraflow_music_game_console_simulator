@@ -385,9 +385,18 @@ export function renderMgMelodyWithAcgPerformancePlan(
     }
   }
   // ★ MG full-parity G4:ACG 走 cycle-cadence 调度(一条长句铺满和声 cycle,钢琴呼吸),非 brick-by-brick lick chain。
+  const arrangerSectionBoundaries = plan.chordTimeline
+    .filter((span, index, timeline) => index > 0 && span.sectionId !== timeline[index - 1].sectionId)
+    .map(span => span.startBeat as number);
   const generatedSchedule = style === 'ACG'
     ? scheduleAcgCycleCadencePhrases(perBrick, part, { leadPresencePlan: acgLeadPresencePlan, pianoScorePlan: acgPianoScorePlan })
-    : scheduleBrickExpansions(perBrick);
+    : scheduleBrickExpansions(perBrick, {
+      fitMode: style === 'POP' || style === 'RNB' ? 'family-phrase' : 'legacy-clip',
+      fitGridBeats: style === 'POP' ? 0.5 : 0.25,
+      phraseBoundaries: (style === 'POP' || style === 'RNB')
+        ? arrangerSectionBoundaries
+        : undefined,
+    });
   const ownershipReserved = reserveScheduledTokensForAuthoredSpans(
     generatedSchedule,
     authoredLeadSpans(authoredUserMotifPlan),
@@ -601,7 +610,13 @@ export function renderMgMelodyWithAcgPerformancePlan(
   // 把一颗旧音拖过下一和弦并改变其和声身份。其它风格保持原有演奏层连音。
   const legatoNotes = style === 'ACG' || isScoreOwnedLofiLead
     ? notes
-    : connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
+    : connectFastLeadNoteIR(notes, {
+      ...fastLeadLegatoOptionsForStyle(style, timebase.ppq),
+      ...((style === 'POP' || style === 'RNB') ? {
+        hardBoundaryTicks: arrangerSectionBoundaries.map(boundary =>
+          timebase.beatToTick(beats(boundary)) as number),
+      } : {}),
+    });
   const rendered: AcgDynamicsTaggedTrack = { role: 'lead', notes: legatoNotes, program };
   if (quietDyadNoteKeys.length > 0) rendered.__acgQuietDyadNoteKeys = quietDyadNoteKeys;
   return { track: rendered, acgPianoPedalScore };

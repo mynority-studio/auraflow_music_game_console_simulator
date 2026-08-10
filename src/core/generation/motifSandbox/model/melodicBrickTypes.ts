@@ -32,6 +32,15 @@ export interface UserMelodicBrickFunctionScore {
   evidence: string[];
 }
 
+/** motif 的编曲角色潜质(motif development redesign 一期):hook=短小紧凑可反复;theme=线条完整可陈述。
+ *  驱动落位的段落亲和(hook → 副歌/hook 段位,theme → 段落头),不是排他分类。 */
+export interface MotifRolePotential {
+  hook: number;   // 0..1
+  theme: number;  // 0..1
+  primaryRole: 'hook' | 'theme';
+  evidence: string[];
+}
+
 export type CadencePattern = '2-1' | '7-1' | '4-3' | '5-1' | '6-5' | 'stepToStable' | 'leapToStable' | 'none';
 export interface CadenceMotion {
   fromDegree: number;
@@ -58,6 +67,7 @@ export interface UserMelodicBrick {
   functions: UserMelodicBrickFunctionScore[]; // 降序
   primaryFunction: UserMelodicBrickFunction;
   evidence: string[];
+  rolePotential: MotifRolePotential;
 }
 
 // —— HarmonyIntent(brick → 和声偏好)——

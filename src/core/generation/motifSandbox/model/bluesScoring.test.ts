@@ -17,6 +17,7 @@ const brick: UserMelodicBrick = {
   id: 'b', sourceMotifId: 'm', keyPc: 0, mode: 'major', lengthBeats: 16, lengthBars: 4, quoteBeats: 16,
   head: null, tail: null, allTones: [], structuralTones: [tone(63, 0, 0.8)], // Eb(pc3)强结构音 @beat0
   contour: [], rhythmSignature: [], cadenceMotion: null, functions: [], primaryFunction: 'opening', evidence: [],
+  rolePotential: { hook: 0.5, theme: 0.5, primaryRole: 'hook', evidence: [] },
 };
 const intent: MotifHarmonyIntent = { targetFunctions: ['T'], cadenceNeed: 'none', startStability: 'stable', endingStability: 'open', preferTemplateCadence: ['loop'], preferredStartDegrees: [1], preferredLandingDegrees: [1], avoidDegenerateProgressions: [] };
 

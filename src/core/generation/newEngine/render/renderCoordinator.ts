@@ -41,6 +41,7 @@ import { planAcgLeadPresence } from './acgLeadPresencePlan';
 import {
   assembleAuthoredUserMotifLead,
   materializeAuthoredUserMotifBrick,
+  authoredMotifSectionInfos,
   planAuthoredUserMotifBrick,
   type AuthoredUserMotifBrickPlan,
   type UserMotifBrick,
@@ -808,6 +809,8 @@ export function renderSongFull(
       roadMap: motifRoadMap,
       harmonicPlan: plan,
       totalBeats: totalBeatsForLead,
+      // 段落角色进落位打分(redesign 一期):hook 型 motif 亲和副歌/hook 段,theme 型亲和段落头
+      sections: authoredMotifSectionInfos(arrangement.sections, beatsPerBarOf(arrangement.meter)),
     })
     : undefined;
   const authoredUserMotifNotes = materializeAuthoredUserMotifBrick(authoredUserMotifPlan, timebase, {

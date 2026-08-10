@@ -7,13 +7,10 @@
 // ============================================================
 
 import type { ParsedMidiMessage } from '../motifSandbox/midi/webMidi';
+import { PAD_POSITION_MIDI_NOTES, padIndexFromPositionNote } from '../motifSandbox/midi/positionInput';
 import { TAKEOVER_PAD_COUNT } from './padLayout';
 
-export const TAKEOVER_MIDI_POSITION_NOTES = [
-  48, 50, 52, 53, 55,
-  57, 59, 60, 62, 64,
-  65, 67, 69, 71, 72,
-] as const;
+export const TAKEOVER_MIDI_POSITION_NOTES = PAD_POSITION_MIDI_NOTES;
 
 export interface TakeoverMidiPositionEvent {
   type: 'down' | 'up';
@@ -24,14 +21,10 @@ export interface TakeoverMidiPositionEvent {
   velocity: number;
 }
 
-const padIndexByMidiNote = new Map<number, number>(
-  TAKEOVER_MIDI_POSITION_NOTES.map((midi, padIndex) => [midi, padIndex]),
-);
-
 /** C3..C5 natural keys map in reading order: top-left through bottom-right. */
 export function takeoverPadIndexFromMidiNote(midi: number): number | null {
-  const padIndex = padIndexByMidiNote.get(Math.round(midi));
-  return padIndex !== undefined && padIndex >= 0 && padIndex < TAKEOVER_PAD_COUNT ? padIndex : null;
+  const padIndex = padIndexFromPositionNote(midi);
+  return padIndex !== null && padIndex < TAKEOVER_PAD_COUNT ? padIndex : null;
 }
 
 /**

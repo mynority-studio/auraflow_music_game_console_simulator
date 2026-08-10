@@ -20,7 +20,9 @@ import type { MusicGenerationResult } from '../../musicGeneration/types';
 import { AudioEngine } from '../../../audio/AudioEngine';
 import { MUSIC_GEN_STYLE_OPTIONS, MusicGenerationStyleStore, musicGenStyleLabel, type MusicGenStyle } from '../../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../../state/MusicGenerationSeedStore';
-import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
+import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, midiName, type SandboxTonality } from '../model/sandboxScales';
+import { mapPositionNoteToScale } from '../midi/positionInput';
+import { buildMotifConfidenceProfile, MOTIF_TIER_LABEL, type MotifConfidenceProfile } from '../model/motifConfidence';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
 import { auditionNoteOn, auditionNoteOff, auditionControlChange, currentLeadAuditionVoice, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
@@ -74,6 +76,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [midiStatus, setMidiStatus] = useState<MidiSupport | 'idle'>('idle');
   const [devices, setDevices] = useState<MidiDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [midiMode, setMidiMode] = useState<'pitch' | 'position'>('pitch'); // pitch=外部键盘原音高;position=产品 pad 按位映射
   const [lastNote, setLastNote] = useState('');
   const [audioLat, setAudioLat] = useState<ReturnType<typeof getAudioLatencyMs>>(null);
   const [recording, setRecording] = useState(false);
@@ -85,14 +88,16 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [alignFirst, setAlignFirst] = useState(true); // 对齐首音(消数拍/音频延迟造成的偏后);要 pickup 时关掉
   const [timing, setTiming] = useState<MotifTimingAnalysis | null>(null);
   const [snapChanges, setSnapChanges] = useState(0);
+  const [confidence, setConfidence] = useState<MotifConfidenceProfile | null>(null); // 输入置信度(redesign 一期)
   const ctxRef = useRef<HiddenGridCaptureContext | null>(null);
   const gridRef = useRef<{ g: GridCapturedNote[]; ctx: HiddenGridCaptureContext } | null>(null); // 末次分析输入 → pickup 开关重分析
   const recTimers = useRef<number[]>([]);
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
+  const midiPosHeld = useRef(new Map<string, number>()); // 按位模式按住的键:`ch:note` → 映射音(换调/换模式中途松键不悬挂)
   const timer = useRef<number | null>(null);
-  const liveCfg = useRef({ keyPc, tonality, style, healingMode });
-  liveCfg.current = { keyPc, tonality, style, healingMode };
+  const liveCfg = useRef({ keyPc, tonality, style, healingMode, midiMode });
+  liveCfg.current = { keyPc, tonality, style, healingMode, midiMode };
 
   useDevPanelChannel('motif', open, setOpen);
 
@@ -152,8 +157,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     try {
       const a = analyzeAndNormalize(cap, k, tonalityParentMode(t), fit.adjustedBpm, s, t, liveCfg.current.healingMode); // 吸到选定音阶(保 blues/五声特征)+ 新手治愈
       setAnalysis(a);
+      setConfidence(buildMotifConfidenceProfile({
+        motif: a.motif,
+        inputSource: liveCfg.current.midiMode === 'position' || !access.current ? 'position' : 'pitch',
+        healingMode: liveCfg.current.healingMode,
+      }));
       setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· capture ${fit.adjustedBpm}BPM · raw ${a.rawCount}→norm ${a.normalizedCount}`);
-    } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
+    } catch (err) { setAnalysis(null); setConfidence(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
   }, []);
 
   // —— Web MIDI 接入 ——
@@ -166,8 +176,18 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setAudioLat(getAudioLatencyMs()); // 诊断:audio 系统延迟(base=worklet / output=OS 缓冲含蓝牙)
     const onMessage = (m: ParsedMidiMessage) => {
       if (m.type === 'noteOn') {
-        const { keyPc: k, tonality: t } = liveCfg.current;
-        if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
+        const { keyPc: k, tonality: t, midiMode: mode } = liveCfg.current;
+        if (mode === 'position') { // 产品 pad 按位:位置编码 → 当前调性同位音(与点击屏幕 pad 一致)
+          const srcKey = `${m.channel}:${m.note}`;
+          if (midiPosHeld.current.has(srcKey)) return;
+          const mapped = mapPositionNoteToScale(m.note, k, t);
+          if (mapped === null) { setLastNote(`note ${m.note} · 非位置键`); return; }
+          midiPosHeld.current.set(srcKey, mapped);
+          void auditionNoteOn(mapped, currentLeadAuditionVoice(MIDI_INPUT_PROGRAM), m.velocity);
+          if (recorder.current.isActive()) recorder.current.noteOn(mapped, m.velocity);
+          noteOnVis(mapped);
+          setLastNote(`pad → ${midiName(mapped)} · vel ${m.velocity}`);
+        } else if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
           // External MIDI follows the live song's selected Lead CC0 + PC. With
           // no active song it falls back to the original acoustic-piano input.
           void auditionNoteOn(m.note, currentLeadAuditionVoice(MIDI_INPUT_PROGRAM), m.velocity);
@@ -178,9 +198,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           setLastNote(`note ${m.note} · 离调 → 静音`);
         }
       } else if (m.type === 'noteOff') {
-        auditionNoteOff(m.note);
-        noteOffVis(m.note);
-        if (recorder.current.isActive()) recorder.current.noteOff(m.note);
+        const srcKey = `${m.channel}:${m.note}`;
+        const mapped = midiPosHeld.current.get(srcKey); // 按位按下的键用映射音收尾,其余走原音高
+        if (mapped !== undefined) midiPosHeld.current.delete(srcKey);
+        const note = mapped ?? m.note;
+        auditionNoteOff(note);
+        noteOffVis(note);
+        if (recorder.current.isActive()) recorder.current.noteOff(note);
       } else if (m.type === 'controlChange') {
         auditionControlChange(m.note, m.velocity); // 踏板 CC64 等 → 大钢琴随延音踏板(m.note=controller,m.velocity=value)
       }
@@ -230,9 +254,17 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx, { healingMode: liveCfg.current.healingMode }); // 默认切头对齐(allowPickup=false)+ 新手治愈
       setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
       setAnalysis({ motif, rawCount: cap.length, normalizedCount: motif.notes.length });
+      setConfidence(buildMotifConfidenceProfile({
+        motif,
+        inputSource: liveCfg.current.midiMode === 'position' || !access.current ? 'position' : 'pitch',
+        timing: tm,
+        gridNotes: g,
+        snapChanges: sc,
+        healingMode: liveCfg.current.healingMode,
+      }));
       setRecordPhase('ready');
       setStatus(`隐形时钟:${tm.captureBars}bar @ BPM ${tm.bpm} · ${motif.notes.length}音 · 量化误差 ${tm.quantizeErrorMean.toFixed(2)}拍 · 吸附改 ${sc}`);
-    } catch (err) { setRecordPhase('idle'); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
+    } catch (err) { setRecordPhase('idle'); setConfidence(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
   }, [clearRecTimers]);
 
   const startHiddenGridRecord = useCallback(async () => {
@@ -439,6 +471,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             {devices.length === 0
               ? <span className="text-amber-300">未检测到 MIDI 输入设备</span>
               : <select className={sel} value={deviceId ?? ''} onChange={(e) => setDeviceId(e.target.value || null)}>{devices.map((d) => <option key={d.id} value={d.id}>{midiInputTransportLabel(d) ? `${midiInputTransportLabel(d)} · ` : ''}{d.name}</option>)}</select>}
+            <div className="flex items-center gap-1">
+              {([['pitch', '音高 1:1', '外部键盘原始音高,离调静音'], ['position', '按位', '产品 pad 位置 → 当前调性 3×5 同位音(任意调全键可用)']] as const).map(([mo, label, tip]) => (
+                <button key={mo} type="button" title={tip} onClick={() => setMidiMode(mo)}
+                  className={`rounded px-1.5 py-0.5 text-[10px] border ${midiMode === mo ? 'bg-fuchsia-900/60 border-fuchsia-600 text-fuchsia-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>{label}</button>
+              ))}
+            </div>
             <span className="text-zinc-500">last: {lastNote || '—'}</span>
             <button type="button" onClick={() => setAudioLat(getAudioLatencyMs())} className="ml-auto rounded px-1.5 py-0.5 text-[10px] border bg-zinc-800 border-zinc-700 text-zinc-400">测延迟</button>
           </div>
@@ -521,6 +559,14 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
       {/* Status */}
       <div className="px-3 py-1.5 text-[11px] text-amber-200/90 border-b border-zinc-900">{status}</div>
+      {confidence && (
+        <div className="px-3 py-1 text-[10px] border-b border-zinc-900 flex items-center gap-2" title={confidence.evidence.join('\n')}>
+          <span className={confidence.tier === 'fidelity' ? 'text-emerald-300' : confidence.tier === 'refine' ? 'text-amber-300' : 'text-rose-300'}>
+            输入置信 {(confidence.overall * 100).toFixed(0)} · {MOTIF_TIER_LABEL[confidence.tier]}档
+          </span>
+          <span className="text-zinc-500 truncate">{confidence.evidence[0]}</span>
+        </div>
+      )}
 
       {/* Analysis readout —— 独立 memo:MIDI 试听的 activeNotes/lastNote 变化不重渲染这块重面板 = 降输入延迟 */}
       {a && <AnalysisReadout a={a} timing={timing} snapChanges={snapChanges} result={result} style={style} tonality={tonality} alignFirst={alignFirst} onTogglePickup={togglePickup} />}

@@ -12,7 +12,7 @@ import { beats, pc } from '../../newEngine/foundation';
 import { fitMidiToProgramRange } from '../../newEngine/knowledge/instruments';
 import { leadCompWetEnergyRatio } from '../../newEngine/render/renderMixBalance';
 import { buildMgLeadRoadMap } from '../../newEngine/render/mgLeadRenderer';
-import { planAuthoredUserMotifBrick } from '../../newEngine/render/userMotifBrick';
+import { authoredMotifSectionInfos, planAuthoredUserMotifBrick } from '../../newEngine/render/userMotifBrick';
 import type { TrackIR } from '../../newEngine/ir/MusicalIR';
 import type { SandboxStyle, UserMotif } from '../model/types';
 
@@ -115,7 +115,10 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     const roadMap = buildMgLeadRoadMap(mb.bundle.harmonic, mb.bundle.band, mb.bundle.timebase, mb.bundle.acgPianoScorePlan);
     const totalBeats = (mb.bundle.timebase.beatToTick(beats(0)) as number)
       + mb.bundle.arrangement.sections.reduce((sum, section) => sum + section.bars * mb.bundle.arrangement.meter.numerator, 0);
-    const planned = planAuthoredUserMotifBrick({ brick: ov.userBrick!, roadMap, harmonicPlan: mb.bundle.harmonic, totalBeats })!;
+    const planned = planAuthoredUserMotifBrick({
+      brick: ov.userBrick!, roadMap, harmonicPlan: mb.bundle.harmonic, totalBeats,
+      sections: authoredMotifSectionInfos(mb.bundle.arrangement.sections, mb.bundle.arrangement.meter.numerator),
+    })!;
     expect(planned.roadMapBrickIndices.length).toBeGreaterThanOrEqual(1);
     expect(planned.endBeat).toBeGreaterThan(planned.startBeat);
     expect(planned.harmonicSupportRatio).toBeGreaterThan(0.6);
@@ -128,7 +131,11 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     const mb = buildMotifSongBundle({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 96 }, ov);
     const roadMap = buildMgLeadRoadMap(mb.bundle.harmonic, mb.bundle.band, mb.bundle.timebase, mb.bundle.acgPianoScorePlan);
     const totalBeats = mb.bundle.arrangement.sections.reduce((sum, section) => sum + section.bars * mb.bundle.arrangement.meter.numerator, 0);
-    const planned = planAuthoredUserMotifBrick({ brick: ov.userBrick!, roadMap, harmonicPlan: mb.bundle.harmonic, totalBeats })!;
+    // 镜像生产落位:renderCoordinator 同样传 sections(段落亲和),推导必须一致
+    const planned = planAuthoredUserMotifBrick({
+      brick: ov.userBrick!, roadMap, harmonicPlan: mb.bundle.harmonic, totalBeats,
+      sections: authoredMotifSectionInfos(mb.bundle.arrangement.sections, mb.bundle.arrangement.meter.numerator),
+    })!;
     const song = generateSongFromMotifBundle(mb);
     expect(song.status).not.toBe('failed');
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;

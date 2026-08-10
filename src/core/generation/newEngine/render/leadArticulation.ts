@@ -17,6 +17,7 @@ export interface FastLeadLegatoOptions {
   samePitchGapTicks: number;    // 同音高重复音留的安全间隙(防 noteOff 撞掉下一个 noteOn)
   minDurationTicks: number;     // 连音后最小时长兜底
   maxExtensionTicks?: number;   // 可选:单音最多延长多少 tick(限制过度延长)
+  hardBoundaryTicks?: readonly number[]; // arranger section starts that notes may not cross
 }
 
 /** ★ 集中决策:按风格给 legato 选项(Q+N 与 Q+R 都调它)。
@@ -47,7 +48,10 @@ function computeLegatoDurations(
     if (ioi <= 0) continue; // 同位
     const samePitch = notes[i].pitch === notes[j].pitch;
     // 安全上限:绝不越过下一起音(同音高再留 gap 防 noteOff 撞掉 noteOn);此上限【始终】优先于 minDuration 软下限。
-    const cap = samePitch ? ioi - options.samePitchGapTicks : ioi;
+    let cap = samePitch ? ioi - options.samePitchGapTicks : ioi;
+    const hardBoundary = options.hardBoundaryTicks?.find(boundary =>
+      boundary > notes[i].startTick && boundary < notes[i].startTick + cap);
+    if (hardBoundary !== undefined) cap = hardBoundary - notes[i].startTick;
     if (samePitch) {
       // ★ 同音重复 = re-attack 断奏(beginner healing §9.1,用户拍板):render legato【不连接/不延长】,
       //   保 staccato 手势;仅当原本就重叠 → 安全裁剪(只缩短,防 noteOff 撞掉重复音)。
@@ -58,6 +62,11 @@ function computeLegatoDurations(
       if (options.maxExtensionTicks != null) target = Math.min(target, notes[i].durationTicks + options.maxExtensionTicks);
       dur[i] = Math.max(1, Math.min(target, cap));
     }
+  }
+  for (let i = 0; i < notes.length; i++) {
+    const hardBoundary = options.hardBoundaryTicks?.find(boundary =>
+      boundary > notes[i].startTick && boundary < notes[i].startTick + dur[i]);
+    if (hardBoundary !== undefined) dur[i] = Math.max(1, hardBoundary - notes[i].startTick);
   }
   return dur;
 }

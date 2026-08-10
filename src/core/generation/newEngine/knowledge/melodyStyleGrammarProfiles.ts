@@ -15,11 +15,15 @@
 //   - soft-parallel favorite rules: the crawl/hold slope shape behind
 //     `lofi_uhloiw` bar 5-6, prepended for all styles.
 //
-// Builtin rules act as "fallback" when no slope rule's duration window
-// matches the current brick; slope rules dominate by sheer count + weight
-// when their window fits.
+// Legacy grammars retain the original duration-window fallback. POP/RNB opt
+// into family-only admission and adapt phrase duration in their scheduler.
 
-import { makeGrammar, type Grammar, type GrammarRule } from './melodyGrammarTypes';
+import {
+  makeGrammar,
+  type Grammar,
+  type GrammarRule,
+  type GrammarSelectionPolicy,
+} from './melodyGrammarTypes';
 import { BUILTIN_RULES } from './melodyBuiltinGrammar';
 import {
   jazzSlopeRulesToGrammarRules,
@@ -180,12 +184,35 @@ export function acgPianoSongGrammarForContext(context: AcgPianoSongGrammarContex
 export type { AcgPianoSongGrammarSubset } from './melodySlopeAdapter';
 const RNB_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...RNB_SLOPE_RULES];
 
+/**
+ * Impro-Visor-compatible fuzzy matching: family is the only hard gate.
+ * Duration only nudges selection; duplicate RHS/source mass is balanced by
+ * the runtime before a concrete corpus variant is chosen.
+ */
+const POP_FAMILY_SELECTION_POLICY: GrammarSelectionPolicy = Object.freeze({
+  matchMode: 'family-only',
+  collapseRhsSignatures: true,
+  sourceWeightCap: 0.20,
+  rhsWeightCap: 0.025,
+  durationFitFloor: 0.45,
+  authoredWeightExponent: 0.5,
+});
+
+const RNB_FAMILY_SELECTION_POLICY: GrammarSelectionPolicy = Object.freeze({
+  matchMode: 'family-only',
+  collapseRhsSignatures: true,
+  sourceWeightCap: 0.22,
+  rhsWeightCap: 0.022,
+  durationFitFloor: 0.45,
+  authoredWeightExponent: 0.6,
+});
+
 export const ENRICHED_GRAMMAR = makeGrammar(ALL_RULES, 'Phrase');
 export const JAZZ_SAX_DEXTER_GORDON_GRAMMAR = makeGrammar(JAZZ_SAX_DEXTER_GORDON_RULES, 'Phrase');
-export const POP_ENRICHED_GRAMMAR = makeGrammar(POP_ALL_RULES, 'Phrase');
+export const POP_ENRICHED_GRAMMAR = makeGrammar(POP_ALL_RULES, 'Phrase', POP_FAMILY_SELECTION_POLICY);
 export const LOFI_ENRICHED_GRAMMAR = makeGrammar(LOFI_ALL_RULES, 'Phrase');
 export const ACG_PIANOSONG_GRAMMAR = makeGrammar(ACG_PIANOSONG_RULES, 'Phrase');
-export const RNB_ENRICHED_GRAMMAR = makeGrammar(RNB_ALL_RULES, 'Phrase');
+export const RNB_ENRICHED_GRAMMAR = makeGrammar(RNB_ALL_RULES, 'Phrase', RNB_FAMILY_SELECTION_POLICY);
 
 /** Total rule count for diagnostics. */
 export const ENRICHED_GRAMMAR_RULE_COUNT = ALL_RULES.length;

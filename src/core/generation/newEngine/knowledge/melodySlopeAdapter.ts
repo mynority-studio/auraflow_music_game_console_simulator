@@ -16,10 +16,9 @@
 // named jazz turnarounds/cadences routed before generic dominant/color
 // tests so imported rules fire in the same harmonic neighborhood.
 //
-// Token duration matching: each slope rule has an authored total duration
-// (sum of token d's). Rule fires only when brick.durationBeats is roughly
-// comparable (0.75x .. 1.5x) so we don't drop a 16-beat rule into a 4-beat
-// brick (or vice versa).
+// Token duration matching: each slope rule retains its authored total duration
+// (sum of token d's). Family-only style grammars use it as a soft fit weight;
+// their scheduler owns repeat/rest-fill/clip adaptation after selection.
 
 import { IMPROVISOR_SLOPES, type ImprovisorSlopeRule, type SlopeNote, type FlatToken } from './melodySlopeCorpus';
 import type { GrammarRule, AbstractMelodyToken } from './melodyGrammarTypes';
@@ -207,6 +206,7 @@ export function slopeRuleToGrammarRule(ivRule: ImprovisorSlopeRule, options: Slo
     weight,
     metadata: {
       sourceRuleId: ivRule.id,
+      sourceName: ivRule.source,
       sourceBrickType: ivRule.brickType,
       authoredDurationBeats: totalDur,
       ...(lofiTags ? { lofiTags } : {}),
@@ -214,11 +214,9 @@ export function slopeRuleToGrammarRule(ivRule: ImprovisorSlopeRule, options: Slo
     },
     conditions: {
       brickFamily: families,
-      // Duration window — rule fires when brick is roughly the rule's
-      // authored length. Without this a 16-beat Sad-Cadence rule could
-      // get applied to a 4-beat brick, overflowing into next brick.
-      // The window is generous (0.5x .. 2x) so most rules still find a
-      // brick to fire on; LickGen + clipping handle minor overruns.
+      // Legacy grammars still read this as a hard window. POP/RNB's explicit
+      // family-only policy reads the authored duration as a soft fit signal,
+      // then lets the token scheduler adapt the selected phrase.
       minDuration: totalDur * 0.5,
       maxDuration: totalDur * 2.0,
     },

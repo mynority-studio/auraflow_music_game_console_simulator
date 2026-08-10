@@ -35,12 +35,12 @@ fi
 
 ## Phase 2: 端口管理
 
-检查 3000 端口（Vite 配置端口）是否被占用，占用则强制释放：
+检查 4000 端口（Vite 配置端口）是否被占用，占用则强制释放：
 
 ```bash
-PIDS=$(lsof -ti :3000 2>/dev/null || true)
+PIDS=$(lsof -ti :4000 2>/dev/null || true)
 if [ -n "$PIDS" ]; then
-  echo "端口 3000 被占用 (PID: $PIDS)，正在释放..."
+  echo "端口 4000 被占用 (PID: $PIDS)，正在释放..."
   kill -9 $PIDS
   sleep 1
 fi
@@ -65,8 +65,8 @@ echo "Dev server started: PID=$DEV_PID"
 READY=0
 for i in 1 2 3 4 5 6; do
   sleep 1
-  if curl -skf -o /dev/null https://localhost:3000 2>/dev/null \
-     || curl -sf -o /dev/null http://localhost:3000 2>/dev/null; then
+  if curl -skf -o /dev/null https://localhost:4000 2>/dev/null \
+     || curl -sf -o /dev/null http://localhost:4000 2>/dev/null; then
     READY=1
     break
   fi
@@ -90,7 +90,7 @@ URLS=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/auraflow-dev.log \
 # 兜底：日志解析不到 Network → 用 ipconfig/hostname 自算 LAN IP（可能用错协议）
 if [ -z "$(echo "$URLS" | grep Network)" ]; then
   LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-  [ -n "$LAN_IP" ] && URLS="$URLS"$'\n'"Network: <unknown-protocol>://${LAN_IP}:3000/"
+  [ -n "$LAN_IP" ] && URLS="$URLS"$'\n'"Network: <unknown-protocol>://${LAN_IP}:4000/"
 fi
 
 echo "$URLS"
@@ -98,10 +98,10 @@ echo "$URLS"
 
 > Vite 启动 `--host=0.0.0.0` 时会暴露所有局域网接口，本项目因含 `basic-ssl` 插件输出形如：
 > ```
-> ➜  Local:   https://localhost:3000/
-> ➜  Network: https://192.168.1.5:3000/
-> ➜  Network: https://100.x.x.x:3000/    ← Tailscale
-> ➜  Network: https://198.18.0.1:3000/   ← 虚拟网卡
+> ➜  Local:   https://localhost:4000/
+> ➜  Network: https://192.168.1.5:4000/
+> ➜  Network: https://100.x.x.x:4000/    ← Tailscale
+> ➜  Network: https://198.18.0.1:4000/   ← 虚拟网卡
 > ```
 >
 > **注意**：基于自签证书，浏览器首次访问会有"证书不受信任"警告，点 Advanced → Proceed 即可。
@@ -114,12 +114,12 @@ echo "$URLS"
 === Dev Server Started ===
 
 PID:      <DEV_PID>
-Local:    https://localhost:3000/
-Network:  https://192.168.x.x:3000/   ← 优先用此给手机扫码
-          https://100.x.x.x:3000/     ← Tailscale
+Local:    https://localhost:4000/
+Network:  https://192.168.x.x:4000/   ← 优先用此给手机扫码
+          https://100.x.x.x:4000/     ← Tailscale
           ...                          ← 列出 Vite 输出的全部 Network 行
 Log:      /tmp/auraflow-dev.log
-Stop:     kill <DEV_PID>  /  lsof -ti :3000 | xargs kill -9
+Stop:     kill <DEV_PID>  /  lsof -ti :4000 | xargs kill -9
 ```
 
 **注意**：本命令不会等待用户停止 dev server，启动完成后立即返回。

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { makeSeededRng, hashString } from './mgRng';
-import { reserveScheduledTokensForAuthoredSpans, scheduleTokens, scheduleBrickExpansions } from './mgTokenScheduler';
+import {
+  reserveScheduledTokensForAuthoredSpans,
+  scheduleTokens,
+  scheduleBrickExpansions,
+  scheduleFamilyPhraseToBrick,
+} from './mgTokenScheduler';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
 // ============================================================
@@ -83,6 +88,52 @@ describe('render/mgTokenScheduler · scheduleTokens (Loop 3)', () => {
     // brick1 的 token 从 startBeat=2 开始
     const brick1Starts = out.filter((o) => o.startBeat >= 2).map((o) => o.startBeat);
     expect(brick1Starts).toEqual([2, 3]);
+  });
+
+  it('family phrase fit repeats a short slope across a long brick', () => {
+    const tokens: AbstractMelodyToken[] = [
+      { kind: 'SlopeEnter', dirMin: -2, dirMax: 2, duration: 0 },
+      C(1),
+      { kind: 'G', duration: 1 },
+      { kind: 'SlopeExit', duration: 0 },
+    ];
+    const out = scheduleFamilyPhraseToBrick(tokens, 0, 8);
+    expect(out.filter(entry => entry.token.kind === 'G').map(entry => entry.startBeat)).toEqual([1, 3, 5, 7]);
+    expect(out.filter(entry => entry.token.kind === 'SlopeEnter')).toHaveLength(4);
+    expect(out.filter(entry => entry.token.kind === 'SlopeExit')).toHaveLength(4);
+  });
+
+  it('family phrase fit rest-fills a tail too short for a useful answer', () => {
+    const out = scheduleFamilyPhraseToBrick([C(1), { kind: 'G', duration: 1 }], 0, 4.5);
+    expect(out.at(-1)).toMatchObject({ startBeat: 4, token: { kind: 'R', duration: 0.5 } });
+  });
+
+  it('family phrase fit preserves a stable landing when a long slope is clipped', () => {
+    const out = scheduleFamilyPhraseToBrick([
+      { kind: 'SlopeEnter', dirMin: 1, dirMax: 3, duration: 0 },
+      { kind: 'L', duration: 1 },
+      { kind: 'A', duration: 1 },
+      { kind: 'L', duration: 1 },
+      { kind: 'A', duration: 1 },
+      { kind: 'G', duration: 1 },
+      { kind: 'SlopeExit', duration: 0 },
+    ], 0, 2);
+    expect(out.at(-1)).toMatchObject({ startBeat: 1.5, token: { kind: 'G', duration: 0.5 } });
+    expect(out.filter(entry => entry.token.kind === 'SlopeEnter')).toHaveLength(1);
+    expect(out.filter(entry => entry.token.kind === 'SlopeExit')).toHaveLength(1);
+  });
+
+  it('family phrase fit restarts at arranger section boundaries', () => {
+    const out = scheduleBrickExpansions([
+      {
+        brickIndex: 0,
+        brick: { startBeat: 0, durationBeats: 8, family: 'Turnaround' },
+        tokens: [C(3), { kind: 'G', duration: 1 }],
+      },
+    ], { fitMode: 'family-phrase', fitGridBeats: 0.5, phraseBoundaries: [6] });
+    expect(out.some(entry => entry.startBeat < 6
+      && entry.startBeat + entry.token.duration > 6 + 1e-6)).toBe(false);
+    expect(out.some(entry => entry.startBeat === 6 && entry.token.kind === 'C')).toBe(true);
   });
 
   it('authored brick 在 token 阶段接管区间,跨界音与 ACG return 都变成 rest', () => {

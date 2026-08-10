@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=4000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -50,6 +50,7 @@
     "audit:lofi-hiphop-arrangement": "vitest run --config vitest.audit.config.ts scripts/audit-lofi-hiphop-arrangement.test.ts",
     "audit:lofi-musical-foundation": "vitest run --config vitest.audit.config.ts scripts/audit-lofi-musical-foundation.test.ts",
     "audit:lofi-phrase-interaction": "vitest run --config vitest.audit.config.ts scripts/audit-lofi-phrase-interaction.test.ts",
+    "audit:melody-grammar-diversity": "vitest run --config vitest.audit.config.ts scripts/audit-pop-rnb-grammar-diversity.test.ts",
     "export:lofi-full-note-logs": "vitest run --config vitest.export.config.ts scripts/export-lofi-full-note-logs.export.test.ts",
     "export:jazz-five-four-midi-groove": "vitest run --config vitest.export.config.ts scripts/jazz-five-four-midi-groove.export.test.ts",
     "export:jazz-five-four-gate-g": "vitest run --config vitest.export.config.ts scripts/export-jazz-five-four-gate-g.export.test.ts",
