@@ -824,6 +824,7 @@ export function renderSongFull(
         totalBeats: totalBeatsForLead,
         sections: motifSectionInfos,
         confidenceTier: userMotifBrick.confidenceTier,
+        style: band.style, // 按风格融入合同(motifStyleIntegration)
       },
     )
     : undefined;

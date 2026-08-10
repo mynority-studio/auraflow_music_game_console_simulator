@@ -27,6 +27,7 @@ import {
   type UserMotifBrickNote,
 } from './userMotifBrick';
 import { buildMelodyRhythmShapeProfile, melodyRhythmShapeSimilarity } from './mgRhythmShapeMatcher';
+import { motifStyleIntegration } from './motifStyleIntegration';
 
 export type MotifConfidenceTier = 'fidelity' | 'refine' | 'heal';
 export type MotifDevelopmentTransform =
@@ -175,14 +176,16 @@ export function planMotifDevelopment(args: {
   totalBeats: number;
   sections?: readonly AuthoredMotifSectionInfo[];
   confidenceTier?: MotifConfidenceTier;
+  style?: string;
 }): AuthoredMotifDevelopmentOccurrence[] {
   const { plan, roadMap, harmonicPlan, totalBeats, sections } = args;
   const tier = args.confidenceTier ?? 'fidelity';
-  // 四期(用户裁决 §0.5):有段落数据 → 每段落保证动机在场;无段落数据 → 旧的按歌长配额
-  const perSection = (sections?.length ?? 0) > 0;
+  const integration = motifStyleIntegration(args.style);
+  // 按风格融入合同:POP/RNB 每段落在场;LOFI/ACG/JAZZ 松散关联(占比交给衍生语法)
+  const perSection = integration.perSectionPresence && (sections?.length ?? 0) > 0;
   const maxExtra = perSection
     ? sections!.length
-    : Math.min(3, Math.floor(totalBeats / 32)); // 每 8 bar 才配得起一次再现,封顶 3
+    : Math.min(integration.maxExtra, Math.floor(totalBeats / 32)); // 每 8 bar 才配得起一次再现
   if (maxExtra <= 0 || plan.notes.length < 2) return [];
   const relative = [...plan.notes]
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
@@ -210,10 +213,11 @@ export function planMotifDevelopment(args: {
       if (!motifStructuralNotesSupported(placed, harmonicPlan)) continue;
       const late = startBeat / Math.max(1, totalBeats);
       const isRecapLike = transform === 'exact-recap' || transform === 'terminal-hold';
-      // 再现类靠后(回归感),片段类居中(发展感)
+      // 再现类靠后(回归感),片段类居中(发展感);fragmentBias = 风格对全句引用的忌讳程度
       const positionFit = isRecapLike ? late * 10 : 10 - Math.abs(late - 0.5) * 20;
       const kind: AuthoredMotifDevelopmentOccurrence['kind'] = isRecapLike && late > 0.6 ? 'return' : 'develop';
-      const score = support * 100 + sectionHeadBonus(sections, startBeat) * 12 + positionFit;
+      const score = support * 100 + sectionHeadBonus(sections, startBeat) * 12 + positionFit
+        + (isRecapLike ? 0 : integration.fragmentBias);
       candidates.push({
         score,
         occ: {
@@ -323,6 +327,7 @@ export function withMotifDevelopment(
     totalBeats: number;
     sections?: readonly AuthoredMotifSectionInfo[];
     confidenceTier?: MotifConfidenceTier;
+    style?: string;
   },
 ): AuthoredUserMotifBrickPlan | undefined {
   if (!plan) return undefined;

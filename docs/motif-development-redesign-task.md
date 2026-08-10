@@ -58,6 +58,21 @@
   空间,目前由 head/tail 衍生规则 + sustain 近似覆盖);衍生音 origin 染色
   (复用 origin:'motif' 会误触 shaper 保护语义,需新字段)。
 
+### 四期后调优(2026-08-10 实听反馈轮)
+- **authored quote 审计豁免**:avoid-long-exposure / structural-tone-outside-
+  intersection 在 authored lead 窗口内降级 warning(镜像沙盒 quote 哲学);
+  接不住的长音仍压 <1 拍;sustain 延展和声感知。修掉"长音密 motif 必定
+  生成失败"(120 组合探针:36 失败 → 0)。
+- **轮廓保留**:有用户 motif 时全风格开 preserveSlopeGrammar —— 此前 POP/RNB
+  导音规划覆盖衍生规则的音程轮廓,只剩节奏,听不出"基于动机的拓展"。
+- **按风格融入合同**(`motifStyleIntegration.ts`,实听:POP 最自然,其余
+  "为了播放而播放"):POP/RNB 每段在场;JAZZ 松散片段化;LOFI/ACG 收敛到
+  陈述+1 次(它们的 lead 架构是 score-owned/通篇作曲,硬塞引用必然外来)。
+  规则权重/片段偏好逐风格定,全部可听感调参。
+- **后备(下一步候选)**:LOFI 深度融入 —— 把用户 motif 喂进 lofiLeadScorePlan
+  自己的 statement/variation/return 机制做种子素材(架构正解);ACG 把 motif
+  编进 cantabile-theme bank 并带 acg 稳定落点语义。
+
 ## 1. 不变量（所有出现位置一律适用）
 
 1. **用户音符的音高、先后顺序永不改变**。

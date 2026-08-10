@@ -18,9 +18,10 @@ import {
   type GrammarRule,
 } from '../knowledge/melodyGrammarTypes';
 import type { AuthoredUserMotifBrickPlan } from './userMotifBrick';
+import { motifStyleIntegration } from './motifStyleIntegration';
 
 export const USER_MOTIF_RULE_SOURCE = 'user-motif';
-/** legacy 加权采样下的存在感(语料单条权重多为 1..11);family-only 出口被 rhsWeightCap 归一,不受此值垄断。 */
+/** 缺省权重(POP 模型);实际按 motifStyleIntegration 的风格合同取值。 */
 export const USER_MOTIF_RULE_WEIGHT_FULL = 40;
 export const USER_MOTIF_RULE_WEIGHT_FRAGMENT = 24;
 const STEP_WINDOW = 1; // 每步音程窗口 ±1 半音 = 近似模进(渐变)
@@ -56,8 +57,9 @@ export function motifNotesToTokens(notes: readonly RelNote[]): AbstractMelodyTok
   return out;
 }
 
-/** motif → grammar 规则(full/head/tail/augmented 四个不同 RHS 签名的变体)。 */
-export function userMotifGrammarRules(plan: AuthoredUserMotifBrickPlan): GrammarRule[] {
+/** motif → grammar 规则(full/head/tail/head3/diminished/augmented 六个不同 RHS 签名的变体)。 */
+export function userMotifGrammarRules(plan: AuthoredUserMotifBrickPlan, style?: string): GrammarRule[] {
+  const { ruleWeightFull: FULL, ruleWeightFragment: FRAG } = motifStyleIntegration(style);
   const rel = relativeNotes(plan);
   if (rel.length < 2) return [];
   const half = Math.max(2, Math.ceil(rel.length / 2));
@@ -66,25 +68,25 @@ export function userMotifGrammarRules(plan: AuthoredUserMotifBrickPlan): Grammar
     return xs.map((x) => ({ ...x, onset: x.onset - base }));
   };
   const variants: Array<{ id: string; notes: RelNote[]; weight: number }> = [
-    { id: 'full', notes: rel, weight: USER_MOTIF_RULE_WEIGHT_FULL },
+    { id: 'full', notes: rel, weight: FULL },
     ...(rel.length >= 3 ? [
-      { id: 'head', notes: rel.slice(0, half), weight: USER_MOTIF_RULE_WEIGHT_FULL },
-      { id: 'tail', notes: rezero(rel.slice(rel.length - half)), weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT },
+      { id: 'head', notes: rel.slice(0, half), weight: FULL },
+      { id: 'tail', notes: rezero(rel.slice(rel.length - half)), weight: FRAG },
     ] : []),
     // head3/diminished 增加不同 RHS 签名数量:family-only 采样按签名 cap(≈2.5%/个),
     // 签名越多 motif 词汇的总占比越高(K×cap),再经节奏重掷放大
     ...(rel.length >= 4 ? [
-      { id: 'head3', notes: rel.slice(0, 3), weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT },
+      { id: 'head3', notes: rel.slice(0, 3), weight: FRAG },
     ] : []),
     {
       id: 'diminished',
       notes: rel.map((x) => ({ pitch: x.pitch, onset: x.onset * 0.5, dur: Math.max(0.25, x.dur * 0.5) })),
-      weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT,
+      weight: FRAG,
     },
     {
       id: 'augmented',
       notes: rel.map((x) => ({ pitch: x.pitch, onset: x.onset * 2, dur: x.dur * 2 })),
-      weight: USER_MOTIF_RULE_WEIGHT_FRAGMENT,
+      weight: FRAG,
     },
   ];
   return variants.map((v) => {
@@ -105,9 +107,10 @@ export function userMotifGrammarRules(plan: AuthoredUserMotifBrickPlan): Grammar
 /** 风格 Grammar → 注入 motif 规则的新 Grammar(不改原对象,保留 selectionPolicy;WeakMap 记忆化)。 */
 export function createUserMotifGrammarInjector(
   plan: AuthoredUserMotifBrickPlan | undefined,
+  style?: string,
 ): (grammar: Grammar) => Grammar {
   if (!plan) return (grammar) => grammar;
-  const rules = userMotifGrammarRules(plan);
+  const rules = userMotifGrammarRules(plan, style);
   if (rules.length === 0) return (grammar) => grammar;
   const memo = new WeakMap<Grammar, Grammar>();
   return (grammar) => {
