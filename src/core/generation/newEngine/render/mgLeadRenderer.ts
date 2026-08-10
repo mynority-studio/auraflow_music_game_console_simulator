@@ -62,6 +62,7 @@ import {
 } from '../knowledge/melodyStyleGrammarProfiles';
 import { makeSeededRng } from './mgRng';
 import { authoredLeadSpans, type AuthoredUserMotifBrickPlan } from './userMotifBrick';
+import { createUserMotifGrammarInjector } from './userMotifGrammar';
 import { compileLofiPhraseLead } from './lofiPhraseLeadCompiler';
 import { lofiLeadGrammarForRole, type LofiLeadGrammarRole } from '../knowledge/lofiLeadGrammarBank';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
@@ -308,12 +309,15 @@ export function renderMgMelodyWithAcgPerformancePlan(
     : roadMapOverride ?? (style === 'ACG' && acgPianoScorePlan?.roadMap
       ? acgPianoScorePlan.roadMap
       : parseFunctionalRoadMap({ part, songKeyPc, style }));
+  // 四期(用户裁决 §0.5):有用户 motif 时,风格语法先注入 motif 衍生规则(模进/渐变词汇),
+  // 再配合节奏重掷 → 生成材料全曲反复"说"动机形状,不再只是插播引用。
+  const injectUserMotifGrammar = createUserMotifGrammarInjector(authoredUserMotifPlan);
   const expandForRhythmIdentity = (
     grammar: Parameters<typeof expandGrammarForBrick>[0],
     brick: RoadMap['bricks'][number],
   ) => authoredUserMotifPlan
     ? expandGrammarForBrickMatchingRhythm({
-      grammar,
+      grammar: injectUserMotifGrammar(grammar),
       brick,
       rng: mgRng,
       target: authoredUserMotifPlan.rhythmShapeProfile,

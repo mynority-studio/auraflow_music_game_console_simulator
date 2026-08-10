@@ -123,8 +123,10 @@ export function refineMotifNotes(
     x.durationBeat = Math.min(x.durationBeat, 1 / 3);
     x.velocity = Math.max(1, Math.round(x.velocity * 0.8));
   }
-  // —— 经过音插入:大跳被时间撑开 / 长间隙 → 弱分位补一颗区间内的 scale 音 ——
+  // —— 经过音插入:【仅治愈档】(用户标准 2026-08-10:非瞎按输入尽量不加音,
+  //    加多了听不出是自己的 motif;完善动机优先用外部框接/衍生材料,不动内部)——
   const inserts: UserMotifBrickNote[] = [];
+  if (tier !== 'heal') return notes.sort((x, y) => x.onsetBeat - y.onsetBeat || x.pitch - y.pitch);
   const maxInserts = Math.max(1, Math.floor(notes.length / 3));
   for (let i = 0; i < notes.length - 1 && inserts.length < maxInserts; i++) {
     const a = notes[i], b = notes[i + 1];
@@ -174,7 +176,11 @@ export function planMotifDevelopment(args: {
 }): AuthoredMotifDevelopmentOccurrence[] {
   const { plan, roadMap, harmonicPlan, totalBeats, sections } = args;
   const tier = args.confidenceTier ?? 'fidelity';
-  const maxExtra = Math.min(3, Math.floor(totalBeats / 32)); // 每 8 bar 才配得起一次再现,封顶 3
+  // 四期(用户裁决 §0.5):有段落数据 → 每段落保证动机在场;无段落数据 → 旧的按歌长配额
+  const perSection = (sections?.length ?? 0) > 0;
+  const maxExtra = perSection
+    ? sections!.length
+    : Math.min(3, Math.floor(totalBeats / 32)); // 每 8 bar 才配得起一次再现,封顶 3
   if (maxExtra <= 0 || plan.notes.length < 2) return [];
   const relative = [...plan.notes]
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
@@ -220,14 +226,31 @@ export function planMotifDevelopment(args: {
 
   const chosen: AuthoredMotifDevelopmentOccurrence[] = [];
   const usedTransforms = new Set<string>();
-  for (const { occ } of candidates) {
-    if (chosen.length >= maxExtra) break;
-    if (usedTransforms.has(occ.transform)) continue; // 手法多样,不重复同一变奏
-    const collides = [{ startBeat: plan.startBeat, endBeat: plan.endBeat }, ...chosen]
-      .some((s) => occ.startBeat < s.endBeat + MIN_GAP_BEATS - 1e-6 && occ.endBeat > s.startBeat - MIN_GAP_BEATS + 1e-6);
-    if (collides) continue;
-    usedTransforms.add(occ.transform);
-    chosen.push(occ);
+  const gap = perSection ? 2 : MIN_GAP_BEATS; // 段落在场模式下密度更高,间隔放宽到 2 拍
+  const collides = (occ: AuthoredMotifDevelopmentOccurrence): boolean =>
+    [{ startBeat: plan.startBeat, endBeat: plan.endBeat }, ...chosen]
+      .some((s) => occ.startBeat < s.endBeat + gap - 1e-6 && occ.endBeat > s.startBeat - gap + 1e-6);
+
+  if (perSection) {
+    // 每段落取该段内最高分候选(优先未用过的手法;全用过则允许重复 —— 在场优先于多样)
+    for (const section of sections!) {
+      if (chosen.length >= maxExtra) break;
+      if (plan.startBeat >= section.startBeat - 1e-6 && plan.startBeat < section.endBeat - 1e-6) continue; // 陈述已在场
+      const inSection = candidates.filter(({ occ }) =>
+        occ.startBeat >= section.startBeat - 1e-6 && occ.startBeat < section.endBeat - 1e-6 && !collides(occ));
+      const pick = inSection.find(({ occ }) => !usedTransforms.has(occ.transform)) ?? inSection[0];
+      if (!pick) continue; // 该段无达标位置(支持度/长音门)→ 宁缺,记录在 audit 层
+      usedTransforms.add(pick.occ.transform);
+      chosen.push(pick.occ);
+    }
+  } else {
+    for (const { occ } of candidates) {
+      if (chosen.length >= maxExtra) break;
+      if (usedTransforms.has(occ.transform)) continue; // 手法多样,不重复同一变奏
+      if (collides(occ)) continue;
+      usedTransforms.add(occ.transform);
+      chosen.push(occ);
+    }
   }
   return chosen.sort((a, b) => a.startBeat - b.startBeat);
 }

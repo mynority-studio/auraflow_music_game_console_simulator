@@ -124,6 +124,40 @@ describe('motifDevelopmentPlan · 发展弧线规划', () => {
     for (let i = 1; i < occs.length; i++) expect(occs[i].startBeat).toBeGreaterThanOrEqual(occs[i - 1].endBeat + 4 - 1e-6);
   });
 
+  it('四期·段落在场:有 sections 时每个段落保证 ≥1 次动机事件', () => {
+    const plan = statementPlan();
+    const sections = [
+      { id: 's1', role: 'verse', startBeat: 0, endBeat: 16 },   // 陈述在此
+      { id: 's2', role: 'verse', startBeat: 16, endBeat: 32 },
+      { id: 's3', role: 'chorus', startBeat: 32, endBeat: 48 },
+      { id: 's4', role: 'chorus', startBeat: 48, endBeat: 64 },
+    ];
+    const occs = planMotifDevelopment({
+      plan, roadMap: flatRoadMap(16), harmonicPlan: harmonic16, totalBeats: 64, sections,
+    });
+    for (const section of sections.slice(1)) {
+      expect(
+        occs.some((o) => o.startBeat >= section.startBeat && o.startBeat < section.endBeat),
+        `段落 ${section.id} 应有动机在场`,
+      ).toBe(true);
+    }
+  });
+
+  it('四期·sustain:间隙 ≤1 拍连贯到下一音,同音断奏不连,末音延到 span 末', () => {
+    const gappy: UserMotifBrickNote[] = [
+      { pitch: 60, onsetBeat: 0, durationBeat: 0.5, velocity: 100, structuralToneScore: 1 },  // 到 1.0 有 0.5 间隙 → 连
+      { pitch: 64, onsetBeat: 1, durationBeat: 0.5, velocity: 96, structuralToneScore: 1 },   // 下一音同音高 → 不连
+      { pitch: 64, onsetBeat: 2, durationBeat: 0.5, velocity: 96, structuralToneScore: 1 },   // 末音 → 延到 4
+    ];
+    const plan = { ...statementPlan(gappy), fidelityReferenceNotes: gappy, notes: gappy };
+    const out = materializeAuthoredUserMotifDevelopment(
+      { ...plan, occurrences: [] }, timebase, { sustainFill: true, tempoBpm: 96 });
+    const durs = out.map((n) => (n.durationTicks as number) / timebase.ppq);
+    expect(durs[0]).toBeGreaterThan(0.9);            // 0.5 → 连到 onset 1(留 release)
+    expect(durs[1]).toBeLessThanOrEqual(0.5 + 1e-6); // 同音高保持断奏
+    expect(durs[2]).toBeGreaterThan(1.8);            // 0.5 → 延到 span 末 4(留 release)
+  });
+
   it('短歌(16 拍)不硬塞发展段', () => {
     const occs = planMotifDevelopment({
       plan: statementPlan(), roadMap: flatRoadMap(4), harmonicPlan: harmonic16, totalBeats: 16,
@@ -201,12 +235,20 @@ describe('motifDevelopmentPlan · 修饰(经过音 + 降级)', () => {
     expect(refineMotifNotes(octaveLeap, harmonic4, 4, 'fidelity')).toEqual(octaveLeap);
   });
 
-  it('修饰档:八度跳进之间插入区间内 scale 经过音,用户音高一个不动', () => {
+  it('修饰档不再插经过音(用户标准:非瞎按尽量还原,少加音)', () => {
     const octaveLeap: UserMotifBrickNote[] = [
       { pitch: 60, onsetBeat: 0, durationBeat: 1, velocity: 100, structuralToneScore: 1 },
       { pitch: 72, onsetBeat: 2, durationBeat: 1, velocity: 96, structuralToneScore: 1 },
     ];
-    const out = refineMotifNotes(octaveLeap, harmonic4, 4, 'refine');
+    expect(refineMotifNotes(octaveLeap, harmonic4, 4, 'refine').length).toBe(2);
+  });
+
+  it('治愈档:八度跳进之间插入区间内 scale 经过音,用户音高一个不动', () => {
+    const octaveLeap: UserMotifBrickNote[] = [
+      { pitch: 60, onsetBeat: 0, durationBeat: 1, velocity: 100, structuralToneScore: 1 },
+      { pitch: 72, onsetBeat: 2, durationBeat: 1, velocity: 96, structuralToneScore: 1 },
+    ];
+    const out = refineMotifNotes(octaveLeap, harmonic4, 4, 'heal');
     expect(out.length).toBe(3);
     const inserted = out.find((n) => n.pitch !== 60 && n.pitch !== 72)!;
     expect(inserted.pitch).toBeGreaterThan(60);

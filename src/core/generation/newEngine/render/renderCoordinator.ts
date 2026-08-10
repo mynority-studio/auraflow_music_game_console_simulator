@@ -831,6 +831,7 @@ export function renderSongFull(
     beatsPerBar: beatsPerBarOf(arrangement.meter),
     grooveContract: arrangement.songGrooveContract,
     tempoBpm: arrangement.tempoBpm,
+    sustainFill: true, // 四期(用户裁决 §0.5):motif 时值允许合理 sustain/连贯
   });
   const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
     track.role === 'lead'

@@ -637,6 +637,31 @@ function enforceMotifTimingFidelity(
   return out;
 }
 
+/** 四期(用户裁决 §0.5):时值向后延展连贯 —— 异音高且间隙 ≤1 拍 → 连到下一音(留 release);
+ *  末音连到 span 末;同音重复 = 有意断奏不连(镜像 healer);只延长不缩短,onset 不动。 */
+function sustainFillMotifNotes(
+  notes: readonly UserMotifBrickNote[],
+  endBeat: number,
+  tempoBpm: number | undefined,
+  ppq: number,
+): UserMotifBrickNote[] {
+  const release = releaseGapBeat(tempoBpm ?? 100, ppq);
+  return notes.map((n, i) => {
+    const next = notes[i + 1];
+    const currentEnd = n.onsetBeat + n.durationBeat;
+    let target = currentEnd;
+    if (!next) {
+      target = Math.max(currentEnd, endBeat - release);
+    } else if (next.pitch !== n.pitch) {
+      const gapToNext = next.onsetBeat - currentEnd;
+      if (gapToNext > 1e-6 && gapToNext <= 1 + 1e-6) target = next.onsetBeat - release;
+    }
+    return target > currentEnd + 1e-6
+      ? { ...n, durationBeat: Math.max(n.durationBeat, target - n.onsetBeat) }
+      : n;
+  });
+}
+
 function toExactNoteIR(n: UserMotifBrickNote, timebase: Timebase): NoteIR {
   return {
     pitch: midi(Math.max(0, Math.min(127, Math.round(n.pitch)))),
@@ -700,6 +725,8 @@ export function materializeAuthoredUserMotifBrick(
     beatsPerBar?: number;
     grooveContract?: UserMotifGrooveContract;
     tempoBpm?: number;
+    /** 四期:时值向后延展连贯(sustain/踏板感);同音断奏不连,只延不缩。 */
+    sustainFill?: boolean;
   } = {},
 ): NoteIR[] {
   if (!plan || plan.notes.length === 0) return [];
@@ -733,15 +760,18 @@ export function materializeAuthoredUserMotifBrick(
     plan.endBeat,
     timebase.ppq,
   );
-  return fidelityAligned
-    .map((note) => {
-      const onsetBeat = Math.max(plan.startBeat, Math.min(plan.endBeat - 0.03, note.onsetBeat));
-      return {
-        ...note,
-        onsetBeat,
-        durationBeat: Math.max(0.03, Math.min(note.durationBeat, plan.endBeat - onsetBeat)),
-      };
-    })
+  const clamped = fidelityAligned.map((note) => {
+    const onsetBeat = Math.max(plan.startBeat, Math.min(plan.endBeat - 0.03, note.onsetBeat));
+    return {
+      ...note,
+      onsetBeat,
+      durationBeat: Math.max(0.03, Math.min(note.durationBeat, plan.endBeat - onsetBeat)),
+    };
+  });
+  const sustained = options.sustainFill
+    ? sustainFillMotifNotes(clamped, plan.endBeat, options.tempoBpm, timebase.ppq)
+    : clamped;
+  return sustained
     .map((note) => toExactNoteIR(note, timebase))
     .sort((a, b) => beatN(a.startTick) - beatN(b.startTick) || beatN(a.pitch) - beatN(b.pitch));
 }
