@@ -395,8 +395,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setGeneratedSong(null);
     setGenerating(true);
     try {
-      const s = motifSeed ?? currentQhSeed();
-      if (motifSeed == null) setMotifSeed(s);
+      // 每次点生成换新 seed(修"同 motif 反复生成永远同一首"):记录本次 seed 供下载/复现
+      const s = currentQhSeed();
+      setMotifSeed(s);
       setAnalysis((prev) => prev ?? { motif, rawCount: captured.length, normalizedCount: motif.notes.length });
       const mode = tonalityParentMode(tonality);
       const override = buildUserMotifBrickSongOverride(motif, { style, seed: s, keyPc, mode, inputTonality: tonality, confidenceTier: confidence?.tier });
