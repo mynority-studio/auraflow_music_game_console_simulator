@@ -825,6 +825,7 @@ export function renderSongFull(
         sections: motifSectionInfos,
         confidenceTier: userMotifBrick.confidenceTier,
         style: band.style, // 按风格融入合同(motifStyleIntegration)
+        developmentV2: true, // 墨盒任务书 P1:谱系+形式功能+距离带(baseline 走 false)
       },
     )
     : undefined;

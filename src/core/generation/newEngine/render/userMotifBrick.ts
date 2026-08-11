@@ -55,7 +55,8 @@ export interface MotifRecognizabilityAudit {
   warnings: string[];          // report-only;阈值校准后可升级为硬门
 }
 
-/** 发展弧线中的一次 motif 再现(redesign 二期)。音高与顺序永不改;变奏只删音/改时值/整体平移。 */
+/** 发展弧线中的一次 motif 再现。二期:音高保真组变奏;P1(墨盒任务书)追加谱系字段 ——
+ *  pitchPolicy='contour' 的发展节点允许保轮廓换音高(用户裁决 2026-08-11,倒影解禁)。 */
 export interface AuthoredMotifDevelopmentOccurrence {
   kind: 'develop' | 'return';
   transform: string;
@@ -65,6 +66,13 @@ export interface AuthoredMotifDevelopmentOccurrence {
   fidelityReferenceNotes: readonly UserMotifBrickNote[];
   harmonicSupportRatio: number;
   note: string;
+  // —— P1 谱系 provenance(v2 路径写入;v1 缺省)——
+  nodeId?: string;
+  parentNodeId?: string;          // 'root' | 前一节点 id(链式生长,不再全部从 root 克隆)
+  formalFunction?: string;        // presentation/continuation/development/return
+  pitchPolicy?: 'exact' | 'contour';
+  introducedFeatures?: readonly string[];
+  similarityToRoot?: number;      // 双向距离带的实测值
 }
 
 /** Arrangement section context for placement: role/functionTag drive hook/theme affinity. */

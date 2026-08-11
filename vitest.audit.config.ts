@@ -12,6 +12,7 @@ export default defineConfig({
       'scripts/audit-lofi-musical-foundation.test.ts',
       'scripts/audit-lofi-phrase-interaction.test.ts',
       'scripts/audit-pop-rnb-grammar-diversity.test.ts',
+      'scripts/audit-motif-development-baseline.test.ts',
     ],
     environment: 'node',
     testTimeout: 120_000,

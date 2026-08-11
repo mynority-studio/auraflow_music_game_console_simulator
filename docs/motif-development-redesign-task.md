@@ -175,6 +175,35 @@
 - 后备优化（未做，有意留）：token 层定高锚点深改；辨识度审计接入
   GenerationController 的 AuditReport findings 通道。
 
+## 4.5 墨盒任务书 P0+P1(2026-08-11,用户裁决:锚点保真+发展节点保轮廓换音高,倒影解禁/逆行维持禁用)
+
+**P0 · H1-H7 证据(scripts/audit-motif-development-baseline.test.ts,11 类 motif 固定集)**:
+- H1/H5(伴奏不消费 motif):**弱形式不成立** —— motif-swap 反事实显示换 motif 后
+  bass/comp/pad/drum 全部变化(和声按 motif 选择 → 伴奏经和声间接响应);
+  **强形式成立**:无直接节奏 cell/骨架投射(P2 靶子)。
+- H2(无形式功能):成立 → P1 已修。H3(无谱系):成立 → P1 已修。
+- H4(单调奖励相似):变体成立(无"太近惩罚")→ P1 距离带已修。
+- H6(乐句-和声无共同规划):不成立(我们的强项)。H7:部分成立(grammar 注入缓解)。
+- **baseline 量化(v1=二期)**:16 次出现 / 8 次近复制(50%) / 谱系深度 0;
+  **v2(谱系)**:13 次 / 2 次近复制(15%,降 69%,超任务书 ≥30% 目标)/ 9 个
+  contour 节点 / 谱系链启用。
+
+**P1 · 实现(feature flag `developmentV2`,render 默认开,baseline 走 false)**:
+- `render/motifLineage.ts`:形式功能(段落位置→presentation/continuation/
+  development/return)、操作阶梯(continuation:片段→模进→位移;development:
+  倒影→深模进→contour-repitch→liquidation)、双向相似度带(0.5 节奏形状 +
+  0.5 轮廓符号,too-close 自动叠位移加深,too-far 重罚)、chord-scale 方向
+  约束吸附(保轮廓换音高的合法性由构造保证)。
+- 谱系链:发展节点从上一变体生长(parentNodeId);return = root 保真 + 继承
+  发展引入的时值特征(双亲合成,记 `root+<node>`)。
+- occurrence 合同新增 provenance:nodeId/parentNodeId/formalFunction/
+  pitchPolicy/introducedFeatures/similarityToRoot。
+- 辨识度审计:contour 节点验轮廓符号(倒影按镜像),不再误报保序破坏。
+- 仅在 perSectionPresence 风格(POP/RNB)启用 v2;LOFI/ACG 维持各自融入合同。
+
+**P2 待办**:bass 级数骨架/comp 节奏 cell 直接投射;伴奏-swap 与静音主旋律
+反事实;乐句级多候选全曲重排(P3)。
+
 ## 5. 验证纪律
 
 每期收尾：`pnpm exec tsc --noEmit` + `pnpm test -- --run`，与分支基线对照

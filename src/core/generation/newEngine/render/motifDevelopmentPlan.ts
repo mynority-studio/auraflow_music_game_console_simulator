@@ -28,6 +28,15 @@ import {
 } from './userMotifBrick';
 import { buildMelodyRhythmShapeProfile, melodyRhythmShapeSimilarity } from './mgRhythmShapeMatcher';
 import { motifStyleIntegration } from './motifStyleIntegration';
+import {
+  applyLineageOp,
+  formalFunctionForPosition,
+  lineageOpFor,
+  lineageSimilarityToRoot,
+  pitchPolicyForOp,
+  similarityBandVerdict,
+  type MotifFormalFunction,
+} from './motifLineage';
 
 export type MotifConfidenceTier = 'fidelity' | 'refine' | 'heal';
 export type MotifDevelopmentTransform =
@@ -295,7 +304,22 @@ export function auditMotifRecognizability(
       statementProfile,
       buildMelodyRhythmShapeProfile(rel, 0, Math.max(1, occ.endBeat - occ.startBeat)),
     );
-    const pitchOrderPreserved = isOrderedSubsequence(anchorPitches(occ.notes), statementAnchors);
+    // contour 节点(P1 保轮廓换音高):验轮廓符号而非音高子序列(倒影按镜像验)
+    const pitchOrderPreserved = occ.pitchPolicy === 'contour'
+      ? (() => {
+        const signs = (xs: readonly { onsetBeat: number; pitch: number }[]): number[] => {
+          const s = [...xs].sort((a, b) => a.onsetBeat - b.onsetBeat);
+          return s.slice(1).map((x, i) => Math.sign(x.pitch - s[i].pitch));
+        };
+        const rootSigns = signs(plan.notes);
+        const occSigns = signs(occ.notes.filter((n) => (n.structuralToneScore ?? 0.5) > ORNAMENT_SCORE_MAX));
+        const expected = occ.introducedFeatures?.includes('inverted-contour')
+          ? rootSigns.map((v) => -v) : rootSigns;
+        const len = Math.min(expected.length, occSigns.length);
+        if (len === 0) return true;
+        return occSigns.slice(0, len).filter((v, i) => v === expected[i]).length / len >= 0.6;
+      })()
+      : isOrderedSubsequence(anchorPitches(occ.notes), statementAnchors);
     if (rhythmSimilarity < MOTIF_RECOGNIZABILITY_WARN_SIMILARITY) {
       warnings.push(`${occ.note}:节奏形状相似度 ${rhythmSimilarity.toFixed(2)} 低于 ${MOTIF_RECOGNIZABILITY_WARN_SIMILARITY}`);
     }
@@ -318,6 +342,104 @@ export function auditMotifRecognizability(
   };
 }
 
+/** P1(墨盒任务书)· 谱系发展规划器(motif_development_v2):
+ *  - parent-child 链:发展节点从上一变体生长(不再每次重置 root);
+ *  - 形式功能:continuation(片段/模进/位移)→ development(倒影/深模进/liquidation)→ return(root 保真 + 继承);
+ *  - 双向距离带:too-close 自动加深操作,too-far 重罚。 */
+function planMotifLineageDevelopment(args: {
+  plan: AuthoredUserMotifBrickPlan;
+  roadMap: RoadMap;
+  harmonicPlan: HarmonicPlan;
+  totalBeats: number;
+  sections: readonly AuthoredMotifSectionInfo[];
+}): AuthoredMotifDevelopmentOccurrence[] {
+  const { plan, roadMap, harmonicPlan, totalBeats, sections } = args;
+  if (plan.notes.length < 2) return [];
+  const rootRel = [...plan.notes].sort((a, b) => a.onsetBeat - b.onsetBeat)
+    .map((x) => ({ ...x, onsetBeat: x.onsetBeat - plan.startBeat }));
+  const rootSpan = spanOf(rootRel);
+  const brickStarts = [...new Set(roadMap.bricks
+    .filter((b) => b.durationBeats > 0 && b.startBeat >= plan.endBeat + 2 - 1e-6)
+    .map((b) => b.startBeat))];
+
+  const chosen: AuthoredMotifDevelopmentOccurrence[] = [];
+  let parentRel = rootRel;          // 链头 = root;此后逐节点生长
+  let parentNodeId = 'root';
+  const depth: Record<MotifFormalFunction, number> = { presentation: 0, continuation: 0, development: 0, return: 0 };
+  const introducedPool: string[] = [];
+  const overlaps = (start: number, end: number): boolean =>
+    [{ startBeat: plan.startBeat, endBeat: plan.endBeat }, ...chosen]
+      .some((s) => start < s.endBeat + 2 - 1e-6 && end > s.startBeat - 2 + 1e-6);
+
+  const lastIdx = sections.length - 1;
+  sections.forEach((section, idx) => {
+    if (plan.startBeat >= section.startBeat - 1e-6 && plan.startBeat < section.endBeat - 1e-6) return; // 陈述已在场
+    const fn = formalFunctionForPosition(section.startBeat / Math.max(1, totalBeats), idx === lastIdx);
+    const isReturn = fn === 'return';
+    const op = isReturn
+      ? (introducedPool.includes('displacement') ? 'rhythmic-displacement' as const : 'terminal-hold' as const)
+      : lineageOpFor(fn, depth[fn]);
+    const material = isReturn ? rootRel : parentRel; // return = root 保真;发展节点从父代生长
+    let best: { occ: AuthoredMotifDevelopmentOccurrence; score: number } | null = null;
+    for (const startBeat of brickStarts) {
+      if (startBeat < section.startBeat - 1e-6 || startBeat >= section.endBeat - 1e-6) continue;
+      const placedParent = material.map((x) => ({ ...x, onsetBeat: x.onsetBeat + startBeat }));
+      let result = applyLineageOp(op, placedParent, harmonicPlan, startBeat + spanOf(material) + 1);
+      if (!result) result = { notes: placedParent.map((x) => ({ ...x })), pitchPolicy: 'exact', introduced: [] };
+      let notes = capUnsupportedLongExposure(result.notes, harmonicPlan);
+      const relNotes = notes.map((x) => ({ ...x, onsetBeat: x.onsetBeat - startBeat }));
+      const span = spanOf(relNotes);
+      const endBeat = startBeat + span;
+      if (endBeat > totalBeats + 1e-6 || endBeat > section.endBeat + 4 + 1e-6) continue;
+      if (overlaps(startBeat, endBeat)) continue;
+      const support = motifHarmonicSupportRatio(notes, harmonicPlan);
+      if (result.pitchPolicy === 'exact') { // 保真组沿用二期硬门;contour 组音高本就出自准入集
+        if (support < MOTIF_OCCURRENCE_MIN_SUPPORT) continue;
+        if (!motifLongExposureSupported(notes, harmonicPlan)) continue;
+        if (!motifStructuralNotesSupported(notes, harmonicPlan)) continue;
+      } else if (support < 0.45) continue;
+      let similarity = lineageSimilarityToRoot(rootRel, relNotes, rootSpan, span);
+      let verdict = similarityBandVerdict(fn, similarity);
+      let escalated = result;
+      if (verdict === 'too-close' && !isReturn) { // 过近 → 叠一层位移加深
+        const deeper = applyLineageOp('rhythmic-displacement', notes, harmonicPlan, endBeat + 1);
+        if (deeper) {
+          escalated = { ...result, notes: deeper.notes, introduced: [...result.introduced, ...deeper.introduced] };
+          notes = capUnsupportedLongExposure(deeper.notes, harmonicPlan);
+          similarity = lineageSimilarityToRoot(rootRel, notes.map((x) => ({ ...x, onsetBeat: x.onsetBeat - startBeat })), rootSpan, span);
+          verdict = similarityBandVerdict(fn, similarity);
+        }
+      }
+      const bandBonus = verdict === 'in-band' ? 15 : verdict === 'too-close' ? -10 : -25;
+      const score = support * 100 + sectionHeadBonus(sections, startBeat) * 12 + bandBonus;
+      const nodeId = `motif-node-${idx}`;
+      const occ: AuthoredMotifDevelopmentOccurrence = {
+        kind: isReturn ? 'return' : 'develop',
+        transform: op,
+        startBeat, endBeat,
+        notes, fidelityReferenceNotes: notes,
+        harmonicSupportRatio: support,
+        note: `${isReturn ? '回归' : fn === 'development' ? '发展' : '延续'} · ${op} · 父=${isReturn ? 'root+' + parentNodeId : parentNodeId} · 相似 ${(similarity * 100).toFixed(0)}% @bar${Math.floor(startBeat / 4) + 1}`,
+        nodeId, parentNodeId: isReturn ? `root+${parentNodeId}` : parentNodeId,
+        formalFunction: fn,
+        pitchPolicy: isReturn ? 'exact' : pitchPolicyForOp(op),
+        introducedFeatures: escalated.introduced,
+        similarityToRoot: similarity,
+      };
+      if (!best || score > best.score) best = { occ, score };
+    }
+    if (!best) return;
+    chosen.push(best.occ);
+    if (!isReturn) { // 链式生长:下一节点从本节点的素材出发
+      parentRel = best.occ.notes.map((x) => ({ ...x, onsetBeat: x.onsetBeat - best!.occ.startBeat }));
+      parentNodeId = best.occ.nodeId!;
+      depth[fn]++;
+      introducedPool.push(...(best.occ.introducedFeatures ?? []));
+    }
+  });
+  return chosen.sort((a, b) => a.startBeat - b.startBeat);
+}
+
 /** 一期 plan → 二期发展 plan:陈述按档位修饰,规划 develop/return occurrence 并同样修饰。 */
 export function withMotifDevelopment(
   plan: AuthoredUserMotifBrickPlan | undefined,
@@ -328,11 +450,21 @@ export function withMotifDevelopment(
     sections?: readonly AuthoredMotifSectionInfo[];
     confidenceTier?: MotifConfidenceTier;
     style?: string;
+    /** motif_development_v2(墨盒任务书 P1):谱系+形式功能+距离带。缺省 false = 二期行为(baseline)。 */
+    developmentV2?: boolean;
   },
 ): AuthoredUserMotifBrickPlan | undefined {
   if (!plan) return undefined;
   const tier = args.confidenceTier ?? 'fidelity';
-  const occurrences = planMotifDevelopment({ ...args, plan }).map((occ) => {
+  const useV2 = (args.developmentV2 ?? false) && (args.sections?.length ?? 0) > 0
+    && motifStyleIntegration(args.style).perSectionPresence; // LOFI/ACG 等松散风格仍走各自收敛策略
+  const rawOccurrences = useV2
+    ? planMotifLineageDevelopment({
+      plan, roadMap: args.roadMap, harmonicPlan: args.harmonicPlan,
+      totalBeats: args.totalBeats, sections: args.sections!,
+    })
+    : planMotifDevelopment({ ...args, plan });
+  const occurrences = rawOccurrences.map((occ) => {
     const refined = capUnsupportedLongExposure(
       refineMotifNotes(occ.notes, args.harmonicPlan, occ.endBeat, tier), args.harmonicPlan);
     return { ...occ, notes: refined, fidelityReferenceNotes: refined };
