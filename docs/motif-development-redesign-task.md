@@ -201,8 +201,16 @@
 - 辨识度审计:contour 节点验轮廓符号(倒影按镜像),不再误报保序破坏。
 - 仅在 perSectionPresence 风格(POP/RNB)启用 v2;LOFI/ACG 维持各自融入合同。
 
-**P2 待办**:bass 级数骨架/comp 节奏 cell 直接投射;伴奏-swap 与静音主旋律
-反事实;乐句级多候选全曲重排(P3)。
+**P2 · comp 回声投射(已实现,2026-08-11)**:`render/motifTrackProjection.ts` —
+每次 motif 乐句(陈述/再现)结束后的呼吸小节,comp 用 motif 头部节奏 cell
+(≤3 音,相位量化 0.5 网格避开 snapCompLaidback)敲和弦 shell 应答。机制完全
+镜像 LOFI compRole='answer' 的"score projection"先例;texture 路与 legacy
+compPattern 路都接;回声小节不与 authored span 重叠;仅 POP/RNB;纯函数
+(authoredUserMotifPlan 的投影,retry 稳定)。
+
+**P2.5 待办**:bass 级数骨架投射(bassRole 参与和声身份/chordKey,合同风险高,
+需单独设计);fill 尾部片段(乐句间空地);真 CC64 踏板计划;伴奏-swap 与
+静音主旋律反事实;乐句级多候选全曲重排(P3)。
 
 ## 5. 验证纪律
 

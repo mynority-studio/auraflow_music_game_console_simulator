@@ -47,6 +47,7 @@ import {
   type UserMotifBrick,
 } from './userMotifBrick';
 import { materializeAuthoredUserMotifDevelopment, withMotifDevelopment } from './motifDevelopmentPlan';
+import { buildMotifCompEchoByBar } from './motifTrackProjection';
 import { buildOccupationMap, type OccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
@@ -837,6 +838,9 @@ export function renderSongFull(
     sustainFill: true, // 四期(用户裁决 §0.5):motif 时值允许合理 sustain/连贯
     harmonicPlan: plan, // sustain 和声感知:延展不得制造 avoid-note 长时值暴露
   });
+  // P2 跨轨投射:motif 乐句后的呼吸小节 → comp 应答 motif 头部节奏 cell(POP/RNB)
+  const motifEchoByAbsoluteBar = buildMotifCompEchoByBar(
+    authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);
   const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
     track.role === 'lead'
       ? assembleAuthoredUserMotifLead(track, authoredUserMotifPlan, authoredUserMotifNotes, timebase)
@@ -977,7 +981,7 @@ export function renderSongFull(
       .filter((event) => event.down)
       .map((event) => event.sectionId),
   );
-  if (inLineup('comp') && (!hasResolvedRoleLayout || compActiveSectionIds.size > 0)) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, foundationRoleBySection, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, compRegister: instrumentation.strictRegisterByRole?.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection, pianoScorePlan: acgPianoScorePlan, grooveScorePlan: arrangement.grooveScorePlan, lofiVoicingIntent, compPerformanceIntent: arrangement.lofiFoundationPlan?.compIntent, compPedalActiveSectionIds }));
+  if (inLineup('comp') && (!hasResolvedRoleLayout || compActiveSectionIds.size > 0)) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, foundationRoleBySection, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, compRegister: instrumentation.strictRegisterByRole?.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection, pianoScorePlan: acgPianoScorePlan, grooveScorePlan: arrangement.grooveScorePlan, lofiVoicingIntent, compPerformanceIntent: arrangement.lofiFoundationPlan?.compIntent, compPedalActiveSectionIds, motifEchoByAbsoluteBar }));
   if (padTrack) tracks.push(padTrack);
   // Drum realization waits until the lead exists so every declared follow
   // source can be consumed. It is inserted at this index to preserve the

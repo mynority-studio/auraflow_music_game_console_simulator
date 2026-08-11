@@ -62,6 +62,8 @@ export interface AccompContext {
   compPerformanceIntent?: Readonly<LofiFoundationPlan['compIntent']>;
   /** Sections whose selected concrete voice has a documented CC64 PedalPlan. */
   compPedalActiveSectionIds?: ReadonlySet<string>;
+  /** P2 motif 跨轨投射:motif 乐句后的呼吸小节 → comp 用 motif 头部节奏 cell 应答(POP/RNB)。 */
+  motifEchoByAbsoluteBar?: ReadonlyMap<number, { accentBeats: readonly number[]; durations: readonly number[] }>;
 }
 
 /**
@@ -462,6 +464,40 @@ export function renderAccompaniment(
     }
     return output.sort((left, right) => left.tRel - right.tRel || left.midis[0]! - right.midis[0]!);
   };
+  /** P2:motif 回声 —— 镜像 withLofiAnswerFallback 的"score projection"语义,
+   *  在回声小节的空拍位补 motif 头部节奏 cell 的和弦 shell 击点(已有击点 ±0.2 内不叠)。 */
+  const withMotifEchoHits = (
+    hits: readonly TextureChordHit[],
+    spanStartBeat: number,
+    spanDurationBeats: number,
+    voiced: readonly number[],
+  ): TextureChordHit[] => {
+    const echoMap = ctx.motifEchoByAbsoluteBar;
+    if (!echoMap || echoMap.size === 0) return [...hits];
+    const output = [...hits];
+    const spanEndBeat = spanStartBeat + spanDurationBeats;
+    const shell = voiced.length > 3 ? voiced.slice(1, 3) : voiced.length > 2 ? voiced.slice(1) : [...voiced];
+    if (shell.length === 0) return output;
+    const startBar = Math.max(0, Math.floor(spanStartBeat / beatsPerBar));
+    const endBar = Math.max(startBar, Math.floor((spanEndBeat - 1e-4) / beatsPerBar));
+    for (let absoluteBar = startBar; absoluteBar <= endBar; absoluteBar++) {
+      const echo = echoMap.get(absoluteBar);
+      if (!echo) continue;
+      echo.accentBeats.forEach((phase, index) => {
+        const targetBeat = absoluteBar * beatsPerBar + phase;
+        if (targetBeat < spanStartBeat - 1e-4 || targetBeat >= spanEndBeat - 0.08) return;
+        if (output.some((hit) => Math.abs(spanStartBeat + hit.tRel - targetBeat) <= 0.2)) return;
+        const remaining = spanEndBeat - targetBeat;
+        output.push({
+          tRel: targetBeat - spanStartBeat,
+          dur: Math.max(0.08, Math.min(echo.durations[index] ?? 0.5, remaining - 0.02)),
+          midis: shell,
+          vel: 0.5, // 应答清晰但不过前景;后续 groove projection/humanize 正常作用
+        });
+      });
+    }
+    return output.sort((left, right) => left.tRel - right.tRel || left.midis[0]! - right.midis[0]!);
+  };
   const keepLofiCompAttack = (
     absoluteBeat: number,
     spanStartBeat: number,
@@ -836,8 +872,13 @@ export function renderAccompaniment(
         ? rawHits.filter((hit) =>
           keepLofiCompAttack(base + hit.tRel, base, 'texture'))
         : rawHits;
-      const scoreOwnedInteractionHits = withLofiAnswerFallback(
-        interactionHits,
+      const scoreOwnedInteractionHits = withMotifEchoHits(
+        withLofiAnswerFallback(
+          interactionHits,
+          base,
+          span.durationBeats as number,
+          voiced,
+        ),
         base,
         span.durationBeats as number,
         voiced,
@@ -958,6 +999,25 @@ export function renderAccompaniment(
         if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音
         compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
       }
+    }
+    // P2 motif 回声(legacy compPattern 路;texture 路在 span 循环内做):
+    // 回声小节按 motif 头部 cell 补 shell 击点,已有击点 ±0.2 内不叠。
+    const echo = ctx.motifEchoByAbsoluteBar?.get(bar);
+    if (echo) {
+      const existing = compNotes
+        .map((n) => (n.startTick as number) / timebase.ppq)
+        .filter((b) => b >= barStart && b < barStart + beatsPerBar);
+      echo.accentBeats.forEach((phase, index) => {
+        const beat = barStart + phase;
+        if (beat >= totalBeats) return;
+        const span = spanAtBeat(plan, beat);
+        if (!span || !inActive(span.sectionId) || authoredCompSectionIds.has(span.sectionId)) return;
+        if (existing.some((b) => Math.abs(b - beat) <= 0.2)) return;
+        const shell = shellBySpan[span.id] ?? voicedBySpan[span.id];
+        const durationTicks = timebase.beatToTick(beats(echo.durations[index] ?? 0.5));
+        const startTick = timebase.beatToTick(beats(beat));
+        for (const m of shell) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: 58 });
+      });
     }
   }
 
