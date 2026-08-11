@@ -148,7 +148,9 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
       expect(beatOf(n.startTick, ppq)).toBeCloseTo(planned.notes[index].onsetBeat, 1);
       expect(beatOf(n.durationTicks, ppq)).toBeCloseTo(planned.notes[index].durationBeat, 1);
     });
-    expect(quote.map((n) => n.pitch)).toEqual(ov.userBrick!.notes.map((note) => note.pitch));
+    // 演奏外衣(融合度修复)后:音区连续可整段八度对齐 → 断言八度等价(音级+顺序不变)
+    expect(quote.map((n) => ((n.pitch as number) % 12 + 12) % 12))
+      .toEqual(ov.userBrick!.notes.map((note) => ((note.pitch % 12) + 12) % 12));
     expect(mb.bundle.band.key).toBe(pc(motif.keyPc));
     expect(mb.bundle.band.mode).toBe(motif.mode);
   });

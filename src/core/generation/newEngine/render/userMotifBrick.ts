@@ -820,10 +820,58 @@ export function assembleAuthoredUserMotifLead(
 ): TrackIR {
   if (!plan || authoredNotes.length === 0) return lead;
   const spans = authoredLeadSpans(plan);
-  const generated = lead.notes.filter((note) => !spans.some((s) => overlapsSpan(note, s.startBeat, s.endBeat, timebase)));
+  const ppq = timebase.ppq;
+  const beatOf = (n: NoteIR): number => beatN(n.startTick) / ppq;
+  const generated = lead.notes
+    .filter((note) => !spans.some((s) => overlapsSpan(note, s.startBeat, s.endBeat, timebase)))
+    .map((note) => ({ ...note }));
+  let authored = authoredNotes.map((note) => ({ ...note }));
+
+  // —— 演奏外衣三件套(融合度修复):motif 音符内容不动,穿上这首歌的演奏特征 ——
+  for (const span of spans) {
+    const inSpan = (n: NoteIR): boolean => beatOf(n) >= span.startBeat - 1e-4 && beatOf(n) < span.endBeat - 1e-4;
+    const spanNotes = authored.filter(inSpan);
+    if (spanNotes.length === 0) continue;
+    const context = generated.filter((n) => beatOf(n) >= span.startBeat - 8 && beatOf(n) < span.endBeat + 8);
+    // 1) 力度融入:匹配邻域生成 lead 的力度均值(保留 motif 内部相对重音);废掉响度地板的孤立感
+    if (context.length >= 3) {
+      const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+      const ctxMean = mean(context.map((n) => n.velocity as number));
+      const spanMean = mean(spanNotes.map((n) => n.velocity as number));
+      if (spanMean > 0) {
+        const scale = Math.max(0.6, Math.min(1.4, ctxMean / spanMean));
+        for (const n of spanNotes) n.velocity = Math.max(1, Math.min(127, Math.round((n.velocity as number) * scale)));
+      }
+    }
+    // 2) 音区连续:入口与前一个生成音落差 >12 半音 → 整段按八度对齐(音级/轮廓/相对关系不变)
+    const before = context.filter((n) => beatOf(n) < span.startBeat - 1e-4);
+    const prevNote = before[before.length - 1];
+    const firstAuthored = [...spanNotes].sort((a, b) => beatN(a.startTick) - beatN(b.startTick))[0];
+    if (prevNote && firstAuthored) {
+      let shift = 0;
+      let gap = (firstAuthored.pitch as number) - (prevNote.pitch as number);
+      for (let guard = 0; guard < 3 && Math.abs(gap + shift) > 12; guard++) shift += gap + shift > 0 ? -12 : 12;
+      if (shift !== 0 && spanNotes.every((n) => {
+        const moved = (n.pitch as number) + shift;
+        return moved >= 40 && moved <= 96;
+      })) {
+        for (const n of spanNotes) n.pitch = midi((n.pitch as number) + shift);
+      }
+    }
+    // 3) 边界缝合:前一个生成音 legato 桥接进 motif 入口(间隙 ≤2 拍时延到入口留 release;只延不缩)
+    if (prevNote) {
+      const prevEnd = beatOf(prevNote) + beatN(prevNote.durationTicks) / ppq;
+      const gapBeats = span.startBeat - prevEnd;
+      if (gapBeats > 0.05 && gapBeats <= 2) {
+        const target = span.startBeat - 0.06;
+        const nextDur = Math.max(beatN(prevNote.durationTicks) / ppq, target - beatOf(prevNote));
+        prevNote.durationTicks = timebase.beatToTick(beats(nextDur));
+      }
+    }
+  }
   return {
     ...lead,
-    notes: sanitizeLeadNoteIR([...generated, ...authoredNotes]
+    notes: sanitizeLeadNoteIR([...generated, ...authored]
       .sort((a, b) => beatN(a.startTick) - beatN(b.startTick) || beatN(a.pitch) - beatN(b.pitch))),
   };
 }
