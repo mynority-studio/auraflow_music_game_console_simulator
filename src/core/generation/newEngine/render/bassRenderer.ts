@@ -110,6 +110,8 @@ export function renderBass(
   pianoScorePlan?: AcgPianoScorePlan,
   bassPatternIdBySection?: Readonly<Record<string, string>>,
   registerRange?: { lowMidi: number; highMidi: number },
+  /** P2.5 motif 骨架:motif 小节的击点/voice 轮廓(音高仍走 voicePc/safe 合法通道)。 */
+  motifBassSkeletonByBar?: ReadonlyMap<number, { accentBeats: readonly number[]; voices: readonly ('root' | 'third' | 'fifth')[] }>,
 ): TrackIR {
   const notes: NoteIR[] = [];
   const spans = plan.chordTimeline;
@@ -197,7 +199,17 @@ export function renderBass(
       const lastBar = Math.floor(Math.max(start, end - 1e-6) / beatsPerBar);
       for (let bar = firstBar; bar <= lastBar; bar++) {
         const barStart = bar * beatsPerBar;
-        for (const hit of contractedPattern.hits) {
+        // P2.5:motif 说话的小节,bass 击点/voice 换成动机结构骨架(下拍锚由 builder 保证)
+        const motifBar = motifBassSkeletonByBar?.get(bar);
+        const barHits = motifBar
+          ? motifBar.accentBeats.map((phase, idx) => ({
+            beat: phase,
+            durationBeats: Math.max(0.5, Math.min(1.5, (motifBar.accentBeats[idx + 1] ?? beatsPerBar) - phase - 0.02)),
+            velocity: 0.62,
+            voice: (motifBar.voices[idx] ?? 'root') as (typeof contractedPattern.hits)[number]['voice'],
+          }))
+          : contractedPattern.hits;
+        for (const hit of barHits) {
           const onset = barStart + hit.beat;
           if (onset < start - 1e-6 || onset >= end - 1e-6) continue;
           const available = end - onset;

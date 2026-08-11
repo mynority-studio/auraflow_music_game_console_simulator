@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { beats, pc, createTimebase } from '../foundation';
 import { assemble } from '../harmony/harmonyEngine';
 import { buildMelodyRhythmShapeProfile } from './mgRhythmShapeMatcher';
-import { buildMotifCompEchoByBar } from './motifTrackProjection';
+import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar } from './motifTrackProjection';
 import { renderAccompaniment } from './accompanimentRenderer';
 import type { AuthoredUserMotifBrickPlan, UserMotifBrickNote } from './userMotifBrick';
 
@@ -74,5 +74,29 @@ describe('motifTrackProjection · comp 回声投射(P2)', () => {
     for (const phase of [5.5, 6.5]) { // bar1 的 1.5/2.5 相位(下拍 0 可能已被原织体占据)
       expect(a.some((b3) => Math.abs(b3 - phase) <= 0.2)).toBe(true);
     }
+  });
+});
+
+describe('motifTrackProjection · bass 骨架投射(P2.5)', () => {
+  it('motif 小节 → 结构音落点 + voice 轮廓(上行升档),下拍锚保证', () => {
+    const map = buildMotifBassSkeletonByBar(plan(), 4, 64, 'pop');
+    expect(map.has(0)).toBe(true); // 陈述 [0,4) = bar 0
+    const bar = map.get(0)!;
+    expect(bar.accentBeats[0]).toBe(0);
+    expect(bar.voices[0]).toBe('root');
+    // NOTES 结构线 60→64→67 上行 → voice 升档
+    expect(bar.voices.length).toBe(bar.accentBeats.length);
+    if (bar.voices.length >= 3) expect(bar.voices[2]).toBe('fifth');
+    expect(bar.accentBeats.every((b) => Math.abs(b * 2 - Math.round(b * 2)) < 1e-9)).toBe(true);
+  });
+
+  it('非 perSection 风格返回空;occurrence 小节同样覆盖', () => {
+    expect(buildMotifBassSkeletonByBar(plan(), 4, 64, 'lofi').size).toBe(0);
+    const occ = {
+      kind: 'develop' as const, transform: 'fragment-head', startBeat: 8, endBeat: 12,
+      notes: NOTES.map((n) => ({ ...n, onsetBeat: n.onsetBeat + 8 })),
+      fidelityReferenceNotes: NOTES, harmonicSupportRatio: 1, note: '',
+    };
+    expect(buildMotifBassSkeletonByBar(plan([occ]), 4, 64, 'pop').has(2)).toBe(true);
   });
 });

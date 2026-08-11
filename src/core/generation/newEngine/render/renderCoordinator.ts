@@ -47,7 +47,7 @@ import {
   type UserMotifBrick,
 } from './userMotifBrick';
 import { materializeAuthoredUserMotifDevelopment, withMotifDevelopment } from './motifDevelopmentPlan';
-import { buildMotifCompEchoByBar } from './motifTrackProjection';
+import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar } from './motifTrackProjection';
 import { buildOccupationMap, type OccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
@@ -841,6 +841,9 @@ export function renderSongFull(
   // P2 跨轨投射:motif 乐句后的呼吸小节 → comp 应答 motif 头部节奏 cell(POP/RNB)
   const motifEchoByAbsoluteBar = buildMotifCompEchoByBar(
     authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);
+  // P2.5:motif 说话小节的 bass 骨架(结构音落点 + voice 轮廓;音高仍走和声合法通道)
+  const motifBassSkeletonByBar = buildMotifBassSkeletonByBar(
+    authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);
   const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
     track.role === 'lead'
       ? assembleAuthoredUserMotifLead(track, authoredUserMotifPlan, authoredUserMotifNotes, timebase)
@@ -958,6 +961,7 @@ export function renderSongFull(
       acgPianoScorePlan,
       bassPatternIdBySection,
       instrumentation.strictRegisterByRole?.bass,
+      motifBassSkeletonByBar,
     );
     const patternOwnedSectionIndexes = new Set(arrangement.sections
       .map((section, index) => bassPatternIdBySection[section.id] ? index : -1)

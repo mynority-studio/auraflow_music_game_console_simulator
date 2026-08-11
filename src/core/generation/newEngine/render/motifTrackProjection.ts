@@ -145,3 +145,66 @@ export function buildMotifCompEchoByBar(
   });
   return out;
 }
+
+// ============================================================
+// P2.5 · bass 骨架投射:motif 说话的小节里,bass 用动机结构音的落点做击点,
+// 用 root/third/fifth 三档 voice 跟随结构音轮廓(音高仍 100% 走和声合法通道)。
+// ============================================================
+
+export interface MotifBassBar {
+  accentBeats: readonly number[];
+  voices: readonly ('root' | 'third' | 'fifth')[];
+}
+
+const VOICE_LADDER = ['root', 'third', 'fifth'] as const;
+
+/** authored span 覆盖的小节 → 结构音节奏 + voice 轮廓(≤3 击,0.5 网格,保证下拍锚)。 */
+export function buildMotifBassSkeletonByBar(
+  plan: AuthoredUserMotifBrickPlan | undefined,
+  beatsPerBar: number,
+  totalBeats: number,
+  style?: string,
+): Map<number, MotifBassBar> {
+  const out = new Map<number, MotifBassBar>();
+  if (!plan || !motifStyleIntegration(style).perSectionPresence) return out;
+  const spanNotes: Array<{ notes: readonly { onsetBeat: number; pitch: number; structuralToneScore?: number }[] }> = [
+    { notes: plan.notes },
+    ...(plan.occurrences ?? []).map((o) => ({ notes: o.notes })),
+  ];
+  const totalBars = Math.floor(totalBeats / beatsPerBar);
+  for (const { notes } of spanNotes) {
+    const structural = [...notes]
+      .filter((n) => (n.structuralToneScore ?? 0.5) >= 0.58)
+      .sort((a, b) => a.onsetBeat - b.onsetBeat);
+    if (structural.length === 0) continue;
+    const byBar = new Map<number, typeof structural>();
+    for (const n of structural) {
+      const bar = Math.floor(n.onsetBeat / beatsPerBar);
+      if (bar >= totalBars) continue;
+      byBar.set(bar, [...(byBar.get(bar) ?? []), n]);
+    }
+    for (const [bar, barNotes] of byBar) {
+      if (out.has(bar)) continue;
+      const accentBeats: number[] = [];
+      const voices: ('root' | 'third' | 'fifth')[] = [];
+      let voiceIndex = 0;
+      let prevPitch: number | null = null;
+      for (const n of barNotes.slice(0, 3)) {
+        const phase = quantizeHalf(n.onsetBeat - bar * beatsPerBar);
+        if (phase >= beatsPerBar - 0.25) continue;
+        if (accentBeats.length > 0 && phase <= accentBeats[accentBeats.length - 1] + 1e-6) continue;
+        if (prevPitch !== null) {
+          voiceIndex = n.pitch > prevPitch ? Math.min(2, voiceIndex + 1)
+            : n.pitch < prevPitch ? Math.max(0, voiceIndex - 1) : voiceIndex;
+        }
+        accentBeats.push(phase);
+        voices.push(VOICE_LADDER[voiceIndex]);
+        prevPitch = n.pitch;
+      }
+      if (accentBeats.length === 0) continue;
+      if (accentBeats[0] > 0.25) { accentBeats.unshift(0); voices.unshift('root'); } // 下拍锚不缺席
+      out.set(bar, { accentBeats, voices });
+    }
+  }
+  return out;
+}
