@@ -393,11 +393,10 @@ function planMotifLineageDevelopment(args: {
       if (endBeat > totalBeats + 1e-6 || endBeat > section.endBeat + 4 + 1e-6) continue;
       if (overlaps(startBeat, endBeat)) continue;
       const support = motifHarmonicSupportRatio(notes, harmonicPlan);
-      if (result.pitchPolicy === 'exact') { // 保真组沿用二期硬门;contour 组音高本就出自准入集
-        if (support < MOTIF_OCCURRENCE_MIN_SUPPORT) continue;
-        if (!motifLongExposureSupported(notes, harmonicPlan)) continue;
-        if (!motifStructuralNotesSupported(notes, harmonicPlan)) continue;
-      } else if (support < 0.45) continue;
+      // 保真组松门(P2.2,治"动机只出现一次"):authored 窗口的 R1/R1b 审计已降级,
+      // 结构音/长音硬门不再必要(长音由 capUnsupportedLongExposure 压帽)——
+      // 只留支持度门,让原音高的片段/再现在更多段落真实落位。
+      if (support < (result.pitchPolicy === 'exact' ? 0.55 : 0.45)) continue;
       let similarity = lineageSimilarityToRoot(rootRel, relNotes, rootSpan, span);
       let verdict = similarityBandVerdict(fn, similarity);
       let escalated = result;

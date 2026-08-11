@@ -78,6 +78,14 @@ describe('motifLineage · 谱系操作不变量', () => {
     expect(out.notes.map((n) => n.onsetBeat)).toEqual(NOTES.map((n) => n.onsetBeat + 0.5));
   });
 
+  it('P2.2 · 链式模进不累积漂移音区:两代 sequence 后均值仍在父代 ±7 半音内', () => {
+    const gen1 = applyLineageOp('diatonic-sequence', NOTES, harmonic16, 5)!;
+    const gen2 = applyLineageOp('diatonic-sequence', gen1.notes, harmonic16, 5)!;
+    const mean = (xs: readonly { pitch: number }[]) => xs.reduce((a, x) => a + x.pitch, 0) / xs.length;
+    expect(Math.abs(mean(gen2.notes) - mean(NOTES))).toBeLessThanOrEqual(7);
+    expect(signsOf(gen2.notes)).toEqual(signsOf(NOTES)); // 重锚不破坏轮廓
+  });
+
   it('距离带:太近/带内/太远三态', () => {
     expect(similarityBandVerdict('continuation', 0.99)).toBe('too-close');
     expect(similarityBandVerdict('continuation', 0.7)).toBe('in-band');

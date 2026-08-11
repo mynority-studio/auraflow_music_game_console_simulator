@@ -188,7 +188,18 @@ export function applyLineageOp(
       if (op === 'inversion') introduced.push('inverted-contour');
       if (op === 'diatonic-sequence') introduced.push('sequence-shift');
       if (op === 'contour-repitch') introduced.push('repitched-contour');
-      return { notes: out, pitchPolicy: 'contour', introduced };
+      // 音区重锚(P2.2,治"越拓展越高"):链式模进 +2 会累积上浮,吸附方向约束又偏上行。
+      // 输出均值漂离父代均值 >5 半音 → 整体按八度拉回(保轮廓/保音阶/保方向序列)。
+      const mean = (xs: readonly UserMotifBrickNote[]): number => xs.reduce((s, x) => s + x.pitch, 0) / xs.length;
+      const parentMean = mean(material);
+      let recentered = out;
+      for (let guard = 0; guard < 4 && Math.abs(mean(recentered) - parentMean) > 5; guard++) {
+        const dir = mean(recentered) > parentMean ? -12 : 12;
+        const shifted = recentered.map((x) => ({ ...x, pitch: x.pitch + dir }));
+        if (shifted.some((x) => x.pitch < 48 || x.pitch > 84)) break;
+        recentered = shifted;
+      }
+      return { notes: recentered, pitchPolicy: 'contour', introduced };
     }
     default:
       return null;
