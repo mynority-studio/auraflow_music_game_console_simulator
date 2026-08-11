@@ -47,7 +47,7 @@ import {
   type UserMotifBrick,
 } from './userMotifBrick';
 import { materializeAuthoredUserMotifDevelopment, withMotifDevelopment } from './motifDevelopmentPlan';
-import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar } from './motifTrackProjection';
+import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar, buildMotifFillByBar } from './motifTrackProjection';
 import { buildOccupationMap, type OccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { applyFinalDrumFollow, renderDrums } from './drumRenderer';
@@ -841,6 +841,11 @@ export function renderSongFull(
   // P2 跨轨投射:motif 乐句后的呼吸小节 → comp 应答 motif 头部节奏 cell(POP/RNB)
   const motifEchoByAbsoluteBar = buildMotifCompEchoByBar(
     authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);
+  // P2.6:fill 尾部片段 —— 动机出现前的小节后半,comp 弱起导入(回声小节优先不覆盖)
+  for (const [bar, cell] of buildMotifFillByBar(
+    authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style)) {
+    if (!motifEchoByAbsoluteBar.has(bar)) motifEchoByAbsoluteBar.set(bar, cell);
+  }
   // P2.5:motif 说话小节的 bass 骨架(结构音落点 + voice 轮廓;音高仍走和声合法通道)
   const motifBassSkeletonByBar = buildMotifBassSkeletonByBar(
     authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);

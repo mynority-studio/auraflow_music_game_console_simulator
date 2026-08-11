@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { beats, pc, createTimebase } from '../foundation';
 import { assemble } from '../harmony/harmonyEngine';
 import { buildMelodyRhythmShapeProfile } from './mgRhythmShapeMatcher';
-import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar } from './motifTrackProjection';
+import { buildMotifBassSkeletonByBar, buildMotifCompEchoByBar, buildMotifFillByBar } from './motifTrackProjection';
 import { renderAccompaniment } from './accompanimentRenderer';
 import type { AuthoredUserMotifBrickPlan, UserMotifBrickNote } from './userMotifBrick';
 
@@ -98,5 +98,25 @@ describe('motifTrackProjection · bass 骨架投射(P2.5)', () => {
       fidelityReferenceNotes: NOTES, harmonicSupportRatio: 1, note: '',
     };
     expect(buildMotifBassSkeletonByBar(plan([occ]), 4, 64, 'pop').has(2)).toBe(true);
+  });
+});
+
+describe('motifTrackProjection · fill 尾部片段(P2.6)', () => {
+  it('occurrence 前一小节获得尾部导入 cell(后半小节相位,来源标记)', () => {
+    const occ = {
+      kind: 'develop' as const, transform: 'fragment-head', startBeat: 16, endBeat: 20,
+      notes: NOTES.map((n) => ({ ...n, onsetBeat: n.onsetBeat + 16 })),
+      fidelityReferenceNotes: NOTES, harmonicSupportRatio: 1, note: '',
+    };
+    const map = buildMotifFillByBar(plan([occ]), 4, 64, 'pop');
+    expect(map.has(3)).toBe(true); // occurrence @bar4 → fill bar 3
+    const cell = map.get(3)!;
+    expect(cell.sourceLabel).toBe('motif-tail-fill');
+    expect(cell.accentBeats.every((b) => b >= 2 - 1e-9)).toBe(true); // 后半小节
+  });
+
+  it('陈述在 bar0 时无前置小节;lofi 返回空', () => {
+    expect(buildMotifFillByBar(plan(), 4, 64, 'pop').size).toBe(0);
+    expect(buildMotifFillByBar(plan(), 4, 64, 'lofi').size).toBe(0);
   });
 });

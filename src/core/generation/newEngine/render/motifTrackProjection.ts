@@ -208,3 +208,53 @@ export function buildMotifBassSkeletonByBar(
   }
   return out;
 }
+
+// ============================================================
+// P2.6 · fill 尾部片段:每次动机出现【之前】的小节后半,comp 用动机尾部
+// cell 做弱起式导入(任务书 §10.5:fill 指向下一个 formal function)。
+// 与回声互补(回声=出现后+头部;fill=出现前+尾部),共用同一消费通道。
+// ============================================================
+
+/** 动机尾部(末 2-3 音)节奏 → 锚到 bar 后半的导入 cell。 */
+function tailFillCellOf(plan: AuthoredUserMotifBrickPlan, beatsPerBar: number): MotifEchoBar | null {
+  const sorted = [...plan.notes].sort((a, b) => a.onsetBeat - b.onsetBeat);
+  if (sorted.length < 2) return null;
+  const tail = sorted.slice(-Math.min(3, sorted.length));
+  const base = tail[0].onsetBeat;
+  const shift = beatsPerBar / 2; // 后半小节起(4/4 = beat 2)
+  const accentBeats: number[] = [];
+  const durations: number[] = [];
+  for (const n of tail) {
+    const phase = quantizeHalf(n.onsetBeat - base) + shift;
+    if (phase >= beatsPerBar - 0.25) break;
+    if (accentBeats.length > 0 && phase <= accentBeats[accentBeats.length - 1] + 1e-6) continue;
+    accentBeats.push(phase);
+    durations.push(Math.max(0.25, Math.min(0.5, quantizeHalf(n.durationBeat) || 0.5)));
+  }
+  if (accentBeats.length === 0) return null;
+  return { accentBeats, durations, velocity: 0.46, sourceLabel: 'motif-tail-fill' };
+}
+
+/** 每次动机出现之前的小节 → 尾部导入 cell(不与 authored span/已有回声小节冲突)。 */
+export function buildMotifFillByBar(
+  plan: AuthoredUserMotifBrickPlan | undefined,
+  beatsPerBar: number,
+  totalBeats: number,
+  style?: string,
+): Map<number, MotifEchoBar> {
+  const out = new Map<number, MotifEchoBar>();
+  if (!plan || !motifStyleIntegration(style).perSectionPresence) return out;
+  const cell = tailFillCellOf(plan, beatsPerBar);
+  if (!cell) return out;
+  const spans = authoredLeadSpans(plan);
+  const totalBars = Math.floor(totalBeats / beatsPerBar);
+  for (const span of spans) {
+    const fillBar = Math.floor(span.startBeat / beatsPerBar) - 1;
+    if (fillBar < 0 || fillBar >= totalBars || out.has(fillBar)) continue;
+    const barStart = fillBar * beatsPerBar;
+    const overlaps = spans.some((s) => barStart < s.endBeat - 1e-4 && barStart + beatsPerBar > s.startBeat + 1e-4);
+    if (overlaps) continue;
+    out.set(fillBar, cell);
+  }
+  return out;
+}
