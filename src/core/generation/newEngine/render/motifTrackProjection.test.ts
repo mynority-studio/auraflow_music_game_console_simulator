@@ -20,6 +20,25 @@ const plan = (occurrences: AuthoredUserMotifBrickPlan['occurrences'] = []): Auth
 });
 
 describe('motifTrackProjection · comp 回声投射(P2)', () => {
+  it('P2.1 · 多个回声小节轮换不同 cell(池含 motif 变体/语料近邻),力度微变', () => {
+    const occs = [8, 16, 24, 32].map((startBeat) => ({
+      kind: 'develop' as const, transform: 'fragment-head', startBeat, endBeat: startBeat + 4,
+      notes: NOTES.map((n) => ({ ...n, onsetBeat: n.onsetBeat + startBeat })),
+      fidelityReferenceNotes: NOTES, harmonicSupportRatio: 1, note: '',
+    }));
+    const map = buildMotifCompEchoByBar(plan(occs), 4, 64, 'pop');
+    expect(map.size).toBeGreaterThanOrEqual(3);
+    const cells = [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c);
+    expect(cells[0].sourceLabel).toBe('motif-head'); // 首次回声 = 原头部,辨识优先
+    const signatures = new Set(cells.map((c) => c.accentBeats.join(',')));
+    expect(signatures.size).toBeGreaterThan(1); // 真的在轮换,不再机械重复
+    for (const c of cells) {
+      expect(c.velocity!).toBeGreaterThanOrEqual(0.44 - 1e-9);
+      expect(c.velocity!).toBeLessThanOrEqual(0.56 + 1e-9);
+      expect(c.accentBeats.every((b) => Math.abs(b * 2 - Math.round(b * 2)) < 1e-9)).toBe(true);
+    }
+  });
+
   it('每个 span 结束后的下一小节获得头部 cell(相位 0.5 网格量化)', () => {
     const map = buildMotifCompEchoByBar(plan(), 4, 64, 'pop');
     expect(map.has(1)).toBe(true); // 陈述 [0,4) → 回声 bar 1

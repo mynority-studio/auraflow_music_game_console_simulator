@@ -62,8 +62,8 @@ export interface AccompContext {
   compPerformanceIntent?: Readonly<LofiFoundationPlan['compIntent']>;
   /** Sections whose selected concrete voice has a documented CC64 PedalPlan. */
   compPedalActiveSectionIds?: ReadonlySet<string>;
-  /** P2 motif 跨轨投射:motif 乐句后的呼吸小节 → comp 用 motif 头部节奏 cell 应答(POP/RNB)。 */
-  motifEchoByAbsoluteBar?: ReadonlyMap<number, { accentBeats: readonly number[]; durations: readonly number[] }>;
+  /** P2 motif 跨轨投射:motif 乐句后的呼吸小节 → comp 用 motif 节奏 cell 应答(POP/RNB;P2.1 池轮换+力度微变)。 */
+  motifEchoByAbsoluteBar?: ReadonlyMap<number, { accentBeats: readonly number[]; durations: readonly number[]; velocity?: number }>;
 }
 
 /**
@@ -492,7 +492,7 @@ export function renderAccompaniment(
           tRel: targetBeat - spanStartBeat,
           dur: Math.max(0.08, Math.min(echo.durations[index] ?? 0.5, remaining - 0.02)),
           midis: shell,
-          vel: 0.5, // 应答清晰但不过前景;后续 groove projection/humanize 正常作用
+          vel: echo.velocity ?? 0.5, // 应答清晰但不过前景;力度按小节微变(P2.1 去机械感)
         });
       });
     }
@@ -1016,7 +1016,7 @@ export function renderAccompaniment(
         const shell = shellBySpan[span.id] ?? voicedBySpan[span.id];
         const durationTicks = timebase.beatToTick(beats(echo.durations[index] ?? 0.5));
         const startTick = timebase.beatToTick(beats(beat));
-        for (const m of shell) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: 58 });
+        for (const m of shell) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: Math.round((echo.velocity ?? 0.5) * 116) });
       });
     }
   }
