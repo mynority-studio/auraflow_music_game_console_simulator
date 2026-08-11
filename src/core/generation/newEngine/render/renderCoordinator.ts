@@ -851,7 +851,7 @@ export function renderSongFull(
     authoredUserMotifPlan, beatsPerBarOf(arrangement.meter), totalBeatsForLead, band.style);
   const withAuthoredLeadContext = (source: TrackIR[]): TrackIR[] => source.map((track) =>
     track.role === 'lead'
-      ? assembleAuthoredUserMotifLead(track, authoredUserMotifPlan, authoredUserMotifNotes, timebase)
+      ? assembleAuthoredUserMotifLead(track, authoredUserMotifPlan, authoredUserMotifNotes, timebase, plan)
       : track);
   const restoreGeneratedLead = (context: TrackIR[], generated: TrackIR[]): TrackIR[] => {
     const generatedLead = generated.find((track) => track.role === 'lead');

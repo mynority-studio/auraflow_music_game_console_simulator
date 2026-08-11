@@ -817,6 +817,7 @@ export function assembleAuthoredUserMotifLead(
   plan: AuthoredUserMotifBrickPlan | undefined,
   authoredNotes: readonly NoteIR[],
   timebase: Timebase,
+  harmonicPlan?: HarmonicPlan,
 ): TrackIR {
   if (!plan || authoredNotes.length === 0) return lead;
   const spans = authoredLeadSpans(plan);
@@ -867,6 +868,25 @@ export function assembleAuthoredUserMotifLead(
         const nextDur = Math.max(beatN(prevNote.durationTicks) / ppq, target - beatOf(prevNote));
         prevNote.durationTicks = timebase.beatToTick(beats(nextDur));
       }
+      // 4) 趋近音准备(治"凭空开口"):桥接音离 motif 入口 >4 半音时,重定为入口的
+      //    和声内趋近音(入口 ±3 内最近的 chord-scale 音;只改生成音,不碰用户音)
+      if (harmonicPlan && firstAuthored) {
+        const entry = firstAuthored.pitch as number;
+        const prevPitch = prevNote.pitch as number;
+        if (Math.abs(entry - prevPitch) > 4) {
+          const admitted = admittedPcsAtBeat(harmonicPlan, beatOf(prevNote));
+          const dir = entry > prevPitch ? -1 : 1; // 从趋近方向接入(下行进入用上邻音,反之)
+          for (let d = 1; d <= 3; d++) {
+            const cand = entry + dir * d;
+            if (admitted.includes(((cand % 12) + 12) % 12)) { prevNote.pitch = midi(cand); break; }
+          }
+        }
+      }
+    }
+    // 5) 微力度抖动:与人性化后的上下文纹理一致(确定性,±2)
+    for (const n of spanNotes) {
+      const jitter = ((beatN(n.startTick) * 7919) % 5) - 2;
+      n.velocity = Math.max(1, Math.min(127, (n.velocity as number) + jitter));
     }
   }
   return {
