@@ -107,3 +107,64 @@ export function applyLeadIns(tracks: TrackIR[], leadInBars: ReadonlySet<number>,
     };
   });
 }
+
+// ============================================================
+// ★ ending 重构(2026-08-12,墨盒审计后):终止区手势 —— applyEnding 只会"停止",
+//   这里补上"终止":最后一击(cold/tag 的 crash+kick)、lead liquidation+持留落点、
+//   末小节长时值化(伪 ritardando:细碎 onset 收敛 + 延音到落点)。
+//   仍是纯确定性投影;唯一"加音"= 鼓的最后一击(endingPlan 驱动,合同可见)。
+// ============================================================
+
+const GM_KICK = 36;
+const GM_CRASH = 49;
+
+/** 终止区手势(在 applyEnding 之后调用;ACG/Jazz54 score-owned 在调用点豁免)。 */
+export function applyEndingCadenceZone(
+  tracks: TrackIR[],
+  arrangement: ArrangementPlan,
+  endingPlan: EndingPlan,
+  ppq: number,
+  bpb: number,
+): TrackIR[] {
+  const barTicks = bpb * ppq;
+  const win = outroWindow(arrangement, endingPlan.outroSectionId, barTicks);
+  if (!win) return tracks;
+  const { end: outroEnd } = win;
+  const lastBarStart = outroEnd - barTicks;
+  const liquidationStart = outroEnd - 2 * barTicks; // 终止区 = 末 2 小节
+  const releaseTicks = Math.max(1, Math.round(ppq * 0.06));
+
+  return tracks.map((t) => {
+    if (t.role === 'drum') {
+      // 最后一击:cold/tag 在末小节下拍补 kick+crash(fade 不打,继续渐隐)
+      if (!endingPlan.coldStop && !endingPlan.holdFinalChord) return t;
+      if (t.notes.length === 0) return t; // 编制里无鼓 → 不无中生有
+      const hasFinalDownbeat = t.notes.some((n) => Math.abs((n.startTick as number) - lastBarStart) <= ppq * 0.1);
+      if (hasFinalDownbeat) return t;
+      const hit = (pitch: number, velocity: number): NoteIR => ({
+        pitch, startTick: lastBarStart, durationTicks: Math.round(barTicks / 2), velocity,
+      } as unknown as NoteIR);
+      return { ...t, notes: [...t.notes.filter((n) => (n.startTick as number) < lastBarStart), hit(GM_KICK, 108), hit(GM_CRASH, 102)] };
+    }
+    // ⚠️ lead 不在此处理:mgFinalLeadParity / productLeadNonMutation 合同 = lead 在 MG
+    //   生成后事件级不可变异(当年撤末音 snap 同理)。lead 的 liquidation/持留落点必须
+    //   走上游(RoadMap 终止 brick / scheduler),列 ending 重构后备。
+    if (t.role === 'comp' || t.role === 'bass' || t.role === 'pad') {
+      // 伪 ritardando:末小节 beat2 之后的 onset 收敛(丢),留存音延到曲末(cold 例外:保持干净停)
+      const kept = t.notes.filter((n) => {
+        const st = n.startTick as number;
+        return st < lastBarStart + 2 * ppq || st < lastBarStart;
+      });
+      if (endingPlan.coldStop) return { ...t, notes: kept };
+      return {
+        ...t,
+        notes: kept.map((n) => {
+          const st = n.startTick as number;
+          if (st < lastBarStart) return n;
+          return { ...n, durationTicks: ticks(Math.max(n.durationTicks as number, outroEnd - st - releaseTicks)) };
+        }),
+      };
+    }
+    return t;
+  });
+}

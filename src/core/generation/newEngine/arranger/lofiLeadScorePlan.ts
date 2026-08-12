@@ -520,6 +520,10 @@ export function buildLofiLeadScorePlan(args: {
   const orderedInteractions = [...args.phraseInteractionPlan.bars]
     .sort((left, right) => left.absoluteBar - right.absoluteBar || left.sectionId.localeCompare(right.sectionId));
 
+  // ★ ending 重构:outro 首小节 + 过中点小节各一个 'return' 收束(此前 outro 全 rest = "撞线"根因之一;
+  //   第二个收束落在 outro 后半 → fade 渐弱下形成真正的"回落"而非一响即无)。
+  const functionTagBySectionId = new Map(args.arrangement.sections.map((section) => [section.id, section.functionTag]));
+  const barsBySectionId = new Map(args.arrangement.sections.map((section) => [section.id, section.bars]));
   for (const interaction of orderedInteractions) {
     const startBeat = interaction.absoluteBar * beatsPerBar;
     const endBeat = startBeat + beatsPerBar;
@@ -529,8 +533,12 @@ export function buildLofiLeadScorePlan(args: {
       .includes(interaction.barInSection);
     const leadRoadMapDirective = directiveByAbsoluteBar.get(interaction.absoluteBar);
     const compiledLeadBrick = compiledBrickByAbsoluteBar.get(interaction.absoluteBar);
-    const phraseRole = leadRoadMapDirective?.phraseRole ?? interaction.leadRole;
-    const role = scoreRoleFor(phraseRole, active);
+    const outroBars = barsBySectionId.get(interaction.sectionId) ?? 0;
+    const isOutroClosingBar = functionTagBySectionId.get(interaction.sectionId) === 'outro'
+      && (interaction.barInSection === 0
+        || (outroBars >= 3 && interaction.barInSection === Math.ceil(outroBars / 2)));
+    const phraseRole = isOutroClosingBar ? 'return' as const : (leadRoadMapDirective?.phraseRole ?? interaction.leadRole);
+    const role = scoreRoleFor(phraseRole, active || isOutroClosingBar);
     const entryBeat = role === 'rest'
       ? undefined
       : entryBeats.find((entry) => entry >= startBeat - EPSILON && entry < endBeat - EPSILON);
@@ -737,7 +745,9 @@ export function buildLofiLeadScorePlan(args: {
           leadTextureResolution: compiledLeadBrick.sourceResolution,
           ...(compiledLeadBrick.sourceGrammarRuleId
             ? { sourceGrammarRuleId: compiledLeadBrick.sourceGrammarRuleId }
-            : {}),
+            // ★ ending 重构:outro 收束小节的 roadmap brick 原为 rest(无语法规则),素材真源 =
+            //   blueprint.motifCell → 诚实溯源(此前非 rest 小节必有规则,兜底只命中 outro 收束)
+            : { sourceGrammarRuleId: `outro-return:${blueprint.motifCell.id}` }),
           ...(compiledLeadBrick.sourceGrammarBrickType
             ? { sourceGrammarBrickType: compiledLeadBrick.sourceGrammarBrickType }
             : {}),

@@ -301,7 +301,7 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     build: ['bass', 'drum', 'comp', 'pad', 'lead'],          // +pad 加厚(推)
     hook: ['bass', 'drum', 'comp', 'pad', 'lead'],           // 全员同进(downbeat=release)
     breakdown: ['bass', 'comp', 'pad', 'lead'],              // 去 drum(掉拍)
-    outro: ['pad', 'bass', 'lead'],
+    outro: ['pad', 'bass', 'drum', 'lead'], // ★ ending 重构:鼓进 outro,由 exitBarByRole 分段退出而非段落线一刀切
   },
   rnb: {
     setup: ['pad', 'comp', 'lead'],
@@ -309,13 +309,13 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     build: ['bass', 'comp', 'drum', 'pad', 'lead'],
     hook: ['bass', 'comp', 'drum', 'pad', 'lead'],
     breakdown: ['comp', 'lead'],                             // 真抽离 keys+vocal
-    outro: ['pad', 'comp', 'bass', 'lead'],                  // ★ +bass:接地落终止根音(无 pad 的编制下 outro 才不空)
+    outro: ['pad', 'comp', 'bass', 'drum', 'lead'],          // ★ +bass 接地;+drum(ending 重构):分段退出/最后一击
   },
   lofi: {
     setup: ['comp', 'bass', 'lead'],
     loop: ['bass', 'comp', 'drum', 'pad', 'lead'],           // 近恒定 full loop
     breakdown: ['bass', 'comp', 'pad', 'lead'],              // filterBreak 去 drum
-    outro: ['comp', 'pad', 'bass', 'lead'],                  // ★ +bass:同上,outro 接地
+    outro: ['comp', 'pad', 'bass', 'drum', 'lead'],          // ★ +bass 接地;+drum(ending 重构)
   },
   jazz: {
     setup: ['comp', 'bass', 'lead'],
@@ -324,7 +324,7 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     solo: ['bass', 'comp', 'drum', 'lead'],
     loop: ['bass', 'comp', 'drum', 'lead'],
     headOut: ['bass', 'comp', 'drum', 'lead'],
-    tag: ['comp', 'bass', 'lead'],
+    tag: ['comp', 'bass', 'drum', 'lead'], // ★ ending 重构:鼓可留到 tag(exitBarByRole 控制退出)
   },
   // ACG PIANOSONG:一架钢琴的三层手型始终完整——左手低根、右手中部琶音、可选顶声部。
   // 留白由 lead/comp 的 phrase 手势产生，不能靠抽掉 bass；否则和声重力会在主题/尾声消失。

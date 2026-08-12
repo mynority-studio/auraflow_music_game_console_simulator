@@ -56,7 +56,7 @@ import { renderPad } from './padRenderer';
 import { decidePadComp, type PadCompDecision } from './padCompPolicy';
 import { applySwingBySection } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
-import { applyEnding, applyLeadIns } from './ending';
+import { applyEnding, applyEndingCadenceZone, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyGroovePocketBySection, pocketedRolesForContracts } from './groovePocket';
 import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
@@ -1235,8 +1235,23 @@ export function renderSongFull(
     dynamicTracks,
     (tracks) => applyEnding(tracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge),
   );
+  // ★ ending 重构(2026-08-12):终止区手势 —— 最后一击(cold/tag 鼓 kick+crash)、lead
+  //   liquidation+持留落点、末小节伪 rit。ACG/Jazz54 全 score-owned 豁免(fail-closed 身份合同)。
+  const cadencedTracks = isAcg || suppliedJazzFiveFourScorePlan
+    ? endedTracks
+    : transformScoreUnownedTracks(
+      endedTracks,
+      (tracks) => applyEndingCadenceZone(tracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge),
+    );
+  // ★ 断链 B 修复:score-owned LOFI lead 此前拿不到 ending 合同(fade 空契约)。
+  //   单独投影 applyEnding(只动 velocity;pitch/onset/duration 不变 → score e2e 合同不破)。
+  const lofiLeadEndedTracks = isScoreOwnedLofiLead
+    ? cadencedTracks.map((t) => t.role === 'lead'
+      ? applyEnding([t], arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge)[0]
+      : t)
+    : cadencedTracks;
   const ledTracks = transformScoreUnownedTracks(
-    endedTracks,
+    lofiLeadEndedTracks,
     (tracks) => applyLeadIns(tracks, leadInBars, timebase.ppq, bpbEdge),
   );
 
