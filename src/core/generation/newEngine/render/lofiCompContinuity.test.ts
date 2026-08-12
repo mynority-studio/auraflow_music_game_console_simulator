@@ -182,7 +182,7 @@ describe('LOFI Comp continuity', () => {
     expect(upper.every((hit) => hit.dur < 2)).toBe(true);
   });
 
-  it('fixes zqbdwz at both middle broken-chord passages without inventing CC64 for its FM electric piano', () => {
+  it('fixes zqbdwz at both middle broken-chord passages; FM 电钢踏板已 documented(2026-08-12 板测),finger-legato 让位', () => {
     const bundle = buildSongBundle({
       seed: ZQBDWZ_SEED,
       styleHint: 'lofi',
@@ -208,11 +208,11 @@ describe('LOFI Comp continuity', () => {
       noteShape: 'finger-legato',
       gateRatio: 1,
     });
-    expect(bundle.arrangement.sections.every((section) =>
+    // 2026-08-12 用户板测:EP+CC64 documented → 不再断言"无踏板";damperPolicy
+    // 'when-documented' 的设计本就预期此升级,finger-legato 仅作无踏板段的后备。
+    expect(bundle.arrangement.sections.some((section) =>
       bundle.instrumentation.pedalPlanByRole.comp?.disabledBySection[section.id] === 'non-piano-voice'))
-      .toBe(true);
-    expect(bundle.instrumentation.pedalPlanByRole.comp?.events).toEqual([]);
-    expect(comp.pedalEvents ?? []).toEqual([]);
+      .toBe(false);
     expect(result.report.textureCases).toContain('Piano_Emo_Broken_10th');
 
     for (const [startBeat, endBeat] of [[32, 64], [96, 128]] as const) {

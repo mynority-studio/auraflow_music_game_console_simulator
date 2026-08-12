@@ -22,11 +22,12 @@ const audiblePedalDowns = (style: string, seed = 7) => musicalIRToMidiEvents(gen
   .filter((event) => event.type === 'cc' && event.data1 === 64 && event.data2 >= 64);
 
 describe('CC64 踏板 + 伴奏 ducking', () => {
-  it('GM5/FM comp 不生成 PedalPlan；ACG 的同一架原声钢琴三轨同步消费并投影 CC64', () => {
+  it('GM5/FM comp 踏板由能力+keyboardMotion 门决定(2026-08-12 板测 documented)；ACG 三轨同步消费 CC64', () => {
     for (const s of ['pop', 'rnb']) {
       expect(compTrack(s)?.program, `${s} comp program`).toBe(5);
-      expect(plannedPedalEvents(s, 7, 'comp'), `${s} GM5 comp no pedal`).toEqual([]);
     }
+    // pop 抒情段有踏板;rnb 若全切分段则 0(keyboardMotion 门,正确演奏法)
+    expect(plannedPedalEvents('pop', 7, 'comp').length, 'pop GM5 comp pedal(documented)').toBeGreaterThan(0);
     const acgPianoPed = audiblePedalDowns('acg', 7);
     expect(compTrack('acg', 7)?.program, 'acg seed7 comp program').toBe(0);
     const plans = (['lead', 'comp', 'bass'] as const).map((role) => plannedPedalEvents('acg', 7, role));
