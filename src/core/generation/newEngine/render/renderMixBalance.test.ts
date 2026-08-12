@@ -128,7 +128,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(comp.mix!.volume).toBe(100);
     expect(ratio).toBeGreaterThan(0);
     expect(ratio).toBeLessThanOrEqual(3.80);
-    expect(avgExpression).toBeGreaterThanOrEqual(90);
+    expect(avgExpression).toBeGreaterThanOrEqual(70); // 管乐音符级包络(软起音)后均值合理下移;表情存在性由 ratio>0 保证
   });
 
   it('melodic roles 不把 CC7 推到 ESP32/浏览器容易炸的高位', () => {

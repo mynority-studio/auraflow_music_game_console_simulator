@@ -22,7 +22,7 @@ describe('windFeel · 管乐链内 feel(第一层)', () => {
     const grace = out.find((e) => e.origin === 'develop');
     expect(grace).toBeDefined();
     expect(grace!.noteNumber).toBe(68);                        // 下方大二度
-    expect(grace!.time).toBeCloseTo(3.9, 6);                   // 句首前 0.1 拍
+    expect(grace!.time).toBeCloseTo(3.75, 6);                  // 句首前 0.25 拍(16 分网格)
     expect(grace!.velocity).toBeLessThan(70);                  // 低力度
     const mains = out.filter((e) => e.origin !== 'develop');
     const hasBreath = mains.some((e, i) => {

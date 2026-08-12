@@ -70,14 +70,15 @@ export function applyWindLeadFeel(events: readonly MgNoteEvent[]): MgNoteEvent[]
         blownSince = next.time;
       }
     }
-    // 3) 爬音:句首长音(≥0.75 拍)前置装饰(下方大二度,低力度)
+    // 3) 爬音:句首长音(≥0.75 拍)前置装饰(下方大二度,低力度;16 分网格 =
+    //    0.25 拍短倚音,网格合法 → 不触发 leadGridTiming 的微 IOI 合同)
     const head = phrase[0];
-    if (head.duration >= 0.75 && head.time >= 0.15) {
+    if (head.duration >= 0.75 && head.time >= 0.3) {
       out.push({
         ...head,
         noteNumber: head.noteNumber - 2,
-        time: head.time - 0.1,
-        duration: 0.09,
+        time: head.time - 0.25,
+        duration: 0.22,
         velocity: clampVel(head.velocity * 0.55),
         origin: 'develop',
       });
