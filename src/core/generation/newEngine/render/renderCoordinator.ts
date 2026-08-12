@@ -57,6 +57,7 @@ import { decidePadComp, type PadCompDecision } from './padCompPolicy';
 import { applySwingBySection } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyEndingCadenceZone, applyLeadIns } from './ending';
+import { humanizePianoBlockChords } from './pianoPerformance';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyGroovePocketBySection, pocketedRolesForContracts } from './groovePocket';
 import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
@@ -1650,7 +1651,18 @@ export function renderSongFull(
     performanceBySection: arrangement.drumPerformanceBySection,
     performanceMode: suppliedJazzFiveFourScorePlan ? 'reference-zero' : 'profiled',
   }));
-  const finalTracks = applyRenderMixBalance(drumRealizedTracks, {
+  // ★ 表情三件套 A:钢琴柱式和弦人性化(声部差异力度 + 自下而上微 roll)。
+  //   位置:drum follow / Jazz54 投影之后 —— 鼓 follow 读原始 comp onset(repeatGroup
+  //   计数稳定);Jazz54 score 事件多重集不可变 → 豁免;ACG 在 pass 内部豁免。
+  const pianoHumanizedTracks = suppliedJazzFiveFourScorePlan
+    ? drumRealizedTracks
+    : humanizePianoBlockChords(drumRealizedTracks, {
+      compProgram: instrumentation.roleProgram.comp,
+      compBank: instrumentation.roleBank?.comp,
+      style: band.style,
+      ppq: timebase.ppq,
+    });
+  const finalTracks = applyRenderMixBalance(pianoHumanizedTracks, {
     style: band.style,
     ppq: timebase.ppq,
     durationTicks: resolved.data.durationTicks as number,

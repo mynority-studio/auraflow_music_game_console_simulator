@@ -55,7 +55,7 @@ describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
     expect(compTrack).toBeDefined();
     const cc11 = (compTrack?.ccEvents ?? []).filter((event) => event.controller === 11);
     expect(cc11.length).toBeGreaterThan(0);
-    expect(cc11.map((event) => event.value).every((value) => [70, 80, 90, 100].includes(value))).toBe(true);
+    expect(cc11.map((event) => event.value).every((value) => [60, 70, 80, 90, 100].includes(value))).toBe(true); // 乐句弧新增 60
     expect(cc11.map((event) => event.value)).toEqual(expect.arrayContaining([70, 90]));
 
     const outgoing = musicalIRToMidiEvents(rendered).filter((event) => event.type === 'cc' && event.data1 === 11);

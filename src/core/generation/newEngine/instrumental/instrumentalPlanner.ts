@@ -242,7 +242,7 @@ function buildControllerPlanByRole(args: {
         const capability = voice
           ? dreamVoiceCcProfile({ ...voice.address, role })
           : undefined;
-        if (!voice || !isAcousticPianoVoice(voice.address.bank, voice.address.program)) {
+        if (!voice) { // ★ 表情三件套 C:族预门撤销,能力注册表是唯一仲裁(可解析变奏 bank 的电钢)
           disabledBySection[section.id] = 'non-piano-voice';
         } else if (!capability || !mayEmitAutomaticCc(capability, PIANO_EXPRESSION_CC)) {
           disabledBySection[section.id] = 'unsupported-voice';
@@ -263,13 +263,25 @@ function buildControllerPlanByRole(args: {
               });
             }
           } else {
-            events.push({
-              atBeat: sectionStart,
-              controller: PIANO_EXPRESSION_CC,
-              value: baseValue,
-              sectionId: section.id,
-              reason: 'piano-phrase-expression',
-            });
+            // ★ 表情三件套 B(2026-08-12):段级单平台 → 乐句级呼吸弧。仍是低速率平台词汇
+            //   (10 的倍数,每小节至多一个事件,相邻等值去重 → Dream 5504 上不糊):
+            //   4 小节乐句 [-10, 0, 0, -10] = 起句轻、中间满、句尾收(推向下一句);
+            //   outro 每 2 小节 -10 衰减(地板 60)= 渐隐收势。
+            let previousValue = -1;
+            for (let bar = 0; bar < section.bars; bar++) {
+              const value = section.role === 'outro'
+                ? Math.max(60, baseValue - 10 * Math.floor(bar / 2))
+                : Math.max(60, Math.min(100, baseValue + [-10, 0, 0, -10][bar % 4]));
+              if (value === previousValue) continue;
+              events.push({
+                atBeat: sectionStart + bar * beatsPerBar,
+                controller: PIANO_EXPRESSION_CC,
+                value,
+                sectionId: section.id,
+                reason: 'piano-phrase-expression',
+              });
+              previousValue = value;
+            }
           }
         }
       }

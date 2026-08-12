@@ -83,7 +83,9 @@ export function dreamVoiceCcProfile(addressOrProgram: DreamVoiceAddress | number
     return withAddress(profile(address.program, role, [11], [67], [], PIANO_DAMPER));
   }
   if (voice.expressionFamily === 'electric-keyboard') {
-    return withAddress(profile(address.program, role, [], [72, 74], [64]));
+    // Firm5504-EK 文档的 CC11 Expression 是通道级、对 GM 音色普适 —— 电钢的乐句
+    // 表情(低速率平台)与原声钢琴同权;CC64 维持 blocked(板上实测边界,未过 audition)。
+    return withAddress(profile(address.program, role, [11], [72, 74], [64]));
   }
   if (voice.expressionFamily === 'mallet-damper') {
     return withAddress(profile(address.program, role, [], [], [], VIBRAPHONE_DAMPER));

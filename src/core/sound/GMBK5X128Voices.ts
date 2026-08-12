@@ -95,6 +95,12 @@ export function isAcousticPianoVoice(bank: number | undefined, program: number |
   return (bank ?? 0) === 0 && isAcousticPianoProgram(program);
 }
 
+/** Bank-0 表情键盘族(原声钢琴 + EG/EP 电钢 0-5):乐句级 CC11 的家族门;
+ *  具体音色能否自动发 CC 仍由 dreamCcCapabilities 注册表最终仲裁。 */
+export function isExpressiveKeyboardVoice(bank: number | undefined, program: number | undefined): boolean {
+  return (bank ?? 0) === 0 && program !== undefined && program >= 0 && program <= 5;
+}
+
 const GM128_GENERATION_VARIATION_ADDRESSES = [
   { bank: 8, program: 4 }, { bank: 16, program: 5 }, { bank: 24, program: 5 },
   { bank: 16, program: 24 }, { bank: 1, program: 25 }, { bank: 8, program: 25 }, { bank: 9, program: 25 },

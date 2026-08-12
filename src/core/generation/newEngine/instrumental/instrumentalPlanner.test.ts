@@ -45,7 +45,7 @@ describe('instrumental/instrumentalPlanner', () => {
     const events = pianoPlan.controllerPlanByRole.comp?.events ?? [];
     expect(events.length).toBeGreaterThan(0);
     expect(new Set(events.map((event) => event.controller))).toEqual(new Set([11]));
-    expect(events.map((event) => event.value).every((value) => [70, 80, 90, 100].includes(value))).toBe(true);
+    expect(events.map((event) => event.value).every((value) => [60, 70, 80, 90, 100].includes(value))).toBe(true); // 乐句弧新增 60(outro 衰减档)
     expect(events.map((event) => event.value)).toEqual(expect.arrayContaining([70, 90]));
     expect(events.every((event) => ['piano-phrase-expression', 'piano-motion-expression'].includes(event.reason))).toBe(true);
     expect(pianoPlan.controllerPlanByRole.pad).toBeUndefined();
@@ -68,12 +68,13 @@ describe('instrumental/instrumentalPlanner', () => {
     expect((jazzPlan.pedalPlanByRole.comp?.events ?? []).every((event) =>
       lyricalSections.some((section) => section.id === event.sectionId))).toBe(true);
     const cc11 = jazzPlan.controllerPlanByRole.comp?.events ?? [];
-    expect(cc11.length).toBe(
+    // 乐句级呼吸弧后:抒情段不再是"每段 1 个平台",而是逐乐句起伏(≥1 事件/段)
+    expect(cc11.length).toBeGreaterThanOrEqual(
       fastSections.reduce((sum, section) => sum + section.bars, 0) + lyricalSections.length,
     );
     expect(cc11.filter((event) => fastSections.some((section) => section.id === event.sectionId))
       .every((event) => event.reason === 'piano-motion-expression')).toBe(true);
-    expect(cc11.every((event) => event.controller === 11 && [70, 80, 90, 100].includes(event.value))).toBe(true);
+    expect(cc11.every((event) => event.controller === 11 && [60, 70, 80, 90, 100].includes(event.value))).toBe(true);
   });
 
   it('hookAnchorSlots:覆盖所有 hook 句,主 hook(chorus)anchorRequired', () => {
