@@ -16,8 +16,33 @@ import type { EndingStyle, Section, SectionEntry, SectionId } from './Arrangemen
 //   重复段(verse2≈verse1)、loop→loop(0)、head→head(ramp 0.04)、收尾段(降)不触发。
 const ENTRY_LIFT_THRESHOLD = 0.10;
 
-// 收尾风格定制(确定性 per-style;default/modal/blues → cold 果断安全)。
-const ENDING_BY_STYLE: Record<string, EndingStyle> = { pop: 'cold', rnb: 'fade', lofi: 'fade', jazz: 'tag', default: 'cold' };
+// 收尾风格词汇表(2026-08-12,治"每首歌同一种收法"):每风格一组加权候选,
+// 首项 = 旧固定值(无 seedHint 时保持旧行为,既有单测不破)。seeded 选择 → 同 seed 复现、跨 seed 有变化。
+const ENDING_VOCAB_BY_STYLE: Record<string, Array<{ ending: EndingStyle; weight: number }>> = {
+  pop: [{ ending: 'cold', weight: 0.5 }, { ending: 'tag', weight: 0.3 }, { ending: 'fade', weight: 0.2 }],
+  rnb: [{ ending: 'fade', weight: 0.4 }, { ending: 'tag', weight: 0.4 }, { ending: 'cold', weight: 0.2 }],
+  lofi: [{ ending: 'fade', weight: 0.55 }, { ending: 'tag', weight: 0.45 }],
+  jazz: [{ ending: 'tag', weight: 0.55 }, { ending: 'cold', weight: 0.3 }, { ending: 'fade', weight: 0.15 }],
+  default: [{ ending: 'cold', weight: 0.6 }, { ending: 'tag', weight: 0.4 }],
+};
+
+/** 风格的收尾词汇表(测试/审计用)。 */
+export function endingVocabularyForStyle(style: string): EndingStyle[] {
+  return (ENDING_VOCAB_BY_STYLE[style.toLowerCase()] ?? ENDING_VOCAB_BY_STYLE.default).map((v) => v.ending);
+}
+
+function pickEndingStyle(style: string, mood: string | undefined, seedHint: number | undefined): EndingStyle {
+  const vocab = ENDING_VOCAB_BY_STYLE[style.toLowerCase()] ?? ENDING_VOCAB_BY_STYLE.default;
+  // 抒情 pop 仍偏 fade:把 fade 权重抬到首位候选
+  const weighted = style.toLowerCase() === 'pop' && isLyricalMood(mood)
+    ? vocab.map((v) => v.ending === 'fade' ? { ...v, weight: v.weight + 0.5 } : v)
+    : vocab;
+  if (seedHint === undefined) return weighted.slice().sort((a, b) => b.weight - a.weight)[0].ending; // 旧行为
+  const total = weighted.reduce((a, v) => a + v.weight, 0);
+  let roll = ((Math.imul(seedHint ^ 0x9e3779b9, 2654435761) >>> 9) % 1000) / 1000 * total;
+  for (const v of weighted) { roll -= v.weight; if (roll <= 0) return v.ending; }
+  return weighted[0].ending;
+}
 
 function isLyricalMood(mood?: string): boolean {
   if (!mood) return false;
@@ -37,9 +62,9 @@ export function planEdges(
   energyBySection: Record<SectionId, number>,
   style: string,
   mood?: string,
+  seedHint?: number,
 ): EdgePlan {
-  const styleKey = style.toLowerCase();
-  const endingStyle = styleKey === 'pop' && isLyricalMood(mood) ? 'fade' : (ENDING_BY_STYLE[styleKey] ?? ENDING_BY_STYLE.default);
+  const endingStyle = pickEndingStyle(style, mood, seedHint);
   const entryBySection: Record<SectionId, SectionEntry> = {};
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];

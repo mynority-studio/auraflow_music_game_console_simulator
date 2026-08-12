@@ -182,7 +182,7 @@ export function buildArrangementPlan(
       : undefined;
   const dynamics = planDynamics(sections);
   const grooveBySection = planGroove(sections, band.style, opts.mood); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
-  const edges = planEdges(sections, dynamics.energyBySection, band.style, opts.mood); // 段落边界:进入方式 + 收尾(纯 energy/style 派生)
+  const edges = planEdges(sections, dynamics.energyBySection, band.style, opts.mood, opts.rng?.seed); // 段落边界:进入方式 + 收尾(词汇表 seeded 选择,同 seed 复现)
   const entryBySection = { ...edges.entryBySection };
   // Exact archetypes own role handoffs. In the 5/4 piano form Comp must not be
   // pulled into the Bass+Lead prep bar merely because the next section has
