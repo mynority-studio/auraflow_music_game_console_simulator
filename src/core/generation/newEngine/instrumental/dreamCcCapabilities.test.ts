@@ -11,10 +11,12 @@ describe('instrumental/dreamCcCapabilities', () => {
     expect(hasDocumentedPedal(piano)).toBe(true);
     expect(piano.automaticControllers).toEqual([11]);
     expect(mayEmitAutomaticCc(piano, 11)).toBe(true);
-    expect(hasDocumentedPedal(electricPiano)).toBe(false);
+    // 2026-08-12 用户板上 audition:EP+CC64 听感确认 → documented(piano-damper)
+    expect(hasDocumentedPedal(electricPiano)).toBe(true);
     expect(hasDocumentedPedal(vibraphone)).toBe(false);
     expect(electricPiano.auditionControllers).toEqual([72, 74]);
-    expect(electricPiano.blockedControllers).toContain(64);
+    expect(electricPiano.blockedControllers).not.toContain(64);
+    expect(electricPiano.automaticControllers).toEqual([11]);
   });
 
   it('sax emits CC11 expression only and blocks fake breath, damper and generic portamento', () => {

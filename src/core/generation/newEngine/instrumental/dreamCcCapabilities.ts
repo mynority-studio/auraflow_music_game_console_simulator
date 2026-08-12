@@ -84,8 +84,9 @@ export function dreamVoiceCcProfile(addressOrProgram: DreamVoiceAddress | number
   }
   if (voice.expressionFamily === 'electric-keyboard') {
     // Firm5504-EK 文档的 CC11 Expression 是通道级、对 GM 音色普适 —— 电钢的乐句
-    // 表情(低速率平台)与原声钢琴同权;CC64 维持 blocked(板上实测边界,未过 audition)。
-    return withAddress(profile(address.program, role, [11], [72, 74], [64]));
+    // 表情(低速率平台)与原声钢琴同权。CC64:用户于 2026-08-12 在 Dream 5504 EK
+    // 板上 audition 通过(EP+延音踏板听感确认)→ blocked 升 documented(piano-damper 语义)。
+    return withAddress(profile(address.program, role, [11], [72, 74], [], PIANO_DAMPER));
   }
   if (voice.expressionFamily === 'mallet-damper') {
     return withAddress(profile(address.program, role, [], [], [], VIBRAPHONE_DAMPER));
