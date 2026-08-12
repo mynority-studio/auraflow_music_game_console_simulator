@@ -63,6 +63,7 @@ import {
 import { makeSeededRng } from './mgRng';
 import { authoredLeadSpans, type AuthoredUserMotifBrickPlan } from './userMotifBrick';
 import { createUserMotifGrammarInjector } from './userMotifGrammar';
+import { applyWindLeadFeel, isWindLeadProgram } from './windFeel';
 import { compileLofiPhraseLead } from './lofiPhraseLeadCompiler';
 import { lofiLeadGrammarForRole, type LofiLeadGrammarRole } from '../knowledge/lofiLeadGrammarBank';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
@@ -576,6 +577,10 @@ export function renderMgMelodyWithAcgPerformancePlan(
     debugCapture.grammarEvents = melody.map((event) => ({ ...event }));
   }
   if (!isScoreOwnedLofiLead) melody = placeMelodyOctaveContinuously(melody, style);
+  // ★ 管乐 feel(第一层,链内 → parity 安全):乐句力度成形/呼吸/装饰爬音(GM 56-79,ACG 豁免)
+  if (style !== 'ACG' && !isScoreOwnedLofiLead && isWindLeadProgram(program)) {
+    melody = applyWindLeadFeel(melody);
+  }
   // Generic harmony shaping may propose a connector after token scheduling.
   // Re-apply the Arranger onset admission while events are still score-time
   // MG objects; no finished NoteIR is deleted or repaired downstream.

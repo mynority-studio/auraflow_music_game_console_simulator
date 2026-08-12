@@ -58,6 +58,8 @@ import { applySwingBySection } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyEndingCadenceZone, applyLeadIns } from './ending';
 import { humanizePianoBlockChords } from './pianoPerformance';
+import { buildWindLeadCc11Envelopes } from './windExpression';
+import { isWindLeadProgram } from './windFeel';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyGroovePocketBySection, pocketedRolesForContracts } from './groovePocket';
 import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
@@ -1671,7 +1673,24 @@ export function renderSongFull(
   if (suppliedJazzFiveFourScorePlan) {
     assertJazzFiveFourProjectionIdentity(finalTracks, suppliedJazzFiveFourScorePlan);
   }
-  const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
+  // ★ 管乐 CC11 包络(第二层,只读最终 lead 音符 → 发 ccEvents,不碰 parity):
+  //   起音软入 + 长音强弱弧,基线 = controllerPlan 段落平台。GM 56-79,ACG/Jazz54 豁免。
+  const windExpressedTracks = !suppliedJazzFiveFourScorePlan
+    && band.style.toLowerCase() !== 'acg'
+    && isWindLeadProgram(instrumentation.roleProgram.lead)
+    ? finalTracks.map((t) => {
+      if (t.role !== 'lead') return t;
+      const plateaus = (instrumentation.controllerPlanByRole?.lead?.events ?? [])
+        .filter((e) => e.controller === 11)
+        .map((e) => ({ atTick: timebase.beatToTick(beats(e.atBeat)) as number, value: e.value }));
+      const envelopes = buildWindLeadCc11Envelopes(t.notes, plateaus, timebase.ppq)
+        .map((e) => ({ atTick: ticks(e.atTick), controller: e.controller, value: e.value }));
+      return envelopes.length > 0
+        ? { ...t, ccEvents: [...(t.ccEvents ?? []), ...envelopes] }
+        : t;
+    })
+    : finalTracks;
+  const ir = freezeMusicalIR({ tracks: windExpressedTracks, timebase, durationTicks: resolved.data.durationTicks });
   // Reference-quartet production is fail-closed at the final boundary.  The
   // full Gate G checks clock/tempo, canonical phase+gate+velocity, timing
   // links, bar drift and Score -> FinalIR identity; it never repairs output.
