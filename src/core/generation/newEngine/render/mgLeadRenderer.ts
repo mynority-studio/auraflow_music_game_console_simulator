@@ -26,7 +26,7 @@ import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
 import type { RoadMap } from './mgRoadMapParser';
 import { expandGrammarForBrick, expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { expandGrammarForBrickMatchingRhythm } from './mgRhythmShapeMatcher';
-import { applyScheduledLeadSilence, ensureScheduledLeadEntries, reserveScheduledTokensForAuthoredSpans, scheduleBrickExpansions } from './mgTokenScheduler';
+import { applyScheduledLeadSilence, applyTerminalCadence, ensureScheduledLeadEntries, reserveScheduledTokensForAuthoredSpans, scheduleBrickExpansions } from './mgTokenScheduler';
 import { planAcgLeadAfterglowHolds, scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
 import { scheduleLofiLeadScoreTokens } from './mgLofiLeadScoreScheduler';
 import type { AcgLeadPresencePlan } from './acgLeadPresencePlan';
@@ -420,13 +420,20 @@ export function renderMgMelodyWithAcgPerformancePlan(
       scoreOwnershipReserved,
       leadSilenceWindows ?? [],
     );
-  const scheduled = isScoreOwnedLofiLead
+  const entriesEnsured = isScoreOwnedLofiLead
     ? silenceScheduled
     : ensureScheduledLeadEntries(
       silenceScheduled,
       leadEntryBeats ?? [],
       timebase.meter.numerator * (4 / timebase.meter.denominator),
     );
+  // ★ ending 重构:lead 终止区(上游,parity 安全)——末句 G 落点持留、末小节不起新句、liquidation。
+  //   ACG(cycle-cadence 自带收束)与 score-owned LOFI(score plan 已写 outro return)豁免。
+  const lastSpan = plan.chordTimeline[plan.chordTimeline.length - 1];
+  const totalLeadBeats = lastSpan ? (lastSpan.startBeat as number) + (lastSpan.durationBeats as number) : 0;
+  const scheduled = style === 'ACG' || isScoreOwnedLofiLead
+    ? entriesEnsured
+    : applyTerminalCadence(entriesEnsured, totalLeadBeats, timebase.meter.numerator * (4 / timebase.meter.denominator));
   // The lead's single-note tail is a scheduler contract, not a renderer
   // repair. It may only cross a boundary when the score says the two lower
   // hands remain silent, and it later executes only on an authorized CC64

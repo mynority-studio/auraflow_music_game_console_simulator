@@ -483,3 +483,46 @@ export function scheduleBrickExpansions(
   }
   return all;
 }
+
+/** ★ ending 重构 · lead 上游终止区(parity 安全:在 MG 链内,raw 与 final 同链同变换):
+ *  1) 最后一个可闻 token → G(导音/和弦音落点语义,realizer 原生绑定)并延时值到 endBeat
+ *     (留 0.06 release)= 末句"落"在稳定音上而不是"停"在任意音上;
+ *  2) 末小节 downbeat+1 拍之后不再起新句(可闻 → R);
+ *  3) 终止区(末 2 小节)内弱位短装饰(<0.5 拍且非整拍位)→ R(liquidation 收束感)。
+ *  纯确定性;R/零时值 marker 原样;authored span 区间已被 reserve 置 R → 天然不碰用户音。 */
+export function applyTerminalCadence(
+  entries: readonly ScheduledToken[],
+  endBeat: number,
+  beatsPerBar: number,
+): ScheduledToken[] {
+  if (entries.length === 0 || endBeat <= 2 * beatsPerBar) return [...entries];
+  const zoneStart = endBeat - 2 * beatsPerBar;
+  const lastBarStart = endBeat - beatsPerBar;
+  const audible = (entry: ScheduledToken): boolean => entry.token.duration > 0 && entry.token.kind !== 'R';
+  let lastAudibleIndex = -1;
+  let lastAudibleBeat = -Infinity;
+  entries.forEach((entry, index) => {
+    if (audible(entry) && entry.startBeat < endBeat - 1e-6 && entry.startBeat > lastAudibleBeat) {
+      lastAudibleBeat = entry.startBeat;
+      lastAudibleIndex = index;
+    }
+  });
+  if (lastAudibleIndex < 0) return [...entries];
+  return entries.map((entry, index) => {
+    if (!audible(entry) || entry.startBeat < zoneStart - 1e-6) return entry;
+    if (index === lastAudibleIndex) {
+      // 落点用 C(和弦音池,三和弦为主)而非 G:G 偏好导音 3/7 度,7 度落点不满足
+      // "终止落主和弦音 1/3/5"的听感与审计;C 的和弦音语义正是 button/持留想要的。
+      const held = Math.max(entry.token.duration, endBeat - entry.startBeat - 0.06);
+      return { ...entry, token: { kind: 'C' as const, duration: held } };
+    }
+    if (entry.startBeat >= lastBarStart + 1 - 1e-6) {
+      return { ...entry, token: { kind: 'R' as const, duration: entry.token.duration } };
+    }
+    const offbeat = Math.abs(entry.startBeat - Math.round(entry.startBeat)) > 1e-6;
+    if (entry.token.duration < 0.5 - 1e-6 && offbeat) {
+      return { ...entry, token: { kind: 'R' as const, duration: entry.token.duration } };
+    }
+    return entry;
+  });
+}

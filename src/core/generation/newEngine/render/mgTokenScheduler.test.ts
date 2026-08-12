@@ -5,6 +5,7 @@ import {
   scheduleTokens,
   scheduleBrickExpansions,
   scheduleFamilyPhraseToBrick,
+  applyTerminalCadence,
 } from './mgTokenScheduler';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
@@ -147,5 +148,37 @@ describe('render/mgTokenScheduler · scheduleTokens (Loop 3)', () => {
     expect(audibleOverlap).toEqual([]);
     expect(reserved.filter((entry) => entry.token.kind === 'R').every((entry) => entry.acgReturn === undefined)).toBe(true);
     expect(reserved.some((entry) => entry.startBeat === 1.5 && entry.token.kind === 'SlopeExit')).toBe(true);
+  });
+});
+
+describe('mgTokenScheduler · applyTerminalCadence(lead 上游终止区)', () => {
+  const tok = (kind: 'C' | 'S' | 'R' | 'G', duration: number, startBeat: number) => ({
+    token: { kind, duration },
+    startBeat,
+    brickIndex: 0, brickStartBeat: 0, brickEndBeat: 16, brickName: 'on', brickFamily: 'Major-On',
+  }) as unknown as import('./mgTokenScheduler').ScheduledToken;
+
+  it('末 audible → G 落点并延到终点;末小节下拍+1 后不起新句;终止区弱位短音 liquidation', () => {
+    const out = applyTerminalCadence([
+      tok('C', 1, 0),          // 区外不动
+      tok('S', 0.25, 8.5),     // 终止区([8,16))弱位短音 → R
+      tok('C', 1, 12),         // 末小节 downbeat 保留
+      tok('S', 0.5, 14.5),     // 末小节 downbeat+1 后晚起 → R
+      tok('C', 0.5, 15),       // 最后一个 audible(按 startBeat)→ G 延到终点
+    ], 16, 4);
+    expect(out[0].token.kind).toBe('C');                       // 区外原样
+    expect(out[1].token.kind).toBe('R');                       // liquidation
+    expect(out[2].token.kind).toBe('C');                       // 末小节下拍保留
+    expect(out[3].token.kind).toBe('R');                       // 晚起新句 → R
+    const last = out[4];
+    expect(last.token.kind).toBe('C'); // 落点=和弦音(非 G:导音 7 度不满足终止统计)
+    expect(last.token.duration).toBeCloseTo(16 - 15 - 0.06, 6); // 延到终点留 release
+  });
+
+  it('R/marker 原样;全 R 输入原样返回;短歌(≤2 bar)不处理', () => {
+    const rests = [tok('R', 4, 0), tok('R', 4, 4)];
+    expect(applyTerminalCadence(rests, 8, 4).map((e) => e.token.kind)).toEqual(['R', 'R']);
+    const short = [tok('C', 1, 0)];
+    expect(applyTerminalCadence(short, 8, 4)[0].token.kind).toBe('C');
   });
 });
