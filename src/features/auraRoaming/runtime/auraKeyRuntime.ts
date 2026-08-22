@@ -74,17 +74,18 @@ import {
 
 const POLL_MS = 50;
 const SCHEDULE_LOOKAHEAD_MS = 150;
-const DEFAULT_PAD_VELOCITY = 104;
+const DEFAULT_PAD_VELOCITY = 112;
 /** 亮灯键早按 → 推迟到 lead 正点发声;提前这点量让控制器的
  *  groove/16 分量化(snap 窗 60ms)把音精确落回谱面格点。 */
 const SNAP_FIRE_EARLY_MS = 30;
-/** 命中打击感:鼓通道(scheduler ch9 → 出板 ch10 GM 鼓组)一次性叠击。 */
+/** 命中打击感:鼓通道(scheduler ch9 → 出板 ch10 GM 鼓组)一次性叠击。
+ *  命中用拍手(39)— 与歌曲鼓组的军鼓/踩镲彻底区分;按偏用鼓边边击。 */
 const DRUM_CHANNEL = 9;
-const GM_SNARE = 38;
+const GM_HAND_CLAP = 39;
 const GM_SIDE_STICK = 37;
-/** Aura Key 期间用户接管通道抬到 120(默认 100),和 lead 拉开对比 —
+/** Aura Key 期间用户接管通道拉满(默认 100),和 lead 拉开对比 —
  *  "听得出是自己按的";关闭时恢复默认。 */
-const AURA_KEY_USER_CC7 = 120;
+const AURA_KEY_USER_CC7 = 127;
 /** voice setup 会写 CC7=默认值,延迟这点量再抬,保证 last-writer-wins。 */
 const USER_GAIN_BOOST_DELAY_MS = 90;
 
@@ -412,11 +413,11 @@ class AuraKeyRuntime {
     }, USER_GAIN_BOOST_DELAY_MS);
   }
 
-  /** 打击反馈:Perfect=军鼓重击,普通=军鼓轻击(与贴谱 noteOn 同刻);
+  /** 打击反馈:Perfect=重拍手,普通=轻拍手(与贴谱 noteOn 同刻);
    *  按偏=鼓边边击(即刻,乐器音色不发声,边击是唯一反馈)。 */
   private fireHitPercussion(kind: 'perfect' | 'good' | 'missAttempt'): void {
-    const note = kind === 'missAttempt' ? GM_SIDE_STICK : GM_SNARE;
-    const velocity = kind === 'perfect' ? 96 : kind === 'good' ? 72 : 80;
+    const note = kind === 'missAttempt' ? GM_SIDE_STICK : GM_HAND_CLAP;
+    const velocity = kind === 'perfect' ? 112 : kind === 'good' ? 88 : 80;
     AudioEngine.noteOn(DRUM_CHANNEL, note, velocity);
     AudioEngine.noteOffAt(DRUM_CHANNEL, note, AudioEngine.getAudioTime() + 0.12);
   }
