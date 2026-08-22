@@ -362,21 +362,22 @@ class AuraKeyRuntime {
       const trailResult = trailOnCueSuccess(this.trail, best.id, best.beat);
       this.trail = trailResult.state;
       if (trailResult.completedTrail) recordAuraTrail();
-      // 带 col/row/hue → LedMatrix 收灯 + 从该键向外扩散渐暗波纹
+      // 带 col/row/hue/energy → LedMatrix 收灯 + 整键爆闪 + 全板波纹
       AudioEngine.emitVisualEvent({
         type: 'aura_cue_hit',
         cueId: best.id,
         col: best.col,
         row: best.row,
         hue: kind === 'perfect' ? 48 : CUE_HUE,
+        energy: kind === 'perfect' ? 2.8 : 2.2,
       });
       AudioEngine.emitVisualEvent({
         type: 'custom_particle',
         col: best.col,
         row: best.row,
         hue: kind === 'perfect' ? 48 : CUE_HUE,
-        energy: kind === 'perfect' ? 2.4 : 1.6,
-        spread: 3.2,
+        energy: kind === 'perfect' ? 4.2 : 3.2,
+        spread: 5.0,
       });
     } else {
       this.trail = trailOnAttemptMiss(this.trail); // 按偏:主动参与失败,打断音轨

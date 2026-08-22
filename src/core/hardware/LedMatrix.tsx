@@ -48,6 +48,8 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
   const hitColorsRef = useRef<Map<string, number>>(new Map());
   const isFnKeyActiveRef = useRef(false);
   const auraGlowsRef = useRef<AuraCueGlowSpec[]>([]);
+  interface AuraHitFlash { col: number; row: number; hue: number; atMs: number; peak: number; fadeMs: number; }
+  const auraFlashesRef = useRef<AuraHitFlash[]>([]);
   const auraKeyOnRef = useRef(false);
 
   useEffect(() => subscribeAuraRoaming((snapshot) => { auraKeyOnRef.current = snapshot.auraKeyOn; }), []);
@@ -117,16 +119,24 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
       if (type === 'aura_cue_hit') {
         const atMs = performance.now();
         auraGlowsRef.current = auraGlowsRef.current.map((g) => (g.cueId === event.cueId ? snuffGlow(g, atMs) : g));
-        // 命中手感:从该键中心向外扩散渐暗的波浪
+        // 命中手感:整键爆闪(瞬时超亮→快速衰减)+ 向外扩满全板的渐暗波浪
         if (event.col !== undefined && event.row !== undefined) {
+          auraFlashesRef.current.push({
+            col: event.col,
+            row: event.row,
+            hue: event.hue ?? 272,
+            atMs,
+            peak: event.energy ?? 2.4,
+            fadeMs: 340,
+          });
           ripplesRef.current.push({
             x: event.col * 3 + 1,
             y: event.row * 3 + 1,
             radius: 0.5,
-            maxRadius: 7,
-            speed: 0.32,
+            maxRadius: 9,
+            speed: 0.38,
             hue: event.hue ?? 272,
-            thickness: 1.5,
+            thickness: 2.2,
             active: true,
           });
         }
@@ -509,6 +519,32 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
         }
         auraGlowsRef.current = alive;
         if (alive.length > 0) needsUpdate = true;
+      }
+
+      // 4.6 命中爆闪:瞬时打到超亮,二次方衰减(压过引导灯与波纹)
+      if (auraFlashesRef.current.length > 0) {
+        const flashNowMs = time * 1000;
+        const aliveFlashes: AuraHitFlash[] = [];
+        for (const flash of auraFlashesRef.current) {
+          const t = (flashNowMs - flash.atMs) / flash.fadeMs;
+          if (t >= 1) continue;
+          aliveFlashes.push(flash);
+          const level = flash.peak * (1 - t) * (1 - t);
+          const cx = flash.col * 3 + 1;
+          const cy = flash.row * 3 + 1;
+          for (let y = cy - 1; y <= cy + 1; y++) {
+            for (let x = cx - 1; x <= cx + 1; x++) {
+              if (x < 0 || x >= 15 || y < 0 || y >= 9) continue;
+              const idx = y * 15 + x;
+              if (level > nextIntensities[idx]) {
+                nextIntensities[idx] = level;
+                nextHues[idx] = flash.hue;
+              }
+            }
+          }
+        }
+        auraFlashesRef.current = aliveFlashes;
+        if (aliveFlashes.length > 0) needsUpdate = true;
       }
 
       // 5. Apply to DOM
