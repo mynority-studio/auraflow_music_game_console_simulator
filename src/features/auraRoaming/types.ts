@@ -53,9 +53,9 @@ export interface AuraJudgeWindows {
 }
 
 export const DEFAULT_JUDGE_WINDOWS: AuraJudgeWindows = {
-  perfectMs: 60,
-  goodMs: 150,
-  attemptMs: 300,
+  perfectMs: 80,
+  goodMs: 220,
+  attemptMs: 380,
 };
 
 export const LUX_PER_PERFECT = 2;
@@ -65,10 +65,10 @@ export const CHARGE_COMBO = 5;
 /** 律光音轨:两次成功命中相距超过该拍数则锚点作废。 */
 export const TRAIL_MAX_GAP_BEATS = 8;
 
-/** 呼吸灯时序:最亮点提前量(音符发声前 50~100ms,取中值)。 */
-export const CUE_PEAK_LEAD_MS = 75;
-/** 最亮保持窗(覆盖住音符发声时刻,给用户反应)。 */
-export const CUE_HOLD_MS = 320;
+/** 呼吸灯时序:最亮点提前量(实测 75ms 手感偏急,提前到 120ms)。 */
+export const CUE_PEAK_LEAD_MS = 120;
+/** 最亮保持窗(覆盖住音符发声时刻,给用户反应;实测加长到 480ms)。 */
+export const CUE_HOLD_MS = 480;
 export const CUE_FADE_MS = 260;
 /** 呼吸上升时长:所有提示统一固定 — 每个键只按自己的峰值时刻倒推
  *  起亮点,窗口重叠就同时呼吸,绝不等前一个灯熄灭。 */

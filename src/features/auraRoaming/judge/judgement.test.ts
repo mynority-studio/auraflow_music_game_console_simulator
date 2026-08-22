@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { INITIAL_SCORE_STATE, applyJudgement, classifyPressDelta } from './judgement';
 
 describe('auraRoaming/judgement — 判定窗口与计分', () => {
-  it('判定窗口:±60 Perfect / ±150 普通 / ±300 按偏 / 更远自由弹奏', () => {
+  it('判定窗口:±80 Perfect / ±220 普通 / ±380 按偏 / 更远自由弹奏', () => {
     expect(classifyPressDelta(0)).toBe('perfect');
-    expect(classifyPressDelta(-59)).toBe('perfect');
-    expect(classifyPressDelta(60)).toBe('perfect');
-    expect(classifyPressDelta(61)).toBe('good');
-    expect(classifyPressDelta(-149)).toBe('good');
-    expect(classifyPressDelta(151)).toBe('missAttempt');
-    expect(classifyPressDelta(-299)).toBe('missAttempt');
-    expect(classifyPressDelta(301)).toBeNull();
+    expect(classifyPressDelta(-79)).toBe('perfect');
+    expect(classifyPressDelta(80)).toBe('perfect');
+    expect(classifyPressDelta(81)).toBe('good');
+    expect(classifyPressDelta(-219)).toBe('good');
+    expect(classifyPressDelta(221)).toBe('missAttempt');
+    expect(classifyPressDelta(-379)).toBe('missAttempt');
+    expect(classifyPressDelta(381)).toBeNull();
     expect(classifyPressDelta(-500)).toBeNull();
   });
 
