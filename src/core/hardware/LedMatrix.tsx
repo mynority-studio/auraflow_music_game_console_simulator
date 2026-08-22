@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { AudioEngine } from '../audio/AudioEngine';
 import { VisualEvent } from '../audio/playbackTypes';
+import { cueGlowIntensity, snuffGlow, type AuraCueGlowSpec } from '../../features/auraRoaming/cue/cueGlow';
 
 interface LedMatrixProps {
   activeKeys: Set<string>;
@@ -45,6 +46,7 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
   const ripplesRef = useRef<Ripple[]>([]);
   const hitColorsRef = useRef<Map<string, number>>(new Map());
   const isFnKeyActiveRef = useRef(false);
+  const auraGlowsRef = useRef<AuraCueGlowSpec[]>([]);
 
   useEffect(() => {
     activeKeysRef.current = activeKeys;
@@ -79,6 +81,33 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
 
       if (type === 'fn_key_active') {
         isFnKeyActiveRef.current = !!event.active;
+        return;
+      }
+
+      // 光律漫游引导呼吸灯:包络参数随事件带入,峰值时刻绝对制(performance.now
+      // 时基),rAF 每帧算亮度 → 事件派发抖动不影响"提前 50~100ms 最亮"的契约
+      if (type === 'aura_cue') {
+        if (event.col !== undefined && event.row !== undefined && event.peakAtMs !== undefined) {
+          auraGlowsRef.current.push({
+            cueId: event.cueId ?? -1,
+            col: event.col,
+            row: event.row,
+            hue: event.hue ?? 272,
+            peakAtMs: event.peakAtMs,
+            riseMs: event.riseMs ?? 500,
+            holdMs: event.holdMs ?? 320,
+            fadeMs: event.fadeMs ?? 260,
+          });
+        }
+        return;
+      }
+      if (type === 'aura_cue_hit') {
+        const atMs = performance.now();
+        auraGlowsRef.current = auraGlowsRef.current.map((g) => (g.cueId === event.cueId ? snuffGlow(g, atMs) : g));
+        return;
+      }
+      if (type === 'aura_cue_clear') {
+        auraGlowsRef.current = [];
         return;
       }
 
@@ -409,6 +438,33 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
           }
         }
         needsUpdate = true;
+      }
+
+      // 4.5 Aura Key 引导呼吸灯:该键 9 颗灯同步,max 混合不覆盖既有能量
+      if (auraGlowsRef.current.length > 0) {
+        const glowNowMs = time * 1000;
+        const alive: AuraCueGlowSpec[] = [];
+        for (const glow of auraGlowsRef.current) {
+          const intensity = cueGlowIntensity(glowNowMs, glow);
+          if (intensity < 0) continue;
+          alive.push(glow);
+          if (intensity <= 0) continue;
+          const cx = glow.col * 3 + 1;
+          const cy = glow.row * 3 + 1;
+          const level = intensity * 1.25;
+          for (let y = cy - 1; y <= cy + 1; y++) {
+            for (let x = cx - 1; x <= cx + 1; x++) {
+              if (x < 0 || x >= 15 || y < 0 || y >= 9) continue;
+              const idx = y * 15 + x;
+              if (level > nextIntensities[idx]) {
+                nextIntensities[idx] = level;
+                nextHues[idx] = glow.hue;
+              }
+            }
+          }
+        }
+        auraGlowsRef.current = alive;
+        if (alive.length > 0) needsUpdate = true;
       }
 
       // 5. Apply to DOM

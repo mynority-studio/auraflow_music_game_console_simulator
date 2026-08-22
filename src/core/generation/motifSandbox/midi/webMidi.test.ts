@@ -43,7 +43,7 @@ describe('motifSandbox/webMidi input device transport', () => {
 
 describe('motifSandbox/webMidi exclusive input ownership', () => {
   it('announces Q+T takeover ownership and releases it deterministically', () => {
-    const seen: Array<'takeover' | null> = [];
+    const seen: Array<'takeover' | 'auraKey' | null> = [];
     const unsubscribe = subscribeMidiInputExclusive((owner) => seen.push(owner));
     const release = claimMidiInputExclusive('takeover');
 

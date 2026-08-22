@@ -8,7 +8,8 @@ describe('lead takeover input isolation', () => {
   it('keeps TapArea state visible to Q+T while hiding it from the underlying app', () => {
     const app = read('src/App.tsx');
 
-    expect(app).toContain('const appActiveKeys = takeoverOpen ? EMPTY_ACTIVE_KEYS : activeKeys');
+    // Aura Key(光律漫游)与 Q+T 同为 pad 输入接管方:任一开启都不再喂给屏幕内 app
+    expect(app).toContain('const appActiveKeys = takeoverOpen || auraKeyOn ? EMPTY_ACTIVE_KEYS : activeKeys');
     expect(app).toContain('onOpenChange={setTakeoverOpen}');
     expect(app).toContain('<AuraSystem activeKeys={appActiveKeys}');
     expect(app).toContain('<ActiveApp activeKeys={appActiveKeys}');

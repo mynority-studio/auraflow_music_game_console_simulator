@@ -33,8 +33,9 @@ export function midiInputTransportLabel(device: Pick<MidiDeviceInfo, 'transport'
 /**
  * Q+T owns incoming MIDI while takeover is visible. This prevents another
  * sandbox from auditioning the raw external pitch beside Q+T's position map.
+ * 'auraKey' = 光律漫游 Aura Key 引导模式(同一物理键盘,lead 不静音)。
  */
-export type MidiInputExclusiveOwner = 'takeover';
+export type MidiInputExclusiveOwner = 'takeover' | 'auraKey';
 let exclusiveMidiInputOwner: MidiInputExclusiveOwner | null = null;
 const exclusiveMidiInputListeners = new Set<(owner: MidiInputExclusiveOwner | null) => void>();
 

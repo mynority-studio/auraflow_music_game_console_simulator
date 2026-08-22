@@ -16,9 +16,9 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Cable, FileSearch, Hand, Piano } from 'lucide-react';
+import { Activity, Cable, FileSearch, Hand, Piano, Sparkles } from 'lucide-react';
 
-export type DevPanelId = 'pipeline' | 'midiAnalysis' | 'motif' | 'midiOut' | 'takeover';
+export type DevPanelId = 'pipeline' | 'midiAnalysis' | 'motif' | 'midiOut' | 'takeover' | 'auraRoam';
 
 export interface DevPanelMeta {
     id: DevPanelId;
@@ -57,6 +57,11 @@ export const DEV_PANELS: DevPanelMeta[] = [
         id: 'takeover', label: '用户接管沙盒', hint: 'Lead takeover', combo: 'Q+T',
         icon: Hand,
         dot: 'bg-teal-400', activeRing: 'border-teal-400/50 bg-teal-500/10', activeText: 'text-teal-300',
+    },
+    {
+        id: 'auraRoam', label: '光律漫游', hint: 'Aura roaming · guided play', combo: 'Q+L',
+        icon: Sparkles,
+        dot: 'bg-violet-400', activeRing: 'border-violet-400/50 bg-violet-500/10', activeText: 'text-violet-300',
     },
 ];
 

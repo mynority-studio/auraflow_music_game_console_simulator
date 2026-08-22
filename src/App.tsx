@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { LedMatrix } from './core/hardware/LedMatrix';
 import { TapArea } from './core/hardware/TapArea';
 import { AuraSystem } from './system/AuraSystem';
@@ -13,6 +13,7 @@ import { emitTakeoverPadInput } from './core/generation/leadTakeoverSandbox/take
 import { DevDock } from './components/DevDock';
 import { SoundFontSelector } from './components/SoundFontSelector';
 import { MidiAnalysisMonitorPanel } from './components/MidiAnalysisMonitorPanel';
+import { AuraRoamingPanel, AuraStarHud, subscribeAuraRoaming } from './features/auraRoaming';
 
 const EMPTY_ACTIVE_KEYS = new Set<string>();
 
@@ -20,7 +21,10 @@ export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
   const [deviceState, setDeviceState] = useState<string>('SYSTEM_MENU');
   const [takeoverOpen, setTakeoverOpen] = useState(false);
-  const appActiveKeys = takeoverOpen ? EMPTY_ACTIVE_KEYS : activeKeys;
+  const [auraKeyOn, setAuraKeyOn] = useState(false);
+  // Aura Key 引导模式与 Q+T 一样接管 pad 输入,不再喂给屏幕内 app
+  useEffect(() => subscribeAuraRoaming((snapshot) => setAuraKeyOn(snapshot.auraKeyOn)), []);
+  const appActiveKeys = takeoverOpen || auraKeyOn ? EMPTY_ACTIVE_KEYS : activeKeys;
 
   const handleKeyDown = useCallback((c: number, r: number) => {
     startAudioContext();
@@ -52,12 +56,15 @@ export default function App() {
       <MotifWeaverSandboxPanel />
       <MidiOutSandboxPanel />
       <MidiAnalysisMonitorPanel />
+      <AuraRoamingPanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"
         style={{ aspectRatio: '1537 / 1410' }}
       >
         <LeadTakeoverSandboxPanel activeKeys={activeKeys} onOpenChange={setTakeoverOpen} />
+        {/* 光律漫游 🌟 HUD:覆盖屏幕区,仅 Aura Key 打开时可见 */}
+        <AuraStarHud />
         {/* Layer 1: Device Base (Z-index: 1) */}
         <div 
           className="absolute inset-0 z-10"
