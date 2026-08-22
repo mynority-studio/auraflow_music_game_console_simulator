@@ -117,6 +117,19 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
       if (type === 'aura_cue_hit') {
         const atMs = performance.now();
         auraGlowsRef.current = auraGlowsRef.current.map((g) => (g.cueId === event.cueId ? snuffGlow(g, atMs) : g));
+        // 命中手感:从该键中心向外扩散渐暗的波浪
+        if (event.col !== undefined && event.row !== undefined) {
+          ripplesRef.current.push({
+            x: event.col * 3 + 1,
+            y: event.row * 3 + 1,
+            radius: 0.5,
+            maxRadius: 7,
+            speed: 0.32,
+            hue: event.hue ?? 272,
+            thickness: 1.5,
+            active: true,
+          });
+        }
         return;
       }
       if (type === 'aura_cue_clear') {

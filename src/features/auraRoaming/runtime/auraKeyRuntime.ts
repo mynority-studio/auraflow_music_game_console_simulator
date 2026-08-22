@@ -77,6 +77,10 @@ const DEFAULT_PAD_VELOCITY = 104;
 /** 亮灯键早按 → 推迟到 lead 正点发声;提前这点量让控制器的
  *  groove/16 分量化(snap 窗 60ms)把音精确落回谱面格点。 */
 const SNAP_FIRE_EARLY_MS = 30;
+/** 命中打击感:鼓通道(scheduler ch9 → 出板 ch10 GM 鼓组)一次性叠击。 */
+const DRUM_CHANNEL = 9;
+const GM_SNARE = 38;
+const GM_SIDE_STICK = 37;
 
 interface RuntimeCue extends PlannedCue {
   padIndex: number;
@@ -331,8 +335,11 @@ class AuraKeyRuntime {
     }
 
     best.cueState = 'done';
+    const kind = classifyPressDelta(bestDelta) ?? 'missAttempt';
+    const percKind = kind === 'perfect' || kind === 'good' ? kind : null;
 
-    // 亮灯键贴谱发声:阈值内早按 → 声音推迟到 lead 音符正点;正点后按 → 立即
+    // 亮灯键贴谱发声:阈值内早按 → 声音推迟到 lead 音符正点;正点后按 → 立即。
+    // 命中成功再叠一记鼓击(与音符同一时刻,transient 对齐强化打击感)
     const bestWallMs = now + (best.tick - currentTick) / ticksPerMs;
     const fireInMs = bestWallMs - now - SNAP_FIRE_EARLY_MS;
     if (fireInMs > 5) {
@@ -343,10 +350,12 @@ class AuraKeyRuntime {
           AudioEngine,
           this.controller.noteOn(padIndex, AudioEngine.getCurrentBeat(), velocity, sourceId),
         );
+        if (percKind) this.fireHitPercussion(percKind);
       }, fireInMs);
       this.snapTimers.set(sourceId, timer);
     } else {
       executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
+      if (percKind) this.fireHitPercussion(percKind);
     }
     // 亮灯键自动时值延音:按 lead 音符时值挂住 + legato 尾巴;未亮键不享受
     const cueEndTick = best.tick + best.durationBeats * this.ppq;
@@ -355,13 +364,19 @@ class AuraKeyRuntime {
       now + (cueEndTick - currentTick) / ticksPerMs + CUE_SUSTAIN_TAIL_MS,
     );
     if (sustainUntilMs > now) this.sustains.set(sourceId, { untilMs: sustainUntilMs, timer: null, padIndex });
-    const kind = classifyPressDelta(bestDelta) ?? 'missAttempt';
     recordAuraJudgement(kind);
     if (isSuccessJudgement(kind)) {
       const trailResult = trailOnCueSuccess(this.trail, best.id, best.beat);
       this.trail = trailResult.state;
       if (trailResult.completedTrail) recordAuraTrail();
-      AudioEngine.emitVisualEvent({ type: 'aura_cue_hit', cueId: best.id });
+      // 带 col/row/hue → LedMatrix 收灯 + 从该键向外扩散渐暗波纹
+      AudioEngine.emitVisualEvent({
+        type: 'aura_cue_hit',
+        cueId: best.id,
+        col: best.col,
+        row: best.row,
+        hue: kind === 'perfect' ? 48 : CUE_HUE,
+      });
       AudioEngine.emitVisualEvent({
         type: 'custom_particle',
         col: best.col,
@@ -373,6 +388,14 @@ class AuraKeyRuntime {
     } else {
       this.trail = trailOnAttemptMiss(this.trail); // 按偏:主动参与失败,打断音轨
     }
+  }
+
+  /** 命中打击感:与贴谱 noteOn 同刻叠一记鼓击(Perfect=军鼓,普通=边击)。 */
+  private fireHitPercussion(kind: 'perfect' | 'good'): void {
+    const note = kind === 'perfect' ? GM_SNARE : GM_SIDE_STICK;
+    const velocity = kind === 'perfect' ? 96 : 74;
+    AudioEngine.noteOn(DRUM_CHANNEL, note, velocity);
+    AudioEngine.noteOffAt(DRUM_CHANNEL, note, AudioEngine.getAudioTime() + 0.12);
   }
 
   private onPadUp(padIndex: number, sourceId: string): void {
