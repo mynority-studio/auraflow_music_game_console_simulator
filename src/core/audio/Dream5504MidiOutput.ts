@@ -283,7 +283,10 @@ class Dream5504MidiOutputController {
     }
     const channel = resolveSchedulerOutputChannel(channel0, this.state.mode, this.state.channels);
     const routedMessage = { ...message, channel } as MidiOutMessage;
-    if (!isDream5504RawDefaultMessageAllowed(routedMessage, role)) return true;
+    // 辅助实时通道(如 ch15 接管/Aura Key)不属于生成曲五通道的 Firm5504
+    // 默认输出合同,拥有自己的 CC 流(音量抬档等);正式歌曲通道照旧受限
+    const isAuxRealtimeChannel = schedulerChannelToRole(channel0) === null;
+    if (!isAuxRealtimeChannel && !isDream5504RawDefaultMessageAllowed(routedMessage, role)) return true;
     try {
       sendMidiMessage(output, routedMessage, timestampMs);
       this.incrementEvent(`${role} · ch ${channel} · ${message.type}`);

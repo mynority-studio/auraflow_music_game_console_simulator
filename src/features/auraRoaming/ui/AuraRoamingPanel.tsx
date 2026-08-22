@@ -122,6 +122,7 @@ export const AuraRoamingPanel: React.FC = () => {
                   <div className="text-zinc-400">
                     律光 ×{score.lux} · 律光音轨 ×{snap.trails}
                   </div>
+                  <div className="text-zinc-500">最近按压:{snap.lastPress || '—'}</div>
                 </div>
               ) : (
                 <span className="text-amber-300/90">等待生成曲播放(Q+H 生成并播放后自动开始引导)</span>

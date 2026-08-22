@@ -44,6 +44,7 @@ import {
 import type { MusicGenerationResult } from '../../../core/generation/musicGeneration/types';
 import { scoreLeadAccents } from '../accent/leadAccents';
 import { planCues } from '../cue/cuePlanner';
+import { planHarmonicFillCues } from '../cue/harmonicFill';
 import { padIndexForPitch } from '../cue/padLookup';
 import { classifyPressDelta } from '../judge/judgement';
 import {
@@ -253,27 +254,37 @@ class AuraKeyRuntime {
       durationTicks: n.durationTicks as number,
       velocity: n.velocity,
     }));
+    const totalBeats = (ir.durationTicks as number) / this.ppq;
     const accents = scoreLeadAccents(notes, { ppq: this.ppq, beatsPerBar });
-    const planned = planCues(accents, {
-      beatsPerBar,
-      totalBeats: (ir.durationTicks as number) / this.ppq,
-      seed: result.seed,
-    });
+    const planned = planCues(accents, { beatsPerBar, totalBeats, seed: result.seed });
 
-    const cues: RuntimeCue[] = [];
+    const bound: Array<PlannedCue & { padIndex: number }> = [];
     for (const cue of planned) {
       const cells = this.controller.getPadMap(cue.beat)?.cells ?? [];
       const padIndex = padIndexForPitch(cells, cue.pitch);
       if (padIndex === null) continue; // 布局外的音符不提示(引导必须诚实)
-      const { col, row } = takeoverPadCoord(padIndex);
-      cues.push({ ...cue, id: cues.length, padIndex, col, row, cueState: 'pending', wallMs: 0 });
+      bound.push({ ...cue, source: 'lead', padIndex });
     }
-    this.cues = cues;
+    // 和声填充:lead 空窗里按当前布局的结构音(强拍)/色彩音(弱拍)补提示,
+    // ACG 等旋律稀疏风格的密度救星 — 布局即安全音图,亮谁都和谐
+    const fillers = planHarmonicFillCues(bound, {
+      beatsPerBar,
+      totalBeats,
+      seed: result.seed,
+      ppq: this.ppq,
+      cellsAtBeat: (b) => this.controller.getPadMap(b)?.cells ?? null,
+    });
+    this.cues = [...bound, ...fillers]
+      .sort((a, b) => a.tick - b.tick)
+      .map((cue, index) => {
+        const { col, row } = takeoverPadCoord(cue.padIndex);
+        return { ...cue, id: index, col, row, cueState: 'pending' as const, wallMs: 0 };
+      });
     this.trail = INITIAL_LUX_TRAIL_STATE;
     this.lastTick = 0;
     this.emitClear();
     resetAuraSession();
-    patchAuraRoaming({ songReady: true, cueTotal: cues.length });
+    patchAuraRoaming({ songReady: true, cueTotal: this.cues.length });
     this.songReady = true;
   }
 
@@ -338,6 +349,7 @@ class AuraKeyRuntime {
       // 未亮键:即按即响(原行为);同时是开着锚点的律光音轨材料
       executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
       this.trail = trailOnUnlitPress(this.trail);
+      patchAuraRoaming({ lastPress: `自由 pad${padIndex} · 即发` });
       return;
     }
 
@@ -351,6 +363,7 @@ class AuraKeyRuntime {
       AudioEngine.emitVisualEvent({ type: 'aura_cue_hit', cueId: best.id });
       recordAuraJudgement(kind);
       this.trail = trailOnAttemptMiss(this.trail);
+      patchAuraRoaming({ lastPress: `按偏 Δ${Math.round(bestDelta)}ms · 静默+边击` });
       return;
     }
 
@@ -373,6 +386,10 @@ class AuraKeyRuntime {
       executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
       this.fireHitPercussion(kind);
     }
+    patchAuraRoaming({
+      lastPress: `${kind === 'perfect' ? 'Perfect' : '普通'} Δ${Math.round(bestDelta)}ms · `
+        + `${fireInMs > 5 ? `+${Math.round(fireInMs)}ms 贴谱` : '即发'}${best.source === 'harmonic' ? ' · 和声' : ''}`,
+    });
     // 亮灯键自动时值延音:按 lead 音符时值挂住 + legato 尾巴;未亮键不享受
     const cueEndTick = best.tick + best.durationBeats * this.ppq;
     const sustainUntilMs = Math.min(

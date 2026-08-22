@@ -28,7 +28,9 @@ export interface AccentCandidate {
   score: number;
 }
 
-/** planner 选定的提示音(尚未绑定键位)。 */
+/** planner 选定的提示音(尚未绑定键位)。
+ *  source:'lead' = 来自 lead 重音;'harmonic' = 和声填充(lead 无旋律的
+ *  空窗里,按当前布局的结构音/色彩音提前亮灯,ACG 等稀疏风格提密度)。 */
 export interface PlannedCue {
   id: number;
   tick: number;
@@ -36,6 +38,7 @@ export interface PlannedCue {
   pitch: number;
   durationBeats: number;
   valueClass: CueValueClass;
+  source?: 'lead' | 'harmonic';
 }
 
 export type AuraJudgementKind = 'perfect' | 'good' | 'missAttempt' | 'missIgnore';

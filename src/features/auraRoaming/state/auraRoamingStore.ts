@@ -26,6 +26,8 @@ export interface AuraRoamingSnapshot {
   lastJudgement: { kind: AuraJudgementKind; atMs: number } | null;
   latencyOffsetMs: number;
   midiStatus: string;
+  /** 最近一次按压的调试摘要(判定/Δms/发声方式),面板展示。 */
+  lastPress: string;
 }
 
 const state: AuraRoamingSnapshot = {
@@ -39,6 +41,7 @@ const state: AuraRoamingSnapshot = {
   lastJudgement: null,
   latencyOffsetMs: 0,
   midiStatus: 'off',
+  lastPress: '',
 };
 
 const listeners = new Set<(snapshot: AuraRoamingSnapshot) => void>();
@@ -58,7 +61,7 @@ function notify(): void {
 }
 
 export function patchAuraRoaming(partial: Partial<Pick<AuraRoamingSnapshot,
-  'auraKeyOn' | 'songReady' | 'cueTotal' | 'midiStatus' | 'latencyOffsetMs'>>): void {
+  'auraKeyOn' | 'songReady' | 'cueTotal' | 'midiStatus' | 'latencyOffsetMs' | 'lastPress'>>): void {
   Object.assign(state, partial);
   notify();
 }
