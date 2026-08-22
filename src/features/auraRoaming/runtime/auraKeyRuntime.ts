@@ -45,7 +45,7 @@ import type { MusicGenerationResult } from '../../../core/generation/musicGenera
 import { scoreLeadAccents } from '../accent/leadAccents';
 import { planCues } from '../cue/cuePlanner';
 import { padIndexForPitch } from '../cue/padLookup';
-import { classifyPressDelta, isSuccessJudgement } from '../judge/judgement';
+import { classifyPressDelta } from '../judge/judgement';
 import {
   INITIAL_LUX_TRAIL_STATE,
   trailOnAttemptMiss,
@@ -342,7 +342,16 @@ class AuraKeyRuntime {
 
     best.cueState = 'done';
     const kind = classifyPressDelta(bestDelta) ?? 'missAttempt';
-    const percKind = kind === 'perfect' || kind === 'good' ? kind : null;
+
+    if (kind === 'missAttempt') {
+      // 按偏(早了/晚了两种情况):乐器音色不发声 — 引导音要么正点要么沉默;
+      // 只即刻回一记鼓边边击作为"偏了"反馈,收灯但不放命中动效
+      this.fireHitPercussion(kind);
+      AudioEngine.emitVisualEvent({ type: 'aura_cue_hit', cueId: best.id });
+      recordAuraJudgement(kind);
+      this.trail = trailOnAttemptMiss(this.trail);
+      return;
+    }
 
     // 亮灯键贴谱发声:阈值内早按 → 声音推迟到 lead 音符正点;正点后按 → 立即。
     // 命中成功再叠一记鼓击(与音符同一时刻,transient 对齐强化打击感)
@@ -356,12 +365,12 @@ class AuraKeyRuntime {
           AudioEngine,
           this.controller.noteOn(padIndex, AudioEngine.getCurrentBeat(), velocity, sourceId),
         );
-        if (percKind) this.fireHitPercussion(percKind);
+        this.fireHitPercussion(kind);
       }, fireInMs);
       this.snapTimers.set(sourceId, timer);
     } else {
       executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
-      if (percKind) this.fireHitPercussion(percKind);
+      this.fireHitPercussion(kind);
     }
     // 亮灯键自动时值延音:按 lead 音符时值挂住 + legato 尾巴;未亮键不享受
     const cueEndTick = best.tick + best.durationBeats * this.ppq;
@@ -371,30 +380,26 @@ class AuraKeyRuntime {
     );
     if (sustainUntilMs > now) this.sustains.set(sourceId, { untilMs: sustainUntilMs, timer: null, padIndex });
     recordAuraJudgement(kind);
-    if (isSuccessJudgement(kind)) {
-      const trailResult = trailOnCueSuccess(this.trail, best.id, best.beat);
-      this.trail = trailResult.state;
-      if (trailResult.completedTrail) recordAuraTrail();
-      // 带 col/row/hue/energy → LedMatrix 收灯 + 整键爆闪 + 全板波纹
-      AudioEngine.emitVisualEvent({
-        type: 'aura_cue_hit',
-        cueId: best.id,
-        col: best.col,
-        row: best.row,
-        hue: kind === 'perfect' ? 48 : CUE_HUE,
-        energy: kind === 'perfect' ? 2.8 : 2.2,
-      });
-      AudioEngine.emitVisualEvent({
-        type: 'custom_particle',
-        col: best.col,
-        row: best.row,
-        hue: kind === 'perfect' ? 48 : CUE_HUE,
-        energy: kind === 'perfect' ? 4.2 : 3.2,
-        spread: 5.0,
-      });
-    } else {
-      this.trail = trailOnAttemptMiss(this.trail); // 按偏:主动参与失败,打断音轨
-    }
+    const trailResult = trailOnCueSuccess(this.trail, best.id, best.beat);
+    this.trail = trailResult.state;
+    if (trailResult.completedTrail) recordAuraTrail();
+    // 带 col/row/hue/energy → LedMatrix 收灯 + 整键爆闪 + 全板波纹
+    AudioEngine.emitVisualEvent({
+      type: 'aura_cue_hit',
+      cueId: best.id,
+      col: best.col,
+      row: best.row,
+      hue: kind === 'perfect' ? 48 : CUE_HUE,
+      energy: kind === 'perfect' ? 2.8 : 2.2,
+    });
+    AudioEngine.emitVisualEvent({
+      type: 'custom_particle',
+      col: best.col,
+      row: best.row,
+      hue: kind === 'perfect' ? 48 : CUE_HUE,
+      energy: kind === 'perfect' ? 4.2 : 3.2,
+      spread: 5.0,
+    });
   }
 
   /** 接管通道音量抬档:在 voice setup(CC7=默认)落地后补发,确保生效。 */
@@ -407,10 +412,11 @@ class AuraKeyRuntime {
     }, USER_GAIN_BOOST_DELAY_MS);
   }
 
-  /** 命中打击感:与贴谱 noteOn 同刻叠一记鼓击(Perfect=军鼓,普通=边击)。 */
-  private fireHitPercussion(kind: 'perfect' | 'good'): void {
-    const note = kind === 'perfect' ? GM_SNARE : GM_SIDE_STICK;
-    const velocity = kind === 'perfect' ? 96 : 74;
+  /** 打击反馈:Perfect=军鼓重击,普通=军鼓轻击(与贴谱 noteOn 同刻);
+   *  按偏=鼓边边击(即刻,乐器音色不发声,边击是唯一反馈)。 */
+  private fireHitPercussion(kind: 'perfect' | 'good' | 'missAttempt'): void {
+    const note = kind === 'missAttempt' ? GM_SIDE_STICK : GM_SNARE;
+    const velocity = kind === 'perfect' ? 96 : kind === 'good' ? 72 : 80;
     AudioEngine.noteOn(DRUM_CHANNEL, note, velocity);
     AudioEngine.noteOffAt(DRUM_CHANNEL, note, AudioEngine.getAudioTime() + 0.12);
   }
