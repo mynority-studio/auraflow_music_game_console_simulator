@@ -37,6 +37,14 @@ describe('auraRoaming/cuePlanner — 提示选择与防节拍器', () => {
     expect(signatures.size).toBeGreaterThanOrEqual(2);
   });
 
+  it('密度下限:密集候选下平均每小节 ≥1.3 个提示(不再"久久亮一个")', () => {
+    const barCount = CTX.totalBeats / CTX.beatsPerBar;
+    for (const seed of [1, 7, 564417]) {
+      const cues = planCues(candidates, { ...CTX, seed });
+      expect(cues.length / barCount, `seed ${seed} 密度`).toBeGreaterThanOrEqual(1.3);
+    }
+  });
+
   it('提示间隔 ≥ 八分,且八分间隔占比受预算约束', () => {
     for (const seed of [1, 7, 564417]) {
       const cues = planCues(candidates, { ...CTX, seed });

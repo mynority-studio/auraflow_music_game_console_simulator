@@ -65,6 +65,8 @@ import {
   CUE_PEAK_LEAD_MS,
   CUE_RISE_MAX_MS,
   CUE_RISE_MIN_MS,
+  CUE_SUSTAIN_MAX_MS,
+  CUE_SUSTAIN_TAIL_MS,
   DEFAULT_JUDGE_WINDOWS,
   type PlannedCue,
 } from '../types';
@@ -99,6 +101,8 @@ class AuraKeyRuntime {
   private unsubPad: (() => void) | null = null;
   private midiHandle: MidiAccessHandle | null = null;
   private releaseMidiClaim: (() => void) | null = null;
+  /** 亮灯键自动时值延音:sourceId → 挂住到几时(timer=已松手在等 note-off)。 */
+  private sustains = new Map<string, { untilMs: number; timer: number | null; padIndex: number }>();
 
   isRunning(): boolean {
     return this.running;
@@ -129,6 +133,10 @@ class AuraKeyRuntime {
     this.pollTimer = null;
     this.unsubPad?.();
     this.unsubPad = null;
+    for (const sustain of this.sustains.values()) {
+      if (sustain.timer !== null) window.clearTimeout(sustain.timer);
+    }
+    this.sustains.clear();
     executeLeadTakeoverActions(AudioEngine, this.controller.reset());
     resetLeadTakeoverRuntimeState(AudioEngine);
     this.emitClear();
@@ -283,6 +291,7 @@ class AuraKeyRuntime {
 
   private onPadDown(padIndex: number, atMs: number, velocity: number, sourceId: string): void {
     if (!this.running) return;
+    this.flushSustain(sourceId); // 上一次延音还挂着 → 先收掉,legato 交接
     // 声音永远发出:亮/未亮键一视同仁,接管音色 + 当前布局映射音高
     const beat = AudioEngine.getCurrentBeat();
     executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
@@ -312,6 +321,13 @@ class AuraKeyRuntime {
     }
 
     best.cueState = 'done';
+    // 亮灯键自动时值延音:按 lead 音符时值挂住 + legato 尾巴;未亮键不享受
+    const cueEndTick = best.tick + best.durationBeats * this.ppq;
+    const sustainUntilMs = Math.min(
+      now + CUE_SUSTAIN_MAX_MS,
+      now + (cueEndTick - currentTick) / ticksPerMs + CUE_SUSTAIN_TAIL_MS,
+    );
+    if (sustainUntilMs > now) this.sustains.set(sourceId, { untilMs: sustainUntilMs, timer: null, padIndex });
     const kind = classifyPressDelta(bestDelta) ?? 'missAttempt';
     recordAuraJudgement(kind);
     if (isSuccessJudgement(kind)) {
@@ -334,7 +350,30 @@ class AuraKeyRuntime {
 
   private onPadUp(padIndex: number, sourceId: string): void {
     if (!this.running) return;
+    const sustain = this.sustains.get(sourceId);
+    const now = nowMs();
+    if (sustain && sustain.timer === null && sustain.untilMs - now > 40) {
+      // 松手但 lead 时值未走完 → note-off 推迟到时值结束(自动延音)
+      sustain.timer = window.setTimeout(() => {
+        this.sustains.delete(sourceId);
+        if (!this.running) return;
+        executeLeadTakeoverActions(AudioEngine, this.controller.noteOff(padIndex, AudioEngine.getCurrentBeat(), sourceId));
+      }, sustain.untilMs - now);
+      return;
+    }
+    this.sustains.delete(sourceId);
     executeLeadTakeoverActions(AudioEngine, this.controller.noteOff(padIndex, AudioEngine.getCurrentBeat(), sourceId));
+  }
+
+  /** 同一 sourceId 再次按下前,把仍在延音等待的上一个音立即收掉。 */
+  private flushSustain(sourceId: string): void {
+    const sustain = this.sustains.get(sourceId);
+    if (!sustain) return;
+    this.sustains.delete(sourceId);
+    if (sustain.timer !== null) {
+      window.clearTimeout(sustain.timer);
+      executeLeadTakeoverActions(AudioEngine, this.controller.noteOff(sustain.padIndex, AudioEngine.getCurrentBeat(), sourceId));
+    }
   }
 
   // ---- BLE/Web MIDI 接入(设备偏好与 Q+T 共享) ----

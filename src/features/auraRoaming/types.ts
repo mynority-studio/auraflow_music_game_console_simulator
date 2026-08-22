@@ -71,3 +71,7 @@ export const CUE_RISE_MIN_MS = 350;
 export const CUE_RISE_MAX_MS = 700;
 /** 引导灯主色相(紫罗兰,与面板 violet 一致)。 */
 export const CUE_HUE = 272;
+/** 亮灯键命中后的自动时值延音:按 lead 音符时值持续,再加一点
+ *  legato 尾巴衔接下一个提示;未亮键不延音。 */
+export const CUE_SUSTAIN_TAIL_MS = 150;
+export const CUE_SUSTAIN_MAX_MS = 5000;

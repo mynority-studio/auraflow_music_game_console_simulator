@@ -38,13 +38,15 @@ interface SlotPattern {
   energyBias: number;
 }
 
+// 权重整体偏密(实测"久久才亮一个"太呆):期望 ~2.3 槽/小节,再经
+// 候选对齐/键位反查/防节拍器过滤后仍有 ~1.5+/小节的活跃引导感。
 const PATTERNS: SlotPattern[] = [
-  { key: 'rest', weight: 1.1, energyBias: -1, slots: () => [] },
-  { key: 'whole', weight: 3, energyBias: -0.5, slots: () => [0] },
-  { key: 'half', weight: 4, energyBias: 0, slots: (bpb) => [0, Math.floor(bpb / 2)] },
-  { key: 'halfOff', weight: 1.6, energyBias: 0, slots: (bpb) => [Math.floor(bpb / 2)] },
+  { key: 'rest', weight: 0.4, energyBias: -1, slots: () => [] },
+  { key: 'whole', weight: 1.5, energyBias: -0.5, slots: () => [0] },
+  { key: 'half', weight: 3, energyBias: 0, slots: (bpb) => [0, Math.floor(bpb / 2)] },
+  { key: 'halfOff', weight: 1.2, energyBias: 0, slots: (bpb) => [Math.floor(bpb / 2)] },
   {
-    key: 'quarterPair', weight: 3, energyBias: 0.5,
+    key: 'quarterPair', weight: 3.5, energyBias: 0.5,
     slots: (bpb, rng) => {
       const first = Math.floor(rng() * Math.max(1, bpb - 1));
       const second = first + 1 + Math.floor(rng() * Math.max(1, bpb - first - 1));
@@ -52,7 +54,7 @@ const PATTERNS: SlotPattern[] = [
     },
   },
   {
-    key: 'quarterTriple', weight: 2, energyBias: 1,
+    key: 'quarterTriple', weight: 3, energyBias: 1,
     slots: (bpb, rng) => {
       const all = Array.from({ length: bpb }, (_, i) => i);
       // 去掉一个随机整数拍,留下 bpb-1 个(4/4 → 3 个)
@@ -61,7 +63,11 @@ const PATTERNS: SlotPattern[] = [
     },
   },
   {
-    key: 'withEighth', weight: 1.4, energyBias: 1,
+    key: 'quarterFull', weight: 1.5, energyBias: 1.2,
+    slots: (bpb) => Array.from({ length: bpb }, (_, i) => i),
+  },
+  {
+    key: 'withEighth', weight: 1.6, energyBias: 1,
     slots: (bpb, rng) => {
       const anchor = Math.floor(rng() * Math.max(1, bpb - 1));
       return [anchor, anchor + 0.5, Math.min(anchor + 2, bpb - 1)];
@@ -77,14 +83,15 @@ function valueClassOf(slotInBar: number, pattern: SlotPattern, beatsPerBar: numb
   return 'quarter';
 }
 
-/** 槽位 → 最近的高分候选(±0.26 拍容差,分数优先)。 */
+/** 槽位 → 最近的高分候选(±0.45 拍容差 — 真实 lead 有休止,容差
+ *  太窄会让大量槽位落空,引导密度骤降;分数优先)。 */
 function bestCandidateNear(
   candidates: readonly AccentCandidate[],
   targetBeat: number,
 ): AccentCandidate | null {
   let best: AccentCandidate | null = null;
   for (const c of candidates) {
-    if (Math.abs(c.beat - targetBeat) > 0.26) continue;
+    if (Math.abs(c.beat - targetBeat) > 0.45) continue;
     if (!best || c.score > best.score || (c.score === best.score && Math.abs(c.beat - targetBeat) < Math.abs(best.beat - targetBeat))) {
       best = c;
     }
@@ -133,7 +140,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
 
   // ---- 全局硬规则过滤 ----
   const out: PlannedCue[] = [];
-  const eighthBudget = Math.max(2, Math.floor(picked.length * 0.12));
+  const eighthBudget = Math.max(2, Math.floor(picked.length * 0.15));
   let eighthUsed = 0;
   const recentIntervals: number[] = [];
 
