@@ -149,6 +149,7 @@ export const AuraRoamingPanel: React.FC = () => {
 
       <div className="px-3 py-2 text-[10px] leading-relaxed text-zinc-500">
         判定:|Δt|≤60ms Perfect(律光+2)· ≤150ms 普通(+1)· ≤300ms 按偏(断律光音轨)· 完全没按=漏过(不断音轨,可 A→C 跨越)。
+        亮灯键贴谱发声:阈值内早按声音推迟到 lead 正点,并按乐谱时值自动延音;未亮键即按即响。
         两次成功命中之间滑按过未亮键 → 律光音轨 ×1(相距 ≤8 拍)。MIDI 设备偏好与 Q+T 共享。
       </div>
     </motion.div>

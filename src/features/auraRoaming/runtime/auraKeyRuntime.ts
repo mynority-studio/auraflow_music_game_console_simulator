@@ -74,6 +74,9 @@ import {
 const POLL_MS = 50;
 const SCHEDULE_LOOKAHEAD_MS = 150;
 const DEFAULT_PAD_VELOCITY = 104;
+/** 亮灯键早按 → 推迟到 lead 正点发声;提前这点量让控制器的
+ *  groove/16 分量化(snap 窗 60ms)把音精确落回谱面格点。 */
+const SNAP_FIRE_EARLY_MS = 30;
 
 interface RuntimeCue extends PlannedCue {
   padIndex: number;
@@ -103,6 +106,8 @@ class AuraKeyRuntime {
   private releaseMidiClaim: (() => void) | null = null;
   /** 亮灯键自动时值延音:sourceId → 挂住到几时(timer=已松手在等 note-off)。 */
   private sustains = new Map<string, { untilMs: number; timer: number | null; padIndex: number }>();
+  /** 亮灯键早按的贴谱发声:sourceId → 等待发 noteOn 的定时器。 */
+  private snapTimers = new Map<string, number>();
 
   isRunning(): boolean {
     return this.running;
@@ -137,6 +142,8 @@ class AuraKeyRuntime {
       if (sustain.timer !== null) window.clearTimeout(sustain.timer);
     }
     this.sustains.clear();
+    for (const timer of this.snapTimers.values()) window.clearTimeout(timer);
+    this.snapTimers.clear();
     executeLeadTakeoverActions(AudioEngine, this.controller.reset());
     resetLeadTakeoverRuntimeState(AudioEngine);
     this.emitClear();
@@ -291,11 +298,13 @@ class AuraKeyRuntime {
 
   private onPadDown(padIndex: number, atMs: number, velocity: number, sourceId: string): void {
     if (!this.running) return;
-    this.flushSustain(sourceId); // 上一次延音还挂着 → 先收掉,legato 交接
-    // 声音永远发出:亮/未亮键一视同仁,接管音色 + 当前布局映射音高
+    this.flushSustain(sourceId); // 上一次延音/待发声还挂着 → 先收掉,legato 交接
     const beat = AudioEngine.getCurrentBeat();
-    executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
-    if (!this.songReady) return;
+
+    if (!this.songReady) {
+      executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
+      return;
+    }
 
     const latencyOffsetMs = getAuraRoamingSnapshot().latencyOffsetMs;
     const now = nowMs();
@@ -315,12 +324,30 @@ class AuraKeyRuntime {
     }
 
     if (!best) {
-      // 自由弹奏:是开着锚点的律光音轨材料
+      // 未亮键:即按即响(原行为);同时是开着锚点的律光音轨材料
+      executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
       this.trail = trailOnUnlitPress(this.trail);
       return;
     }
 
     best.cueState = 'done';
+
+    // 亮灯键贴谱发声:阈值内早按 → 声音推迟到 lead 音符正点;正点后按 → 立即
+    const bestWallMs = now + (best.tick - currentTick) / ticksPerMs;
+    const fireInMs = bestWallMs - now - SNAP_FIRE_EARLY_MS;
+    if (fireInMs > 5) {
+      const timer = window.setTimeout(() => {
+        this.snapTimers.delete(sourceId);
+        if (!this.running) return;
+        executeLeadTakeoverActions(
+          AudioEngine,
+          this.controller.noteOn(padIndex, AudioEngine.getCurrentBeat(), velocity, sourceId),
+        );
+      }, fireInMs);
+      this.snapTimers.set(sourceId, timer);
+    } else {
+      executeLeadTakeoverActions(AudioEngine, this.controller.noteOn(padIndex, beat, velocity, sourceId));
+    }
     // 亮灯键自动时值延音:按 lead 音符时值挂住 + legato 尾巴;未亮键不享受
     const cueEndTick = best.tick + best.durationBeats * this.ppq;
     const sustainUntilMs = Math.min(
@@ -365,8 +392,13 @@ class AuraKeyRuntime {
     executeLeadTakeoverActions(AudioEngine, this.controller.noteOff(padIndex, AudioEngine.getCurrentBeat(), sourceId));
   }
 
-  /** 同一 sourceId 再次按下前,把仍在延音等待的上一个音立即收掉。 */
+  /** 同一 sourceId 再次按下前,把仍在延音等待/待贴谱发声的上一个音收掉。 */
   private flushSustain(sourceId: string): void {
+    const snapTimer = this.snapTimers.get(sourceId);
+    if (snapTimer !== undefined) {
+      window.clearTimeout(snapTimer); // 还没发声就被再次按下 → 直接作废,无需 noteOff
+      this.snapTimers.delete(sourceId);
+    }
     const sustain = this.sustains.get(sourceId);
     if (!sustain) return;
     this.sustains.delete(sourceId);
