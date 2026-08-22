@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { AudioEngine } from '../audio/AudioEngine';
 import { VisualEvent } from '../audio/playbackTypes';
 import { cueGlowIntensity, snuffGlow, type AuraCueGlowSpec } from '../../features/auraRoaming/cue/cueGlow';
+import { subscribeAuraRoaming } from '../../features/auraRoaming/state/auraRoamingStore';
 
 interface LedMatrixProps {
   activeKeys: Set<string>;
@@ -47,6 +48,9 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
   const hitColorsRef = useRef<Map<string, number>>(new Map());
   const isFnKeyActiveRef = useRef(false);
   const auraGlowsRef = useRef<AuraCueGlowSpec[]>([]);
+  const auraKeyOnRef = useRef(false);
+
+  useEffect(() => subscribeAuraRoaming((snapshot) => { auraKeyOnRef.current = snapshot.auraKeyOn; }), []);
 
   useEffect(() => {
     activeKeysRef.current = activeKeys;
@@ -66,7 +70,16 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
   useEffect(() => {
     const handleVisualEvent = (event: VisualEvent) => {
       const { type, midiNote, velocity } = event;
-      
+
+      // Aura Key 引导期间关掉整轨"氛围光"(每音符粒子雨会淹没引导呼吸灯);
+      // 只保留引导灯、命中光斑(custom_particle)与按键反馈
+      if (
+        auraKeyOnRef.current
+        && (type === 'melody' || type === 'accomp' || type === 'bass' || type === 'drums' || type === 'counterMelody')
+      ) {
+        return;
+      }
+
       if (type === 'custom_particle') {
         const cx = event.col !== undefined ? event.col * 3 + 1 : 7;
         const cy = event.row !== undefined ? event.row * 3 + 1 : 4;
@@ -229,6 +242,11 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
             val *= 0.5;
             if (val < 0.05) val = 0;
             else needsUpdate = true;
+          } else if (auraKeyOnRef.current) {
+            // Aura Key:无扩散的干净衰减 — 场面清爽,引导灯每帧重写不受影响
+            val *= 0.8;
+            if (val < 0.01) val = 0;
+            else needsUpdate = true;
           } else {
             // Diffusion
             let neighborSum = 0;
@@ -307,6 +325,19 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
                     const currentE = nextIntensities[idx];
                     nextIntensities[idx] = Math.min(1.5, currentE + 1.5); // Brighter when touched
                     nextHues[idx] = mixHue(nextHues[idx], hue, currentE, 1.5);
+                    needsUpdate = true;
+                  }
+                }
+              }
+            } else if (auraKeyOnRef.current) {
+              // Aura Key:按键反馈用清脆 3×3 小块(暗于引导灯,不喷流体烟雾)
+              for (let y = cy - 1; y <= cy + 1; y++) {
+                for (let x = cx - 1; x <= cx + 1; x++) {
+                  if (x >= 0 && x < 15 && y >= 0 && y < 9) {
+                    const idx = y * 15 + x;
+                    const currentE = nextIntensities[idx];
+                    nextIntensities[idx] = Math.min(1.1, currentE + 0.8);
+                    nextHues[idx] = mixHue(nextHues[idx], 190, currentE, 0.8);
                     needsUpdate = true;
                   }
                 }
