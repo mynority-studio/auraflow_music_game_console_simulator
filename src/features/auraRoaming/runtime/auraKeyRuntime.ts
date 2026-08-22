@@ -16,11 +16,13 @@ import { AudioEngine } from '../../../core/audio/AudioEngine';
 import { globalMidiScheduler } from '../../../core/audio/MidiScheduler';
 import { LeadTakeoverController } from '../../../core/generation/leadTakeoverSandbox/leadTakeoverController';
 import {
+  TAKEOVER_USER_CHANNEL,
   executeLeadTakeoverActions,
   prepareLeadTakeoverVoice,
   resetLeadTakeoverRuntimeState,
   takeoverSnapshotFromMusicGeneration,
 } from '../../../core/generation/leadTakeoverSandbox/qhTakeoverConsumer';
+import { DREAM5504_DEFAULT_CHANNEL_VOLUME } from '../../../core/generation/newEngine/knowledge/gmMixProfile';
 import {
   resetTakeoverPadInputState,
   subscribeTakeoverPadInput,
@@ -80,6 +82,11 @@ const SNAP_FIRE_EARLY_MS = 30;
 const DRUM_CHANNEL = 9;
 const GM_SNARE = 38;
 const GM_SIDE_STICK = 37;
+/** Aura Key 期间用户接管通道抬到 120(默认 100),和 lead 拉开对比 —
+ *  "听得出是自己按的";关闭时恢复默认。 */
+const AURA_KEY_USER_CC7 = 120;
+/** voice setup 会写 CC7=默认值,延迟这点量再抬,保证 last-writer-wins。 */
+const USER_GAIN_BOOST_DELAY_MS = 90;
 
 interface RuntimeCue extends PlannedCue {
   padIndex: number;
@@ -111,6 +118,7 @@ class AuraKeyRuntime {
   private sustains = new Map<string, { untilMs: number; timer: number | null; padIndex: number }>();
   /** 亮灯键早按的贴谱发声:sourceId → 等待发 noteOn 的定时器。 */
   private snapTimers = new Map<string, number>();
+  private gainBoostTimer: number | null = null;
 
   isRunning(): boolean {
     return this.running;
@@ -127,6 +135,7 @@ class AuraKeyRuntime {
     resetTakeoverPadInputState();
     resetLeadTakeoverRuntimeState(AudioEngine);
     if (AudioEngine.getCurrentMusicGeneration()) prepareLeadTakeoverVoice(AudioEngine);
+    this.applyUserGainBoost();
     this.unsubPad = subscribeTakeoverPadInput(this.onPadBusEvent);
     this.pollTimer = window.setInterval(this.poll, POLL_MS);
     resetAuraSession();
@@ -147,6 +156,9 @@ class AuraKeyRuntime {
     this.sustains.clear();
     for (const timer of this.snapTimers.values()) window.clearTimeout(timer);
     this.snapTimers.clear();
+    if (this.gainBoostTimer !== null) window.clearTimeout(this.gainBoostTimer);
+    this.gainBoostTimer = null;
+    AudioEngine.controllerChange(TAKEOVER_USER_CHANNEL, 7, DREAM5504_DEFAULT_CHANNEL_VOLUME);
     executeLeadTakeoverActions(AudioEngine, this.controller.reset());
     resetLeadTakeoverRuntimeState(AudioEngine);
     this.emitClear();
@@ -229,6 +241,7 @@ class AuraKeyRuntime {
     const snapshot = takeoverSnapshotFromMusicGeneration(result);
     this.controller.setSnapshot(snapshot, AudioEngine.getCurrentBeat());
     prepareLeadTakeoverVoice(AudioEngine);
+    this.applyUserGainBoost();
 
     const ts = snapshot.timeSignature;
     const beatsPerBar = Math.max(1, ts[0] * (4 / ts[1]));
@@ -382,6 +395,16 @@ class AuraKeyRuntime {
     } else {
       this.trail = trailOnAttemptMiss(this.trail); // 按偏:主动参与失败,打断音轨
     }
+  }
+
+  /** 接管通道音量抬档:在 voice setup(CC7=默认)落地后补发,确保生效。 */
+  private applyUserGainBoost(): void {
+    if (this.gainBoostTimer !== null) window.clearTimeout(this.gainBoostTimer);
+    this.gainBoostTimer = window.setTimeout(() => {
+      this.gainBoostTimer = null;
+      if (!this.running) return;
+      AudioEngine.controllerChange(TAKEOVER_USER_CHANNEL, 7, AURA_KEY_USER_CC7);
+    }, USER_GAIN_BOOST_DELAY_MS);
   }
 
   /** 命中打击感:与贴谱 noteOn 同刻叠一记鼓击(Perfect=军鼓,普通=边击)。 */
