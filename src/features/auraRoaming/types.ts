@@ -67,8 +67,9 @@ export const CUE_PEAK_LEAD_MS = 75;
 /** 最亮保持窗(覆盖住音符发声时刻,给用户反应)。 */
 export const CUE_HOLD_MS = 320;
 export const CUE_FADE_MS = 260;
-export const CUE_RISE_MIN_MS = 350;
-export const CUE_RISE_MAX_MS = 700;
+/** 呼吸上升时长:所有提示统一固定 — 每个键只按自己的峰值时刻倒推
+ *  起亮点,窗口重叠就同时呼吸,绝不等前一个灯熄灭。 */
+export const CUE_RISE_MS = 620;
 /** 引导灯主色相(紫罗兰,与面板 violet 一致)。 */
 export const CUE_HUE = 272;
 /** 亮灯键命中后的自动时值延音:按 lead 音符时值持续,再加一点

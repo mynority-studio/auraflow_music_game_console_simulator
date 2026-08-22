@@ -63,8 +63,7 @@ import {
   CUE_HOLD_MS,
   CUE_HUE,
   CUE_PEAK_LEAD_MS,
-  CUE_RISE_MAX_MS,
-  CUE_RISE_MIN_MS,
+  CUE_RISE_MS,
   CUE_SUSTAIN_MAX_MS,
   CUE_SUSTAIN_TAIL_MS,
   DEFAULT_JUDGE_WINDOWS,
@@ -186,7 +185,6 @@ class AuraKeyRuntime {
     this.lastTick = currentTick;
 
     const ticksPerMs = ((this.bpm / 60) * this.ppq) / 1000;
-    const msPerBeat = 60000 / this.bpm;
 
     for (const cue of this.cues) {
       if (cue.cueState === 'done') continue;
@@ -198,8 +196,9 @@ class AuraKeyRuntime {
           cue.cueState = 'done'; // seek 越过的历史提示不判 miss
           continue;
         }
-        const riseMs = this.riseMsFor(cue, msPerBeat);
-        const riseStartMs = wallMs - CUE_PEAK_LEAD_MS - riseMs;
+        // 每个提示独立排灯:统一上升时长,只按自己的峰值时刻倒推起亮点;
+        // 与前一个灯是否还亮着无关,窗口重叠就同时呼吸
+        const riseStartMs = wallMs - CUE_PEAK_LEAD_MS - CUE_RISE_MS;
         if (riseStartMs <= now + SCHEDULE_LOOKAHEAD_MS) {
           AudioEngine.emitVisualEvent({
             type: 'aura_cue',
@@ -208,7 +207,7 @@ class AuraKeyRuntime {
             row: cue.row,
             hue: CUE_HUE,
             peakAtMs: wallMs - CUE_PEAK_LEAD_MS,
-            riseMs,
+            riseMs: CUE_RISE_MS,
             holdMs: CUE_HOLD_MS,
             fadeMs: CUE_FADE_MS,
           });
@@ -220,12 +219,6 @@ class AuraKeyRuntime {
       }
     }
   };
-
-  private riseMsFor(cue: RuntimeCue, msPerBeat: number): number {
-    const prev = this.cues[cue.id - 1];
-    const gapBeats = prev ? cue.beat - prev.beat : 4;
-    return Math.min(CUE_RISE_MAX_MS, Math.max(CUE_RISE_MIN_MS, gapBeats * msPerBeat * 0.55));
-  }
 
   private rebuild(result: MusicGenerationResult): void {
     this.lastResult = result;
