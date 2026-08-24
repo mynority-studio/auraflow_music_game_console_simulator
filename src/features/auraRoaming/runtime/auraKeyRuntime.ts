@@ -415,8 +415,8 @@ class AuraKeyRuntime {
       col: best.col,
       row: best.row,
       hue: kind === 'perfect' ? 48 : CUE_HUE,
-      energy: kind === 'perfect' ? 4.2 : 3.2,
-      spread: 5.0,
+      energy: kind === 'perfect' ? 3.6 : 2.8,
+      spread: 2.6,
     });
   }
 

@@ -133,10 +133,10 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
             x: event.col * 3 + 1,
             y: event.row * 3 + 1,
             radius: 0.5,
-            maxRadius: 9,
-            speed: 0.38,
+            maxRadius: 5,
+            speed: 0.34,
             hue: event.hue ?? 272,
-            thickness: 2.2,
+            thickness: 1.4,
             active: true,
           });
         }
