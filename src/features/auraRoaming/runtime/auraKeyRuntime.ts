@@ -84,9 +84,9 @@ const SNAP_FIRE_EARLY_MS = 30;
 const DRUM_CHANNEL = 9;
 const GM_HAND_CLAP = 39;
 const GM_SIDE_STICK = 37;
-/** Aura Key 期间用户接管通道拉满(默认 100),和 lead 拉开对比 —
- *  "听得出是自己按的";关闭时恢复默认。 */
-const AURA_KEY_USER_CC7 = 127;
+/** Aura Key 期间用户接管通道音量:与生成 lead 持平(2026-08-25 用户
+ *  裁定,127 对比档听感过响撤销)。仍显式补发 — voice setup 时序防覆盖。 */
+const AURA_KEY_USER_CC7 = DREAM5504_DEFAULT_CHANNEL_VOLUME;
 /** voice setup 会写 CC7=默认值,延迟这点量再抬,保证 last-writer-wins。 */
 const USER_GAIN_BOOST_DELAY_MS = 90;
 

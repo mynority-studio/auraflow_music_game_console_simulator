@@ -80,7 +80,9 @@ round-robin 重复 cell 取离中心键(索引 7)最近。
 - **时值延音**(仅亮灯键):命中音按 lead 音符时值挂住 +150ms legato 尾(封顶 5s);
   松手推迟 note-off 到时值结束;同键再按先收上一音(含作废未发声的挂起 noteOn);
   关闭 Aura Key 清全部定时器。
-- **对比度**:Aura Key 期间接管通道 CC7=127(退出恢复默认 100),屏幕键默认力度 112。
+- **音量**(2026-08-25 裁定,撤销 127 对比档):Aura Key 期间接管通道 CC7=100,
+  与生成 lead 持平;仍显式补发防 voice setup 覆盖。屏幕键默认力度 112。
+  拍手/边击走鼓通道(ch10),CC7 即鼓组默认 100,响度由力度控制。
   ⚠️ 教训:该 CC 必须走"**辅助实时通道豁免**"——生成曲五通道的 Firm5504 默认输出
   合同过滤器会丢弃裸 CC7(仅放行 lofi-mix 标签);scheduler role 为 null 的辅助通道
   (ch15→wire ch16)豁免该合同(`Dream5504MidiOutput.sendSchedulerChannelMessage`)。

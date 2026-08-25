@@ -122,7 +122,7 @@ LuxTrailState  { anchorCueId, anchorBeat, sawUnlitPress }
 | SNAP_FIRE_EARLY_MS | 30ms | 贴谱提前量(交给接管量化器落格) |
 | CUE_SUSTAIN_TAIL_MS / MAX | 150ms / 5000ms | 延音尾 / 封顶 |
 | POLL_MS / SCHEDULE_LOOKAHEAD_MS | 50 / 150ms | 轮询周期 / 排灯前瞻 |
-| AURA_KEY_USER_CC7 | 127(默认恢复100) | 接管通道音量抬档 |
+| AURA_KEY_USER_CC7 | 100(与生成 lead 持平;2026-08-25 撤销 127 对比档) | 接管通道音量(仍显式补发防 setup 覆盖) |
 | DEFAULT_PAD_VELOCITY | 112 | 屏幕键默认力度 |
 | CHARGE_COMBO | 5 | 充能门槛 |
 | TRAIL_MAX_GAP_BEATS | 8 拍 | 律光音轨锚点有效期 |
@@ -766,9 +766,9 @@ const SNAP_FIRE_EARLY_MS = 30;
 const DRUM_CHANNEL = 9;
 const GM_HAND_CLAP = 39;
 const GM_SIDE_STICK = 37;
-/** Aura Key 期间用户接管通道拉满(默认 100),和 lead 拉开对比 —
- *  "听得出是自己按的";关闭时恢复默认。 */
-const AURA_KEY_USER_CC7 = 127;
+/** Aura Key 期间用户接管通道音量:与生成 lead 持平(2026-08-25 用户
+ *  裁定,127 对比档听感过响撤销)。仍显式补发 — voice setup 时序防覆盖。 */
+const AURA_KEY_USER_CC7 = DREAM5504_DEFAULT_CHANNEL_VOLUME;
 /** voice setup 会写 CC7=默认值,延迟这点量再抬,保证 last-writer-wins。 */
 const USER_GAIN_BOOST_DELAY_MS = 90;
 
