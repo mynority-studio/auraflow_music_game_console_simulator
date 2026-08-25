@@ -256,7 +256,17 @@ class AuraKeyRuntime {
     }));
     const totalBeats = (ir.durationTicks as number) / this.ppq;
     const accents = scoreLeadAccents(notes, { ppq: this.ppq, beatsPerBar });
-    const planned = planCues(accents, { beatsPerBar, totalBeats, seed: result.seed });
+    // groove 合同注入:亮灯节奏贴 4/4 强弱层级 + lead swing。melody swing/
+    // accent 同风格各段一致,取全局合同,无则首个 section 的兜底
+    const contract = snapshot.grooveContract
+      ?? Object.values(snapshot.grooveContractBySection ?? {})[0];
+    const planned = planCues(accents, {
+      beatsPerBar,
+      totalBeats,
+      seed: result.seed,
+      accentPattern: contract?.accentPattern,
+      swingRatio: contract?.melodySwingRatio,
+    });
 
     const bound: Array<PlannedCue & { padIndex: number }> = [];
     for (const cue of planned) {
@@ -273,6 +283,7 @@ class AuraKeyRuntime {
       seed: result.seed,
       ppq: this.ppq,
       cellsAtBeat: (b) => this.controller.getPadMap(b)?.cells ?? null,
+      accentPattern: contract?.accentPattern,
     });
     this.cues = [...bound, ...fillers]
       .sort((a, b) => a.tick - b.tick)

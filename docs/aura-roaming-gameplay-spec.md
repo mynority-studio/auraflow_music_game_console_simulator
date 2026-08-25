@@ -35,8 +35,15 @@ lead-mute;不跑 `reconcileNativeLeadMute`;不传 nativeLeadNoteTargets/Range。
 
 - 逐小节从权重库抽槽位:rest 0.4 / whole 1.5 / half 3 / halfOff 1.2 /
   quarterPair 3.5 / quarterTriple 3 / quarterFull 1.5 / withEighth 1.6;
+- **groove 合同注入**(2026-08-25 裁定,4/4 律动感知):锚点按合同 accentPattern²
+  加权抽取(无合同兜底 [1,.85,.95,.85] → 拍0/拍2 偏好);quarterTriple 去掉
+  accent 最弱拍;八分槽落在 melodySwingRatio 位(直拍 +0.5,爵士 +0.67,
+  clamp [0.5,0.85])→ 吸附真实摆动音符。合同取全局,无则首 section 兜底;
+  契约:整数拍提示落强拍比例 >50%,swing 0.67 下八分提示全在 +2/3 位;
 - 8 小节正弦能量波调权(各型 energyBias 不同,verse 疏 chorus 密的近似);
 - 槽位 → 候选对齐容差 **±0.45 拍**(真实 lead 有休止,容差过窄密度骤降);
+  lead 来源提示的最终 tick = 真实音符 tick(MG 链已烘 swing/pocket → 时机
+  天然贴合同);
 - 硬规则:相邻提示 ≥0.45 拍;八分间隔占比 ≤15%;**连续相同间隔 ≤3**;
 - 密度契约:密集候选下 ≥1.3 提示/小节(测试锁定)。
 
@@ -47,6 +54,8 @@ lead-mute;不跑 `reconcileNativeLeadMute`;不传 nativeLeadNoteTargets/Range。
 - 与既有提示间距 ≥1 拍的空整数拍上:强拍(小节头/中点)p=0.65 亮 **chord 结构音**,
   弱拍 p=0.3 亮 **scale/approach 色彩音**;
 - 键位取安全音图中离中心最近的前 3 个 seeded 抽 1;时值:强拍 1 拍 / 弱拍 0.5 拍;
+- **合同 accent 缩放**(2026-08-25):填充概率 × (0.4 + 0.6·accent/maxAccent),
+  合同弱拍填充更少(概率缩放不改 rng 消耗次数 → 确定性不破);
 - 填充提示的判定/贴谱/延音/计分与 lead 提示完全同权(`source:'harmonic'` 标记)。
 
 ### 2.4 键位绑定(`cue/padLookup.ts`)

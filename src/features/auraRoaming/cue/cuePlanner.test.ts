@@ -79,4 +79,30 @@ describe('auraRoaming/cuePlanner — 提示选择与防节拍器', () => {
     expect(planCues([], CTX)).toEqual([]);
     expect(planCues(candidates, { ...CTX, totalBeats: 0 })).toEqual([]);
   });
+
+  it('4/4 层级:整数拍提示落强拍(0/2)的比例过半(accent 加权锚点)', () => {
+    for (const seed of [1, 7, 564417]) {
+      const cues = planCues(candidates, { ...CTX, seed, accentPattern: [1.0, 0.85, 0.95, 0.85] });
+      const integers = cues.filter((c) => c.beat % 1 === 0);
+      const strong = integers.filter((c) => c.beat % 4 === 0 || c.beat % 4 === 2);
+      expect(integers.length).toBeGreaterThan(10);
+      expect(strong.length / integers.length, `seed ${seed}`).toBeGreaterThan(0.5);
+    }
+  });
+
+  it('swing 合同:八分槽吸附 +0.67 摆动位而非 +0.5 直八分', () => {
+    // 候选场只在整数拍与 +2/3 摆动位有音符(模拟爵士 lead 实际落点)
+    const swung: AccentCandidate[] = [];
+    let idx = 0;
+    for (let beat = 0; beat < 64; beat++) {
+      swung.push({ noteIndex: idx++, tick: beat * PPQ, beat, pitch: 60, durationBeats: 1, velocity: 90, score: beat % 4 === 0 ? 5 : 3 });
+      const off = beat + 2 / 3;
+      swung.push({ noteIndex: idx++, tick: Math.round(off * PPQ), beat: off, pitch: 62, durationBeats: 0.3, velocity: 85, score: 1.5 });
+    }
+    const cues = planCues(swung, { beatsPerBar: 4, totalBeats: 64, seed: 9, swingRatio: 0.67 });
+    const offbeats = cues.filter((c) => c.beat % 1 !== 0);
+    for (const cue of offbeats) {
+      expect(Math.abs((cue.beat % 1) - 2 / 3), `offbeat@${cue.beat}`).toBeLessThan(0.02);
+    }
+  });
 });

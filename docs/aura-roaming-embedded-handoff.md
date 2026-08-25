@@ -24,8 +24,8 @@
 ```
 ┌─ Phase A 生成期(离线,纯函数,seed 确定,可放 MCU 生成完成后一次算好)─┐
 │  A1 重音打分   leadAccents   : lead 每个音符 → 显著度分数              │
-│  A2 节奏型抽取 cuePlanner    : 逐小节抽槽位+防节拍器 → PlannedCue[]    │
-│  A3 和声填充   harmonicFill  : lead 空窗补结构音/色彩音提示            │
+│  A2 节奏型抽取 cuePlanner    : accent 加权锚点+swing 八分+防节拍器      │
+│  A3 和声填充   harmonicFill  : lead 空窗补提示(合同 accent 缩放概率)  │
 │  A4 键位绑定   padLookup     : 音高 → 15 键索引(布局外提示丢弃)      │
 │  产物: RuntimeCue[](tick 升序,id 重编)= 嵌入式的 AuraCuePlan 工件   │
 └──────────────────────────────────────────────────────────────────────┘
@@ -127,6 +127,7 @@ LuxTrailState  { anchorCueId, anchorBeat, sawUnlitPress }
 | CHARGE_COMBO | 5 | 充能门槛 |
 | TRAIL_MAX_GAP_BEATS | 8 拍 | 律光音轨锚点有效期 |
 | CUE_HUE | 272(紫) | 引导色;Perfect 反馈 48(金) |
+| accentPattern / swingRatio | 来自 grooveContract | 锚点加权(²)/八分槽位(clamp 0.5~0.85);无合同兜底 [1,.85,.95,.85] + 0.5 |
 
 ## 5. 已付学费的坑(嵌入式必读)
 
@@ -350,7 +351,7 @@ export function scoreLeadAccents(
 
 ## `src/features/auraRoaming/cue/cuePlanner.ts`
 
-A2 节奏型抽取:逐小节权重抽槽位 + 能量波 + 三条防节拍器硬规则。mulberry32 为确定性 PRNG。
+A2 节奏型抽取:accent² 加权锚点(4/4 强弱层级)+ swing 八分槽 + 三条防节拍器硬规则。mulberry32 为确定性 PRNG。
 
 ```typescript
 // ============================================================
@@ -371,6 +372,36 @@ export interface CuePlanContext {
   beatsPerBar: number;
   totalBeats: number;
   seed: number;
+  /** groove 合同的每拍力度系数(如 POP [1,.9,1,.9]);无合同时用默认 4/4 层级。 */
+  accentPattern?: readonly number[];
+  /** lead swing 真源(0.5 直,0.67 爵士):八分槽的搜索目标随之偏移。 */
+  swingRatio?: number;
+}
+
+/** 无合同兜底:4/4 强弱层级(拍0 最强,拍2 次强)。 */
+const DEFAULT_ACCENTS = [1.0, 0.85, 0.95, 0.85];
+
+interface SlotFeel {
+  /** 长度 = beatsPerBar 的每拍权重(accentPattern 截断/循环)。 */
+  accents: number[];
+  /** 反拍八分的拍内位置(= swingRatio,直拍 0.5)。 */
+  offbeat: number;
+}
+
+/** 按 accent² 加权抽一拍(平方拉开强弱差);candidates 为可选拍集合。 */
+function pickWeightedBeat(rng: () => number, feel: SlotFeel, candidates: readonly number[]): number {
+  let total = 0;
+  const weights = candidates.map((b) => {
+    const w = (feel.accents[b] ?? 0.85) ** 2;
+    total += w;
+    return w;
+  });
+  let roll = rng() * total;
+  for (let i = 0; i < candidates.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
 }
 
 /** mulberry32:确定性小 PRNG(与工程内其他 seeded 逻辑同风格)。 */
@@ -388,8 +419,8 @@ function mulberry32(seed: number): () => number {
 interface SlotPattern {
   key: string;
   weight: number;
-  /** 小节内槽位(拍),含 .5 即为八分槽。energyBias>0 → 高能量小节更偏好。 */
-  slots: (beatsPerBar: number, rng: () => number) => number[];
+  /** 小节内槽位(拍),非整数即为八分槽。energyBias>0 → 高能量小节更偏好。 */
+  slots: (beatsPerBar: number, rng: () => number, feel: SlotFeel) => number[];
   energyBias: number;
 }
 
@@ -402,19 +433,23 @@ const PATTERNS: SlotPattern[] = [
   { key: 'halfOff', weight: 1.2, energyBias: 0, slots: (bpb) => [Math.floor(bpb / 2)] },
   {
     key: 'quarterPair', weight: 3.5, energyBias: 0.5,
-    slots: (bpb, rng) => {
-      const first = Math.floor(rng() * Math.max(1, bpb - 1));
-      const second = first + 1 + Math.floor(rng() * Math.max(1, bpb - first - 1));
-      return [first, Math.min(second, bpb - 1)];
+    slots: (bpb, rng, feel) => {
+      // 锚点按 accent 加权:4/4 下偏爱 拍0/拍2 起(合同强拍),不再均匀随机
+      const first = pickWeightedBeat(rng, feel, Array.from({ length: Math.max(1, bpb - 1) }, (_, i) => i));
+      const rest = Array.from({ length: bpb - first - 1 }, (_, i) => first + 1 + i);
+      const second = rest.length > 0 ? pickWeightedBeat(rng, feel, rest) : bpb - 1;
+      return [first, second];
     },
   },
   {
     key: 'quarterTriple', weight: 3, energyBias: 1,
-    slots: (bpb, rng) => {
+    slots: (bpb, rng, feel) => {
+      // 去掉 accent 最弱的一拍(平局用 rng 破),保留合同强拍骨架
       const all = Array.from({ length: bpb }, (_, i) => i);
-      // 去掉一个随机整数拍,留下 bpb-1 个(4/4 → 3 个)
-      all.splice(Math.floor(rng() * all.length), 1);
-      return all;
+      const minW = Math.min(...all.map((b) => feel.accents[b] ?? 0.85));
+      const weakest = all.filter((b) => (feel.accents[b] ?? 0.85) === minW);
+      const drop = weakest[Math.floor(rng() * weakest.length)];
+      return all.filter((b) => b !== drop);
     },
   },
   {
@@ -423,9 +458,10 @@ const PATTERNS: SlotPattern[] = [
   },
   {
     key: 'withEighth', weight: 1.6, energyBias: 1,
-    slots: (bpb, rng) => {
-      const anchor = Math.floor(rng() * Math.max(1, bpb - 1));
-      return [anchor, anchor + 0.5, Math.min(anchor + 2, bpb - 1)];
+    slots: (bpb, rng, feel) => {
+      const anchor = pickWeightedBeat(rng, feel, Array.from({ length: Math.max(1, bpb - 1) }, (_, i) => i));
+      // 八分槽落在合同 swing 位(直拍 +0.5,爵士 +0.67) → 吸附真实摆动音符
+      return [anchor, anchor + feel.offbeat, Math.min(anchor + 2, bpb - 1)];
     },
   },
 ];
@@ -458,6 +494,13 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
   const { beatsPerBar, totalBeats, seed } = ctx;
   if (beatsPerBar <= 0 || totalBeats <= 0 || candidates.length === 0) return [];
 
+  // groove 合同注入:accentPattern 定每拍强弱(截断/循环到 bpb),swing 定八分槽位
+  const source = ctx.accentPattern && ctx.accentPattern.length > 0 ? ctx.accentPattern : DEFAULT_ACCENTS;
+  const feel: SlotFeel = {
+    accents: Array.from({ length: beatsPerBar }, (_, i) => source[i % source.length]),
+    offbeat: Math.min(0.85, Math.max(0.5, ctx.swingRatio ?? 0.5)),
+  };
+
   const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
   const energyPhase = rng() * Math.PI * 2;
   const barCount = Math.ceil(totalBeats / beatsPerBar);
@@ -483,7 +526,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
     }
 
     const barStart = bar * beatsPerBar;
-    for (const slot of pattern.slots(beatsPerBar, rng)) {
+    for (const slot of pattern.slots(beatsPerBar, rng, feel)) {
       const candidate = bestCandidateNear(candidates, barStart + slot);
       if (!candidate || usedNoteIndexes.has(candidate.noteIndex)) continue;
       usedNoteIndexes.add(candidate.noteIndex);
@@ -530,7 +573,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
 
 ## `src/features/auraRoaming/cue/harmonicFill.ts`
 
-A3 和声填充:lead 空窗里强拍亮结构音(p=0.65)/弱拍亮色彩音(p=0.3),布局即安全音图。
+A3 和声填充:lead 空窗强拍亮结构音/弱拍亮色彩音,概率按合同 accent 缩放。
 
 ```typescript
 // ============================================================
@@ -560,6 +603,8 @@ export interface HarmonicFillContext {
   ppq: number;
   /** 该拍的当前布局 cells(runtime 里来自 controller.getPadMap)。 */
   cellsAtBeat: (beat: number) => readonly HarmonicFillCell[] | null;
+  /** groove 合同每拍力度系数:填充概率随之缩放(合同强拍更常亮)。 */
+  accentPattern?: readonly number[];
 }
 
 /** 已绑定键位的填充提示。 */
@@ -596,13 +641,19 @@ export function planHarmonicFillCues(
     occupied.some((b) => Math.abs(b - beat) < MIN_GAP_BEATS)
     || out.some((c) => Math.abs(c.beat - beat) < MIN_GAP_BEATS);
 
+  // 合同 accent 归一权(无合同 = 全 1):强弱概率再按合同每拍系数缩放,
+  // 4/4 下亮灯层级与歌曲律动一致(概率缩放不改变 rng 消耗次数 → 确定性不破)
+  const accents = ctx.accentPattern && ctx.accentPattern.length > 0 ? ctx.accentPattern : null;
+  const maxAccent = accents ? Math.max(...accents) : 1;
+
   for (let beat = 0; beat < Math.floor(totalBeats); beat++) {
     const posInBar = beat % beatsPerBar;
     const strong = posInBar === 0 || (beatsPerBar % 2 === 0 && posInBar === beatsPerBar / 2);
     const roll = rng(); // 每拍都消耗一次随机数,决策与 tooClose 顺序无关 → 确定性稳定
     const pick = rng();
     if (tooClose(beat)) continue;
-    if (roll > (strong ? STRONG_PROB : WEAK_PROB)) continue;
+    const accentScale = accents ? 0.4 + 0.6 * ((accents[posInBar % accents.length] ?? maxAccent) / maxAccent) : 1;
+    if (roll > (strong ? STRONG_PROB : WEAK_PROB) * accentScale) continue;
 
     const cells = cellsAtBeat(beat);
     if (!cells || cells.length === 0) continue;
@@ -677,7 +728,7 @@ export function padIndexForPitch(cells: readonly PadLookupCell[], pitch: number)
 
 ## `src/features/auraRoaming/runtime/auraKeyRuntime.ts`
 
-运行时单例(核心):50ms 轮询排灯、cueState 状态机、判定、贴谱发声 snapTimers、时值延音 sustains、打击叠击、CC7 抬档、MIDI 输入接入、换歌/回跳重建。嵌入式主循环的直接参照。
+运行时单例(核心):50ms 轮询排灯、cueState 状态机、判定、贴谱发声 snapTimers、时值延音 sustains、打击叠击、CC7 补发、groove 合同注入、MIDI 输入接入、换歌/回跳重建。嵌入式主循环的直接参照。
 
 ```typescript
 // ============================================================
@@ -938,7 +989,17 @@ class AuraKeyRuntime {
     }));
     const totalBeats = (ir.durationTicks as number) / this.ppq;
     const accents = scoreLeadAccents(notes, { ppq: this.ppq, beatsPerBar });
-    const planned = planCues(accents, { beatsPerBar, totalBeats, seed: result.seed });
+    // groove 合同注入:亮灯节奏贴 4/4 强弱层级 + lead swing。melody swing/
+    // accent 同风格各段一致,取全局合同,无则首个 section 的兜底
+    const contract = snapshot.grooveContract
+      ?? Object.values(snapshot.grooveContractBySection ?? {})[0];
+    const planned = planCues(accents, {
+      beatsPerBar,
+      totalBeats,
+      seed: result.seed,
+      accentPattern: contract?.accentPattern,
+      swingRatio: contract?.melodySwingRatio,
+    });
 
     const bound: Array<PlannedCue & { padIndex: number }> = [];
     for (const cue of planned) {
@@ -955,6 +1016,7 @@ class AuraKeyRuntime {
       seed: result.seed,
       ppq: this.ppq,
       cellsAtBeat: (b) => this.controller.getPadMap(b)?.cells ?? null,
+      accentPattern: contract?.accentPattern,
     });
     this.cues = [...bound, ...fillers]
       .sort((a, b) => a.tick - b.tick)
@@ -1952,6 +2014,32 @@ describe('auraRoaming/cuePlanner — 提示选择与防节拍器', () => {
     expect(planCues([], CTX)).toEqual([]);
     expect(planCues(candidates, { ...CTX, totalBeats: 0 })).toEqual([]);
   });
+
+  it('4/4 层级:整数拍提示落强拍(0/2)的比例过半(accent 加权锚点)', () => {
+    for (const seed of [1, 7, 564417]) {
+      const cues = planCues(candidates, { ...CTX, seed, accentPattern: [1.0, 0.85, 0.95, 0.85] });
+      const integers = cues.filter((c) => c.beat % 1 === 0);
+      const strong = integers.filter((c) => c.beat % 4 === 0 || c.beat % 4 === 2);
+      expect(integers.length).toBeGreaterThan(10);
+      expect(strong.length / integers.length, `seed ${seed}`).toBeGreaterThan(0.5);
+    }
+  });
+
+  it('swing 合同:八分槽吸附 +0.67 摆动位而非 +0.5 直八分', () => {
+    // 候选场只在整数拍与 +2/3 摆动位有音符(模拟爵士 lead 实际落点)
+    const swung: AccentCandidate[] = [];
+    let idx = 0;
+    for (let beat = 0; beat < 64; beat++) {
+      swung.push({ noteIndex: idx++, tick: beat * PPQ, beat, pitch: 60, durationBeats: 1, velocity: 90, score: beat % 4 === 0 ? 5 : 3 });
+      const off = beat + 2 / 3;
+      swung.push({ noteIndex: idx++, tick: Math.round(off * PPQ), beat: off, pitch: 62, durationBeats: 0.3, velocity: 85, score: 1.5 });
+    }
+    const cues = planCues(swung, { beatsPerBar: 4, totalBeats: 64, seed: 9, swingRatio: 0.67 });
+    const offbeats = cues.filter((c) => c.beat % 1 !== 0);
+    for (const cue of offbeats) {
+      expect(Math.abs((cue.beat % 1) - 2 / 3), `offbeat@${cue.beat}`).toBeLessThan(0.02);
+    }
+  });
 });
 ```
 
@@ -2016,6 +2104,16 @@ describe('auraRoaming/harmonicFill — 和声填充提示', () => {
       expect(Math.abs(f.beat - 4)).toBeGreaterThanOrEqual(1);
       expect(Math.abs(f.beat - 8)).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('accentPattern 缩放:合同弱拍的填充少于无合同基线', () => {
+    const base = planHarmonicFillCues([], ctx({ totalBeats: 256 }));
+    const contracted = planHarmonicFillCues([], ctx({ totalBeats: 256, accentPattern: [1.0, 0.5, 0.9, 0.5] }));
+    const weakCount = (cues: ReturnType<typeof planHarmonicFillCues>) =>
+      cues.filter((c) => c.beat % 4 === 1 || c.beat % 4 === 3).length;
+    expect(weakCount(contracted)).toBeLessThan(weakCount(base));
+    // 确定性仍成立
+    expect(contracted).toEqual(planHarmonicFillCues([], ctx({ totalBeats: 256, accentPattern: [1.0, 0.5, 0.9, 0.5] })));
   });
 
   it('确定性:同 seed 恒等;布局缺失时不补', () => {

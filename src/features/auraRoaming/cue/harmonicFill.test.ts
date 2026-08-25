@@ -56,6 +56,16 @@ describe('auraRoaming/harmonicFill — 和声填充提示', () => {
     }
   });
 
+  it('accentPattern 缩放:合同弱拍的填充少于无合同基线', () => {
+    const base = planHarmonicFillCues([], ctx({ totalBeats: 256 }));
+    const contracted = planHarmonicFillCues([], ctx({ totalBeats: 256, accentPattern: [1.0, 0.5, 0.9, 0.5] }));
+    const weakCount = (cues: ReturnType<typeof planHarmonicFillCues>) =>
+      cues.filter((c) => c.beat % 4 === 1 || c.beat % 4 === 3).length;
+    expect(weakCount(contracted)).toBeLessThan(weakCount(base));
+    // 确定性仍成立
+    expect(contracted).toEqual(planHarmonicFillCues([], ctx({ totalBeats: 256, accentPattern: [1.0, 0.5, 0.9, 0.5] })));
+  });
+
   it('确定性:同 seed 恒等;布局缺失时不补', () => {
     expect(planHarmonicFillCues([], ctx())).toEqual(planHarmonicFillCues([], ctx()));
     expect(planHarmonicFillCues([], ctx({ cellsAtBeat: () => null }))).toEqual([]);

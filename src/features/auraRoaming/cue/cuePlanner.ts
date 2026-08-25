@@ -16,6 +16,36 @@ export interface CuePlanContext {
   beatsPerBar: number;
   totalBeats: number;
   seed: number;
+  /** groove 合同的每拍力度系数(如 POP [1,.9,1,.9]);无合同时用默认 4/4 层级。 */
+  accentPattern?: readonly number[];
+  /** lead swing 真源(0.5 直,0.67 爵士):八分槽的搜索目标随之偏移。 */
+  swingRatio?: number;
+}
+
+/** 无合同兜底:4/4 强弱层级(拍0 最强,拍2 次强)。 */
+const DEFAULT_ACCENTS = [1.0, 0.85, 0.95, 0.85];
+
+interface SlotFeel {
+  /** 长度 = beatsPerBar 的每拍权重(accentPattern 截断/循环)。 */
+  accents: number[];
+  /** 反拍八分的拍内位置(= swingRatio,直拍 0.5)。 */
+  offbeat: number;
+}
+
+/** 按 accent² 加权抽一拍(平方拉开强弱差);candidates 为可选拍集合。 */
+function pickWeightedBeat(rng: () => number, feel: SlotFeel, candidates: readonly number[]): number {
+  let total = 0;
+  const weights = candidates.map((b) => {
+    const w = (feel.accents[b] ?? 0.85) ** 2;
+    total += w;
+    return w;
+  });
+  let roll = rng() * total;
+  for (let i = 0; i < candidates.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
 }
 
 /** mulberry32:确定性小 PRNG(与工程内其他 seeded 逻辑同风格)。 */
@@ -33,8 +63,8 @@ function mulberry32(seed: number): () => number {
 interface SlotPattern {
   key: string;
   weight: number;
-  /** 小节内槽位(拍),含 .5 即为八分槽。energyBias>0 → 高能量小节更偏好。 */
-  slots: (beatsPerBar: number, rng: () => number) => number[];
+  /** 小节内槽位(拍),非整数即为八分槽。energyBias>0 → 高能量小节更偏好。 */
+  slots: (beatsPerBar: number, rng: () => number, feel: SlotFeel) => number[];
   energyBias: number;
 }
 
@@ -47,19 +77,23 @@ const PATTERNS: SlotPattern[] = [
   { key: 'halfOff', weight: 1.2, energyBias: 0, slots: (bpb) => [Math.floor(bpb / 2)] },
   {
     key: 'quarterPair', weight: 3.5, energyBias: 0.5,
-    slots: (bpb, rng) => {
-      const first = Math.floor(rng() * Math.max(1, bpb - 1));
-      const second = first + 1 + Math.floor(rng() * Math.max(1, bpb - first - 1));
-      return [first, Math.min(second, bpb - 1)];
+    slots: (bpb, rng, feel) => {
+      // 锚点按 accent 加权:4/4 下偏爱 拍0/拍2 起(合同强拍),不再均匀随机
+      const first = pickWeightedBeat(rng, feel, Array.from({ length: Math.max(1, bpb - 1) }, (_, i) => i));
+      const rest = Array.from({ length: bpb - first - 1 }, (_, i) => first + 1 + i);
+      const second = rest.length > 0 ? pickWeightedBeat(rng, feel, rest) : bpb - 1;
+      return [first, second];
     },
   },
   {
     key: 'quarterTriple', weight: 3, energyBias: 1,
-    slots: (bpb, rng) => {
+    slots: (bpb, rng, feel) => {
+      // 去掉 accent 最弱的一拍(平局用 rng 破),保留合同强拍骨架
       const all = Array.from({ length: bpb }, (_, i) => i);
-      // 去掉一个随机整数拍,留下 bpb-1 个(4/4 → 3 个)
-      all.splice(Math.floor(rng() * all.length), 1);
-      return all;
+      const minW = Math.min(...all.map((b) => feel.accents[b] ?? 0.85));
+      const weakest = all.filter((b) => (feel.accents[b] ?? 0.85) === minW);
+      const drop = weakest[Math.floor(rng() * weakest.length)];
+      return all.filter((b) => b !== drop);
     },
   },
   {
@@ -68,9 +102,10 @@ const PATTERNS: SlotPattern[] = [
   },
   {
     key: 'withEighth', weight: 1.6, energyBias: 1,
-    slots: (bpb, rng) => {
-      const anchor = Math.floor(rng() * Math.max(1, bpb - 1));
-      return [anchor, anchor + 0.5, Math.min(anchor + 2, bpb - 1)];
+    slots: (bpb, rng, feel) => {
+      const anchor = pickWeightedBeat(rng, feel, Array.from({ length: Math.max(1, bpb - 1) }, (_, i) => i));
+      // 八分槽落在合同 swing 位(直拍 +0.5,爵士 +0.67) → 吸附真实摆动音符
+      return [anchor, anchor + feel.offbeat, Math.min(anchor + 2, bpb - 1)];
     },
   },
 ];
@@ -103,6 +138,13 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
   const { beatsPerBar, totalBeats, seed } = ctx;
   if (beatsPerBar <= 0 || totalBeats <= 0 || candidates.length === 0) return [];
 
+  // groove 合同注入:accentPattern 定每拍强弱(截断/循环到 bpb),swing 定八分槽位
+  const source = ctx.accentPattern && ctx.accentPattern.length > 0 ? ctx.accentPattern : DEFAULT_ACCENTS;
+  const feel: SlotFeel = {
+    accents: Array.from({ length: beatsPerBar }, (_, i) => source[i % source.length]),
+    offbeat: Math.min(0.85, Math.max(0.5, ctx.swingRatio ?? 0.5)),
+  };
+
   const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
   const energyPhase = rng() * Math.PI * 2;
   const barCount = Math.ceil(totalBeats / beatsPerBar);
@@ -128,7 +170,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
     }
 
     const barStart = bar * beatsPerBar;
-    for (const slot of pattern.slots(beatsPerBar, rng)) {
+    for (const slot of pattern.slots(beatsPerBar, rng, feel)) {
       const candidate = bestCandidateNear(candidates, barStart + slot);
       if (!candidate || usedNoteIndexes.has(candidate.noteIndex)) continue;
       usedNoteIndexes.add(candidate.noteIndex);

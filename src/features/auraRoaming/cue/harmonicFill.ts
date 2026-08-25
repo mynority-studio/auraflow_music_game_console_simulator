@@ -25,6 +25,8 @@ export interface HarmonicFillContext {
   ppq: number;
   /** 该拍的当前布局 cells(runtime 里来自 controller.getPadMap)。 */
   cellsAtBeat: (beat: number) => readonly HarmonicFillCell[] | null;
+  /** groove 合同每拍力度系数:填充概率随之缩放(合同强拍更常亮)。 */
+  accentPattern?: readonly number[];
 }
 
 /** 已绑定键位的填充提示。 */
@@ -61,13 +63,19 @@ export function planHarmonicFillCues(
     occupied.some((b) => Math.abs(b - beat) < MIN_GAP_BEATS)
     || out.some((c) => Math.abs(c.beat - beat) < MIN_GAP_BEATS);
 
+  // 合同 accent 归一权(无合同 = 全 1):强弱概率再按合同每拍系数缩放,
+  // 4/4 下亮灯层级与歌曲律动一致(概率缩放不改变 rng 消耗次数 → 确定性不破)
+  const accents = ctx.accentPattern && ctx.accentPattern.length > 0 ? ctx.accentPattern : null;
+  const maxAccent = accents ? Math.max(...accents) : 1;
+
   for (let beat = 0; beat < Math.floor(totalBeats); beat++) {
     const posInBar = beat % beatsPerBar;
     const strong = posInBar === 0 || (beatsPerBar % 2 === 0 && posInBar === beatsPerBar / 2);
     const roll = rng(); // 每拍都消耗一次随机数,决策与 tooClose 顺序无关 → 确定性稳定
     const pick = rng();
     if (tooClose(beat)) continue;
-    if (roll > (strong ? STRONG_PROB : WEAK_PROB)) continue;
+    const accentScale = accents ? 0.4 + 0.6 * ((accents[posInBar % accents.length] ?? maxAccent) / maxAccent) : 1;
+    if (roll > (strong ? STRONG_PROB : WEAK_PROB) * accentScale) continue;
 
     const cells = cellsAtBeat(beat);
     if (!cells || cells.length === 0) continue;
