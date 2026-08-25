@@ -75,7 +75,7 @@ import {
 
 const POLL_MS = 50;
 const SCHEDULE_LOOKAHEAD_MS = 150;
-const DEFAULT_PAD_VELOCITY = 80;
+const DEFAULT_PAD_VELOCITY = 112;
 /** 亮灯键早按 → 推迟到 lead 正点发声;提前这点量让控制器的
  *  groove/16 分量化(snap 窗 60ms)把音精确落回谱面格点。 */
 const SNAP_FIRE_EARLY_MS = 30;
@@ -434,7 +434,7 @@ class AuraKeyRuntime {
    *  按偏=鼓边边击(即刻,乐器音色不发声,边击是唯一反馈)。 */
   private fireHitPercussion(kind: 'perfect' | 'good' | 'missAttempt'): void {
     const note = kind === 'missAttempt' ? GM_SIDE_STICK : GM_HAND_CLAP;
-    const velocity = kind === 'perfect' ? 84 : kind === 'good' ? 76 : 72;
+    const velocity = kind === 'perfect' ? 112 : kind === 'good' ? 88 : 80;
     AudioEngine.noteOn(DRUM_CHANNEL, note, velocity);
     AudioEngine.noteOffAt(DRUM_CHANNEL, note, AudioEngine.getAudioTime() + 0.12);
   }

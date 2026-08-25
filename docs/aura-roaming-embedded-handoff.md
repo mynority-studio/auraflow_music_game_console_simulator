@@ -73,9 +73,9 @@
 
 | 状态名 | 条件 | 乐器音 | 打击音 | 计分 | 律光音轨 |
 |---|---|---|---|---|---|
-| `perfect` | \|Δt\| ≤ 80ms | 贴谱发声 | 拍手 GM39 v84 | 律光+2, combo+1 | 可收口/起锚 |
-| `good` | \|Δt\| ≤ 220ms | 贴谱发声 | 拍手 GM39 v76 | 律光+1, combo+1 | 可收口/起锚 |
-| `missAttempt`(按偏) | \|Δt\| ≤ 380ms | **不发声** | 边击 GM37 v72 即刻 | combo 清零 | **打断** |
+| `perfect` | \|Δt\| ≤ 80ms | 贴谱发声 | 拍手 GM39 v112 | 律光+2, combo+1 | 可收口/起锚 |
+| `good` | \|Δt\| ≤ 220ms | 贴谱发声 | 拍手 GM39 v88 | 律光+1, combo+1 | 可收口/起锚 |
+| `missAttempt`(按偏) | \|Δt\| ≤ 380ms | **不发声** | 边击 GM37 v80 即刻 | combo 清零 | **打断** |
 | `missIgnore`(漏过) | 超时未按 | — | — | combo 清零 | **不打断**(A→C 语义) |
 | (自由弹奏,无判定) | 窗外 / 未亮键 | 即按即响 | — | — | 音轨材料 |
 
@@ -123,7 +123,7 @@ LuxTrailState  { anchorCueId, anchorBeat, sawUnlitPress }
 | CUE_SUSTAIN_TAIL_MS / MAX | 150ms / 5000ms | 延音尾 / 封顶 |
 | POLL_MS / SCHEDULE_LOOKAHEAD_MS | 50 / 150ms | 轮询周期 / 排灯前瞻 |
 | AURA_KEY_USER_CC7 | 100(与生成 lead 持平;2026-08-25 撤销 127 对比档) | 接管通道音量(仍显式补发防 setup 覆盖) |
-| DEFAULT_PAD_VELOCITY | 80 | 屏幕键默认力度(2026-08-25 整体压档) |
+| DEFAULT_PAD_VELOCITY | 112 | 屏幕键默认力度 |
 | CHARGE_COMBO | 5 | 充能门槛 |
 | TRAIL_MAX_GAP_BEATS | 8 拍 | 律光音轨锚点有效期 |
 | CUE_HUE | 272(紫) | 引导色;Perfect 反馈 48(金) |
@@ -757,7 +757,7 @@ import {
 
 const POLL_MS = 50;
 const SCHEDULE_LOOKAHEAD_MS = 150;
-const DEFAULT_PAD_VELOCITY = 80;
+const DEFAULT_PAD_VELOCITY = 112;
 /** 亮灯键早按 → 推迟到 lead 正点发声;提前这点量让控制器的
  *  groove/16 分量化(snap 窗 60ms)把音精确落回谱面格点。 */
 const SNAP_FIRE_EARLY_MS = 30;
@@ -1116,7 +1116,7 @@ class AuraKeyRuntime {
    *  按偏=鼓边边击(即刻,乐器音色不发声,边击是唯一反馈)。 */
   private fireHitPercussion(kind: 'perfect' | 'good' | 'missAttempt'): void {
     const note = kind === 'missAttempt' ? GM_SIDE_STICK : GM_HAND_CLAP;
-    const velocity = kind === 'perfect' ? 84 : kind === 'good' ? 76 : 72;
+    const velocity = kind === 'perfect' ? 112 : kind === 'good' ? 88 : 80;
     AudioEngine.noteOn(DRUM_CHANNEL, note, velocity);
     AudioEngine.noteOffAt(DRUM_CHANNEL, note, AudioEngine.getAudioTime() + 0.12);
   }
