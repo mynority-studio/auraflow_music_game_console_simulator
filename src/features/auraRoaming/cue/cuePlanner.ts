@@ -32,6 +32,17 @@ interface SlotFeel {
   offbeat: number;
 }
 
+/** 可按性网格(2026-08-25 裁定):提示只落 整数拍 或 八分位(含 swing 反拍),
+ *  16 分位(+0.25/+0.75)太快不好按 → 吸附到这些位置的槽位直接放弃。 */
+const PRESSABLE_EPS = 0.13;
+function isPressableBeat(beat: number, offbeat: number): boolean {
+  const frac = ((beat % 1) + 1) % 1;
+  return frac <= PRESSABLE_EPS
+    || frac >= 1 - PRESSABLE_EPS
+    || Math.abs(frac - 0.5) <= PRESSABLE_EPS
+    || Math.abs(frac - offbeat) <= PRESSABLE_EPS;
+}
+
 /** 按 accent² 加权抽一拍(平方拉开强弱差);candidates 为可选拍集合。 */
 function pickWeightedBeat(rng: () => number, feel: SlotFeel, candidates: readonly number[]): number {
   let total = 0;
@@ -118,15 +129,18 @@ function valueClassOf(slotInBar: number, pattern: SlotPattern, beatsPerBar: numb
   return 'quarter';
 }
 
-/** 槽位 → 最近的高分候选(±0.45 拍容差 — 真实 lead 有休止,容差
- *  太窄会让大量槽位落空,引导密度骤降;分数优先)。 */
+/** 槽位 → 最近的高分【可按】候选(±0.45 拍容差 — 真实 lead 有休止,
+ *  容差太窄会让大量槽位落空;分数优先)。16 分位音符在候选池里直接
+ *  跳过,槽位吸附到最好的四分/八分位音符,而不是整个槽位放弃。 */
 function bestCandidateNear(
   candidates: readonly AccentCandidate[],
   targetBeat: number,
+  offbeat: number,
 ): AccentCandidate | null {
   let best: AccentCandidate | null = null;
   for (const c of candidates) {
     if (Math.abs(c.beat - targetBeat) > 0.45) continue;
+    if (!isPressableBeat(c.beat, offbeat)) continue;
     if (!best || c.score > best.score || (c.score === best.score && Math.abs(c.beat - targetBeat) < Math.abs(best.beat - targetBeat))) {
       best = c;
     }
@@ -171,7 +185,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
 
     const barStart = bar * beatsPerBar;
     for (const slot of pattern.slots(beatsPerBar, rng, feel)) {
-      const candidate = bestCandidateNear(candidates, barStart + slot);
+      const candidate = bestCandidateNear(candidates, barStart + slot, feel.offbeat);
       if (!candidate || usedNoteIndexes.has(candidate.noteIndex)) continue;
       usedNoteIndexes.add(candidate.noteIndex);
       picked.push({ candidate, valueClass: valueClassOf(slot, pattern, beatsPerBar) });

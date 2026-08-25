@@ -80,6 +80,28 @@ describe('auraRoaming/cuePlanner — 提示选择与防节拍器', () => {
     expect(planCues(candidates, { ...CTX, totalBeats: 0 })).toEqual([]);
   });
 
+  it('可按性网格:16 分位(+0.25/+0.75)音符永不提示,即便它是槽位附近唯一候选', () => {
+    // 候选场:整数拍 + 大量 16 分位高分音符(模拟快线条 lead)
+    const withSixteenths: AccentCandidate[] = [];
+    let idx = 0;
+    for (let beat = 0; beat < 64; beat++) {
+      withSixteenths.push({ noteIndex: idx++, tick: beat * PPQ, beat, pitch: 60, durationBeats: 1, velocity: 90, score: 3 });
+      for (const frac of [0.25, 0.75]) {
+        const b = beat + frac;
+        withSixteenths.push({ noteIndex: idx++, tick: Math.round(b * PPQ), beat: b, pitch: 64, durationBeats: 0.25, velocity: 95, score: 6 });
+      }
+    }
+    for (const seed of [1, 7, 564417]) {
+      const cues = planCues(withSixteenths, { beatsPerBar: 4, totalBeats: 64, seed });
+      for (const cue of cues) {
+        const frac = ((cue.beat % 1) + 1) % 1;
+        const pressable = frac <= 0.13 || frac >= 0.87 || Math.abs(frac - 0.5) <= 0.13;
+        expect(pressable, `seed ${seed} cue@${cue.beat}`).toBe(true);
+      }
+      expect(cues.length).toBeGreaterThan(10); // 过滤后仍有密度(整数拍候选在)
+    }
+  });
+
   it('4/4 层级:整数拍提示落强拍(0/2)的比例过半(accent 加权锚点)', () => {
     for (const seed of [1, 7, 564417]) {
       const cues = planCues(candidates, { ...CTX, seed, accentPattern: [1.0, 0.85, 0.95, 0.85] });

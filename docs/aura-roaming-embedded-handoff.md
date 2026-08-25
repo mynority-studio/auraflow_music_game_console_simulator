@@ -128,6 +128,7 @@ LuxTrailState  { anchorCueId, anchorBeat, sawUnlitPress }
 | TRAIL_MAX_GAP_BEATS | 8 拍 | 律光音轨锚点有效期 |
 | CUE_HUE | 272(紫) | 引导色;Perfect 反馈 48(金) |
 | accentPattern / swingRatio | 来自 grooveContract | 锚点加权(²)/八分槽位(clamp 0.5~0.85);无合同兜底 [1,.85,.95,.85] + 0.5 |
+| PRESSABLE_EPS | 0.13 拍 | 可按性网格容差:提示只落整数拍/八分位(含 swing),16 分位不提示 |
 
 ## 5. 已付学费的坑(嵌入式必读)
 
@@ -388,6 +389,17 @@ interface SlotFeel {
   offbeat: number;
 }
 
+/** 可按性网格(2026-08-25 裁定):提示只落 整数拍 或 八分位(含 swing 反拍),
+ *  16 分位(+0.25/+0.75)太快不好按 → 吸附到这些位置的槽位直接放弃。 */
+const PRESSABLE_EPS = 0.13;
+function isPressableBeat(beat: number, offbeat: number): boolean {
+  const frac = ((beat % 1) + 1) % 1;
+  return frac <= PRESSABLE_EPS
+    || frac >= 1 - PRESSABLE_EPS
+    || Math.abs(frac - 0.5) <= PRESSABLE_EPS
+    || Math.abs(frac - offbeat) <= PRESSABLE_EPS;
+}
+
 /** 按 accent² 加权抽一拍(平方拉开强弱差);candidates 为可选拍集合。 */
 function pickWeightedBeat(rng: () => number, feel: SlotFeel, candidates: readonly number[]): number {
   let total = 0;
@@ -474,15 +486,18 @@ function valueClassOf(slotInBar: number, pattern: SlotPattern, beatsPerBar: numb
   return 'quarter';
 }
 
-/** 槽位 → 最近的高分候选(±0.45 拍容差 — 真实 lead 有休止,容差
- *  太窄会让大量槽位落空,引导密度骤降;分数优先)。 */
+/** 槽位 → 最近的高分【可按】候选(±0.45 拍容差 — 真实 lead 有休止,
+ *  容差太窄会让大量槽位落空;分数优先)。16 分位音符在候选池里直接
+ *  跳过,槽位吸附到最好的四分/八分位音符,而不是整个槽位放弃。 */
 function bestCandidateNear(
   candidates: readonly AccentCandidate[],
   targetBeat: number,
+  offbeat: number,
 ): AccentCandidate | null {
   let best: AccentCandidate | null = null;
   for (const c of candidates) {
     if (Math.abs(c.beat - targetBeat) > 0.45) continue;
+    if (!isPressableBeat(c.beat, offbeat)) continue;
     if (!best || c.score > best.score || (c.score === best.score && Math.abs(c.beat - targetBeat) < Math.abs(best.beat - targetBeat))) {
       best = c;
     }
@@ -527,7 +542,7 @@ export function planCues(candidates: readonly AccentCandidate[], ctx: CuePlanCon
 
     const barStart = bar * beatsPerBar;
     for (const slot of pattern.slots(beatsPerBar, rng, feel)) {
-      const candidate = bestCandidateNear(candidates, barStart + slot);
+      const candidate = bestCandidateNear(candidates, barStart + slot, feel.offbeat);
       if (!candidate || usedNoteIndexes.has(candidate.noteIndex)) continue;
       usedNoteIndexes.add(candidate.noteIndex);
       picked.push({ candidate, valueClass: valueClassOf(slot, pattern, beatsPerBar) });
@@ -2013,6 +2028,28 @@ describe('auraRoaming/cuePlanner — 提示选择与防节拍器', () => {
   it('空候选/零时长 → 空计划', () => {
     expect(planCues([], CTX)).toEqual([]);
     expect(planCues(candidates, { ...CTX, totalBeats: 0 })).toEqual([]);
+  });
+
+  it('可按性网格:16 分位(+0.25/+0.75)音符永不提示,即便它是槽位附近唯一候选', () => {
+    // 候选场:整数拍 + 大量 16 分位高分音符(模拟快线条 lead)
+    const withSixteenths: AccentCandidate[] = [];
+    let idx = 0;
+    for (let beat = 0; beat < 64; beat++) {
+      withSixteenths.push({ noteIndex: idx++, tick: beat * PPQ, beat, pitch: 60, durationBeats: 1, velocity: 90, score: 3 });
+      for (const frac of [0.25, 0.75]) {
+        const b = beat + frac;
+        withSixteenths.push({ noteIndex: idx++, tick: Math.round(b * PPQ), beat: b, pitch: 64, durationBeats: 0.25, velocity: 95, score: 6 });
+      }
+    }
+    for (const seed of [1, 7, 564417]) {
+      const cues = planCues(withSixteenths, { beatsPerBar: 4, totalBeats: 64, seed });
+      for (const cue of cues) {
+        const frac = ((cue.beat % 1) + 1) % 1;
+        const pressable = frac <= 0.13 || frac >= 0.87 || Math.abs(frac - 0.5) <= 0.13;
+        expect(pressable, `seed ${seed} cue@${cue.beat}`).toBe(true);
+      }
+      expect(cues.length).toBeGreaterThan(10); // 过滤后仍有密度(整数拍候选在)
+    }
   });
 
   it('4/4 层级:整数拍提示落强拍(0/2)的比例过半(accent 加权锚点)', () => {
